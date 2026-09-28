@@ -17,6 +17,7 @@
 | [api-outline.md](./api-outline.md) | 代理服务 HTTP / WebSocket 接口草案 |
 | [local-slave.md](./local-slave.md) | 本机 Node Slave 职责与部署要点 |
 | [roadmaps/cloud-agent/](./roadmaps/cloud-agent/README.md) | **开发计划**：Milestone → Phase |
+| [roadmaps/cloud-agent/mvp-checklist.md](./roadmaps/cloud-agent/mvp-checklist.md) | MVP 联调检查清单 |
 
 ## 技术选型（当前冻结）
 

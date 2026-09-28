@@ -64,7 +64,7 @@
 | 手机只信自己的网关 | App 持有 Gateway 签发的设备/用户 token |
 | 仓库白名单 | Slave 只允许配置过的 `cwd` 列表 |
 | 工具闸门 | hooks / sandbox 限制危险 shell（后续迭代） |
-| 审计 | 记录 `agentId`、`runId`、任务文本摘要、终态 |
+| 审计 | 记录 pair / task / workflow / review / revise（见 [gateway/docs/audit.md](../gateway/docs/audit.md)；不含 API Key 明文） |
 
 说明：Local 仍会把任务相关**代码片段/上下文**发给 Cursor 托管模型做推理——与「整仓落在云端 VM」不同。个人相对云厂商法务不对等，故用架构规避整仓托管风险。
 

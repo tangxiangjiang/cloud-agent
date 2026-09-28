@@ -26,4 +26,4 @@
 
 ## 状态
 
-MVP 主干已实现（M01–M06 + M07 收尾中）。联调从 [doc/deploy.md](./doc/deploy.md) 开始。
+MVP 主干已实现（M01–M07）。联调从 [doc/deploy.md](./doc/deploy.md) 开始；检查清单：[mvp-checklist.md](./doc/roadmaps/cloud-agent/mvp-checklist.md)。

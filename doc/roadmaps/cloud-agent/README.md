@@ -16,7 +16,15 @@
 
 ## 进度
 
-见 [progress.md](./progress.md)（由人工或 **App 批准后 Slave** 更新；设计正文不在此文件改）。
+见 [progress.md](./progress.md)：
+
+| 谁更新 | 何时 |
+|--------|------|
+| **Slave** | App `approve` 之后，按 Workflow.`progressDoc` 勾选 `- [x] Mxx-Pxx @approved <iso>` |
+| **IDE 人工** | 本机开发完成 phase 时可先勾（标注 `（IDE）`）；与 Slave 格式兼容 |
+| **设计正文** | phase / milestone 目标文案**不要**当作进度文件改 |
+
+MVP 联调勾选另见 [mvp-checklist.md](./mvp-checklist.md)。部署：[../../deploy.md](../../deploy.md)。
 
 ## Phase 索引
 

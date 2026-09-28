@@ -8,7 +8,7 @@
 | M04 Node Slave + Local Agent | done | M04-P01～P04 已完成 |
 | M05 工作流 DAG + 审核闸门 | done | M05-P01～P05 已完成 |
 | M06 Flutter App MVP | done | M06-P01～P05 已完成 |
-| M07 硬化与收尾 | in_progress | M07-P01～P02 已完成 |
+| M07 硬化与收尾 | done | M07-P01～P03 已完成 |
 
 ## Phase 勾选
 
@@ -40,4 +40,4 @@
 - [x] M06-P05 @approved 2026-09-28（IDE）
 - [x] M07-P01 @approved 2026-09-28（IDE）
 - [x] M07-P02 @approved 2026-09-28（IDE）
-- [ ] M07-P03
+- [x] M07-P03 @approved 2026-09-28（IDE）

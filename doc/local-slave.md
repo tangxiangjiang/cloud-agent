@@ -11,7 +11,7 @@
 - **仅 approve 后**更新 `ai/progress.md`（或 Bundle 指定的 progressDoc）
 
 不对公网暴露；不嵌入 Flutter。Gateway 仍是 Go。  
-工作流与 DAG 语义见 [workflow.md](./workflow.md)。
+工作流与 DAG 语义见 [workflow.md](./workflow.md)。本机联调见 [deploy.md](./deploy.md)。
 
 ## 职责边界
 

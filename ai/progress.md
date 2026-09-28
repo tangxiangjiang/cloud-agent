@@ -26,6 +26,12 @@
 | M05-P05 | approved | Approve 写 progressDoc + 解锁下游 |
 | M06-P01 | approved | Flutter 工程 + 配对登录 |
 | M06-P02 | approved | 工作流列表 / 详情 / Start |
+| M06-P03 | approved | App WS 日志 + afterSeq |
+| M06-P04 | approved | 只读 NodeDiff 视图 |
+| M06-P05 | approved | revise / approve / reject UI |
+| M07-P01 | approved | 审计 JSONL + pair/revise 限流 |
+| M07-P02 | approved | 样例 DAG + deploy 文档 |
+| M07-P03 | approved | 文档对齐 + MVP checklist |
 
 ## 勾选
 
@@ -50,4 +56,10 @@
 - [x] M05-P05 @approved 2026-09-28（IDE）
 - [x] M06-P01 @approved 2026-09-28（IDE）
 - [x] M06-P02 @approved 2026-09-28（IDE）
-- [ ] （其余 phase：Slave 在 App approve 后写入，格式：`- [x] Mxx-Pxx @approved <iso8601>`）
+- [x] M06-P03 @approved 2026-09-28（IDE）
+- [x] M06-P04 @approved 2026-09-28（IDE）
+- [x] M06-P05 @approved 2026-09-28（IDE）
+- [x] M07-P01 @approved 2026-09-28（IDE）
+- [x] M07-P02 @approved 2026-09-28（IDE）
+- [x] M07-P03 @approved 2026-09-28（IDE）
+- [ ] （其余 epic：按需新增；Slave 在 App approve 后写入，格式：`- [x] Mxx-Pxx @approved <iso8601>`）

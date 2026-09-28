@@ -158,7 +158,7 @@ Gateway 将 Run 标为 `running`，并向 `slaveId` 出站推送 `workflow.assig
 ```
 
 Agent 成功只许进入 `awaiting_review`，**不得**直接 `approved`。仅当依赖节点均为 `approved` 时，下游才变为 `ready`（审核闸门）。  
-样例 DAG：`slave/fixtures/dag-two-node.json`、`ai/bundles/m05-p02-two-node.json`。
+样例 DAG：`examples/sample-dag.json`、`slave/fixtures/dag-two-node.json`、`ai/bundles/m05-p02-two-node.json`。联调：[deploy.md](./deploy.md)。
 
 节点状态枚举：`pending / ready / running / awaiting_review / approved / rejected / failed / cancelled / skipped`。  
 审核 / diff：只读 diff 见 M05-P03；revise 见 M05-P04；approve 写进度见 M05-P05（`POST .../review`，Slave 仅 approve 时更新 `progressDoc`）。

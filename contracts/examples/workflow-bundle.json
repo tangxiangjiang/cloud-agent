@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "bundle_m01_demo",
+  "title": "M01 demo bundle",
+  "repoId": "r_cloud_agent",
+  "preferredSlaveId": "slave_devpc",
+  "progressDoc": "ai/progress.md",
+  "roadmapRef": "doc/roadmaps/cloud-agent/README.md",
+  "nodes": [
+    {
+      "id": "M01-P01",
+      "phaseRef": "doc/roadmaps/cloud-agent/phases/M01-P01-monorepo-layout.md",
+      "title": "仓库目录与根 README",
+      "dependsOn": [],
+      "model": "composer-2.5",
+      "dodChecks": [],
+      "onFailure": "stop",
+      "prompt": {
+        "mode": "phase_file",
+        "extra": "遵守 phase 范围与禁止事项。"
+      }
+    },
+    {
+      "id": "M01-P02",
+      "phaseRef": "doc/roadmaps/cloud-agent/phases/M01-P02-contracts-task-events.md",
+      "title": "Task / 事件契约",
+      "dependsOn": ["M01-P01"],
+      "model": "composer-2.5",
+      "onFailure": "stop",
+      "prompt": {
+        "mode": "phase_file"
+      }
+    }
+  ]
+}

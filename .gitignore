@@ -1,0 +1,49 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Go
+gateway/bin/
+*.exe
+*.test
+*.out
+vendor/
+
+# Node
+node_modules/
+slave/dist/
+slave/build/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+
+# Flutter
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.packages
+app/build/
+app/.pub-cache/
+app/.pub/
+app/**/Generated.xcconfig
+app/**/flutter_export_environment.sh
+
+# AI runtime units (optional local noise; keep samples if added later)
+# ai/units/**/*.json
+
+# Logs & coverage
+*.log
+coverage/
+.coverage

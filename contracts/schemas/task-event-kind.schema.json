@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloud-agent.local/schemas/task-event-kind.schema.json",
+  "title": "TaskEventKind",
+  "description": "Kind of payload inside a task.event envelope.",
+  "type": "string",
+  "enum": [
+    "status",
+    "assistant.delta",
+    "tool.started",
+    "tool.finished",
+    "error",
+    "done"
+  ]
+}

@@ -1,0 +1,17 @@
+# Progress (ai)
+
+权威进度文件（Bundle.`progressDoc` 默认指向此处）。  
+**仅在 App 审核通过后由 Slave 更新。**
+
+| Bundle / Node | 状态 | 备注 |
+|---------------|------|------|
+| M01-P01 | approved | IDE 直接完成（App 审核闸门尚未上线） |
+| M01-P02 | approved | Task/事件 JSON Schema |
+| M01-P03 | approved | Workflow/Review/Diff JSON Schema |
+
+## 勾选
+
+- [x] M01-P01 @approved 2026-09-28（IDE）
+- [x] M01-P02 @approved 2026-09-28（IDE）
+- [x] M01-P03 @approved 2026-09-28（IDE）
+- [ ] （其余 phase：Slave 在 App approve 后写入，格式：`- [x] <nodeId> @approved <iso8601>`）

@@ -1,0 +1,14 @@
+{
+  "workflowId": "wf_demo_001",
+  "nodeId": "M01-P01",
+  "baseline": "git:abc1234",
+  "files": [
+    {
+      "path": "README.md",
+      "status": "added",
+      "additions": 20,
+      "deletions": 0,
+      "unifiedDiff": "--- /dev/null\n+++ b/README.md\n@@ -0,0 +1,3 @@\n+# cloud-agent\n+\n+remote coding agent\n"
+    }
+  ]
+}

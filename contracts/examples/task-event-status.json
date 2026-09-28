@@ -1,0 +1,12 @@
+{
+  "type": "task.event",
+  "taskId": "tsk_demo_001",
+  "seq": 3,
+  "at": "2026-09-28T08:00:10.000Z",
+  "event": {
+    "kind": "status",
+    "payload": {
+      "status": "running"
+    }
+  }
+}

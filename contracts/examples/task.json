@@ -1,0 +1,16 @@
+{
+  "id": "tsk_demo_001",
+  "status": "running",
+  "slaveId": "slave_devpc",
+  "repoId": "r_cloud_agent",
+  "prompt": "Add parameter validation to the login API",
+  "model": "composer-2.5",
+  "agentId": "local_abc",
+  "runId": "run_xyz",
+  "workflowId": null,
+  "nodeId": null,
+  "resultSummary": null,
+  "error": null,
+  "createdAt": "2026-09-28T08:00:00.000Z",
+  "updatedAt": "2026-09-28T08:01:00.000Z"
+}

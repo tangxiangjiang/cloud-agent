@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloud-agent.local/schemas/node-diff.schema.json",
+  "title": "NodeDiffResponse",
+  "description": "GET /workflows/{workflowId}/nodes/{nodeId}/diff — read-only visualization for the App. There is intentionally NO write-back / apply-patch request schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workflowId", "nodeId", "files"],
+  "properties": {
+    "workflowId": { "type": "string" },
+    "nodeId": { "type": "string" },
+    "baseline": {
+      "type": ["string", "null"],
+      "description": "e.g. git commit or snapshot id at node start"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "status": {
+            "type": "string",
+            "enum": ["added", "modified", "deleted", "renamed"]
+          },
+          "additions": { "type": "integer", "minimum": 0 },
+          "deletions": { "type": "integer", "minimum": 0 },
+          "unifiedDiff": {
+            "type": "string",
+            "description": "Unified diff for this file (read-only render)"
+          },
+          "hunks": {
+            "type": "array",
+            "description": "Optional structured hunks instead of/in addition to unifiedDiff",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["header", "lines"],
+              "properties": {
+                "header": { "type": "string" },
+                "lines": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "anyOf": [
+          { "required": ["unifiedDiff"] },
+          { "required": ["hunks"] }
+        ]
+      }
+    }
+  }
+}

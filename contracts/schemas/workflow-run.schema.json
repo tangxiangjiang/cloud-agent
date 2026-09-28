@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloud-agent.local/schemas/workflow-run.schema.json",
+  "title": "WorkflowRun",
+  "description": "Runtime instance of a bundle snapshot. Node business success requires status approved after App review; awaiting_review means code may exist but progress must not advance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "bundleId", "status", "nodes", "createdAt"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "bundleId": { "type": "string", "minLength": 1 },
+    "bundleRef": { "type": ["string", "null"] },
+    "slaveId": { "type": ["string", "null"] },
+    "repoId": { "type": "string" },
+    "progressDoc": { "type": ["string", "null"] },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "running", "completed", "failed", "cancelled"]
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "phaseRef": { "type": ["string", "null"] },
+          "title": { "type": ["string", "null"] },
+          "dependsOn": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "status": {
+            "$ref": "workflow-node-status.schema.json"
+          },
+          "taskId": { "type": ["string", "null"] },
+          "unitId": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": ["string", "null"], "format": "date-time" }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloud-agent.local/schemas/task-status.schema.json",
+  "title": "TaskStatus",
+  "description": "Lifecycle status of a Gateway Task (single Agent run).",
+  "type": "string",
+  "enum": [
+    "queued",
+    "running",
+    "cancelling",
+    "finished",
+    "error",
+    "cancelled"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloud-agent.local/schemas/workflow-node-status.schema.json",
+  "title": "WorkflowNodeStatus",
+  "description": "DAG node lifecycle. Agent run complete is awaiting_review, NOT business success. Only approved counts as success for unlocking dependents and writing progress.",
+  "type": "string",
+  "enum": [
+    "pending",
+    "ready",
+    "running",
+    "awaiting_review",
+    "approved",
+    "rejected",
+    "failed",
+    "cancelled",
+    "skipped"
+  ]
+}

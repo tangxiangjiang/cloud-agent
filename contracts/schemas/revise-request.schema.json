@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloud-agent.local/schemas/revise-request.schema.json",
+  "title": "NodeReviseRequest",
+  "description": "POST /workflows/{workflowId}/nodes/{nodeId}/revise. Sends human instruction to Slave for another Local Agent turn. Node must be awaiting_review; returns to running then awaiting_review. Does not write progress.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["instruction"],
+  "properties": {
+    "instruction": {
+      "type": "string",
+      "minLength": 1,
+      "description": "How to change the code; not a source patch to apply blindly from the App"
+    }
+  }
+}

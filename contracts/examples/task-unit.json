@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "unitId": "unit_wf_demo_001_M01-P01",
+  "workflowId": "wf_demo_001",
+  "nodeId": "M01-P01",
+  "bundleId": "bundle_m01_demo",
+  "status": "awaiting_review",
+  "title": "仓库目录与根 README",
+  "phaseRef": "doc/roadmaps/cloud-agent/phases/M01-P01-monorepo-layout.md",
+  "summary": "已创建 monorepo 目录与根 README。",
+  "changedFiles": [
+    { "path": "README.md", "additions": 20, "deletions": 0 }
+  ],
+  "diffRef": "gateway://workflows/wf_demo_001/nodes/M01-P01/diff",
+  "taskId": "tsk_demo_001",
+  "createdAt": "2026-09-28T08:05:00.000Z",
+  "updatedAt": "2026-09-28T08:05:00.000Z"
+}

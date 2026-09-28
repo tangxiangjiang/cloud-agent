@@ -1,0 +1,31 @@
+{
+  "id": "wf_demo_001",
+  "bundleId": "bundle_m01_demo",
+  "bundleRef": "ai/bundles/m01.json",
+  "slaveId": "slave_devpc",
+  "repoId": "r_cloud_agent",
+  "progressDoc": "ai/progress.md",
+  "status": "running",
+  "nodes": [
+    {
+      "id": "M01-P01",
+      "phaseRef": "doc/roadmaps/cloud-agent/phases/M01-P01-monorepo-layout.md",
+      "title": "仓库目录与根 README",
+      "dependsOn": [],
+      "status": "awaiting_review",
+      "taskId": "tsk_demo_001",
+      "unitId": "unit_wf_demo_001_M01-P01"
+    },
+    {
+      "id": "M01-P02",
+      "phaseRef": "doc/roadmaps/cloud-agent/phases/M01-P02-contracts-task-events.md",
+      "title": "Task / 事件契约",
+      "dependsOn": ["M01-P01"],
+      "status": "pending",
+      "taskId": null,
+      "unitId": null
+    }
+  ],
+  "createdAt": "2026-09-28T08:00:00.000Z",
+  "updatedAt": "2026-09-28T08:05:00.000Z"
+}

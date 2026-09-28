@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloud-agent.local/schemas/task.schema.json",
+  "title": "Task",
+  "description": "A single Local Agent run managed by the Gateway.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "status", "createdAt"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Task id, e.g. tsk_xxx"
+    },
+    "status": {
+      "$ref": "task-status.schema.json"
+    },
+    "slaveId": {
+      "type": ["string", "null"]
+    },
+    "repoId": {
+      "type": ["string", "null"]
+    },
+    "prompt": {
+      "type": ["string", "null"]
+    },
+    "model": {
+      "type": ["string", "null"],
+      "description": "Model id for Local runtime, e.g. composer-2.5"
+    },
+    "agentId": {
+      "type": ["string", "null"]
+    },
+    "runId": {
+      "type": ["string", "null"]
+    },
+    "workflowId": {
+      "type": ["string", "null"],
+      "description": "Optional parent workflow run id when spawned from a DAG node"
+    },
+    "nodeId": {
+      "type": ["string", "null"],
+      "description": "Optional DAG node id when spawned from a workflow"
+    },
+    "resultSummary": {
+      "type": ["string", "null"]
+    },
+    "error": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" },
+        "code": { "type": ["string", "null"] }
+      },
+      "required": ["message"]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    }
+  }
+}

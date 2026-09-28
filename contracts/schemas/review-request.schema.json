@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloud-agent.local/schemas/review-request.schema.json",
+  "title": "NodeReviewRequest",
+  "description": "POST /workflows/{workflowId}/nodes/{nodeId}/review. approve writes progress and unlocks dependents; reject does not. Node must be awaiting_review. Approve is the only transition that marks business success.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decision"],
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": ["approve", "reject"]
+    },
+    "comment": {
+      "type": "string"
+    }
+  }
+}

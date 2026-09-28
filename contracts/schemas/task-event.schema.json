@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloud-agent.local/schemas/task-event.schema.json",
+  "title": "TaskEventEnvelope",
+  "description": "Unified envelope for WebSocket push and HTTP event snapshots (GET /tasks/{id}/events).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "taskId", "seq", "at", "event"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "task.event"
+    },
+    "taskId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotonic per-task sequence for reconnect catch-up"
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "payload"],
+      "properties": {
+        "kind": {
+          "$ref": "task-event-kind.schema.json"
+        },
+        "payload": {
+          "type": "object",
+          "description": "Kind-specific fields; see examples/"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "properties": { "kind": { "const": "status" } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "event": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "required": ["status"],
+                "properties": {
+                  "status": { "$ref": "task-status.schema.json" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "properties": { "kind": { "const": "assistant.delta" } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "event": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "required": ["text"],
+                "properties": {
+                  "text": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "properties": { "kind": { "const": "tool.started" } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "event": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "summary": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "properties": { "kind": { "const": "tool.finished" } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "event": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "required": ["name", "ok"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "ok": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "properties": { "kind": { "const": "error" } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "event": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "required": ["message"],
+                "properties": {
+                  "message": { "type": "string" },
+                  "retryable": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "properties": { "kind": { "const": "done" } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "event": {
+            "properties": {
+              "payload": {
+                "type": "object",
+                "required": ["status"],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": ["finished", "error", "cancelled"]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

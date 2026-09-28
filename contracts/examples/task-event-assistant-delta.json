@@ -1,0 +1,12 @@
+{
+  "type": "task.event",
+  "taskId": "tsk_demo_001",
+  "seq": 12,
+  "at": "2026-09-28T08:01:05.000Z",
+  "event": {
+    "kind": "assistant.delta",
+    "payload": {
+      "text": "准备修改 auth 模块…"
+    }
+  }
+}

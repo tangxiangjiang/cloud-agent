@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloud-agent.local/schemas/task-unit.schema.json",
+  "title": "TaskUnit",
+  "description": "Structured unit Slave writes under ai/units and pushes to the phone. status awaiting_review is not approved.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "unitId",
+    "workflowId",
+    "nodeId",
+    "status",
+    "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "unitId": { "type": "string" },
+    "workflowId": { "type": "string" },
+    "nodeId": { "type": "string" },
+    "bundleId": { "type": ["string", "null"] },
+    "status": {
+      "$ref": "workflow-node-status.schema.json"
+    },
+    "title": { "type": ["string", "null"] },
+    "phaseRef": { "type": ["string", "null"] },
+    "summary": { "type": ["string", "null"] },
+    "changedFiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path"],
+        "properties": {
+          "path": { "type": "string" },
+          "additions": { "type": "integer", "minimum": 0 },
+          "deletions": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "diffRef": {
+      "type": ["string", "null"],
+      "description": "Logical ref for GET .../diff"
+    },
+    "taskId": { "type": ["string", "null"] },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": ["string", "null"], "format": "date-time" }
+  }
+}

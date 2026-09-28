@@ -7,6 +7,7 @@ import '../workflow/models.dart';
 import '../workflow/workflow_api.dart';
 import 'node_diff_page.dart';
 import 'node_logs_page.dart';
+import 'node_review_page.dart';
 import 'node_status_chip.dart';
 
 /// Workflow detail: node statuses + Start. Polls Gateway; no diff/revise here.
@@ -245,12 +246,31 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
                       );
                     }
                   : null,
+              onOpenReview: n.isAwaitingReview
+                  ? () async {
+                      final updated = await Navigator.of(context)
+                          .push<WorkflowRun>(
+                        MaterialPageRoute(
+                          builder: (_) => NodeReviewPage(
+                            session: widget.session,
+                            workflowId: widget.workflowId,
+                            node: n,
+                            api: _api,
+                          ),
+                        ),
+                      );
+                      if (updated != null && mounted) {
+                        setState(() => _run = updated);
+                      } else if (mounted) {
+                        await _refresh(silent: true);
+                      }
+                    }
+                  : null,
             ),
           ),
           const SizedBox(height: 16),
           Text(
-            'Logs via WS when taskId is set. Diff when awaiting_review. '
-            'Revise / approve in M06-P05.',
+            'Logs via WS when taskId is set. Diff + Review when awaiting_review.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -266,11 +286,13 @@ class _NodeTile extends StatelessWidget {
     required this.node,
     this.onOpenLogs,
     this.onOpenDiff,
+    this.onOpenReview,
   });
 
   final WorkflowNode node;
   final VoidCallback? onOpenLogs;
   final VoidCallback? onOpenDiff;
+  final VoidCallback? onOpenReview;
 
   @override
   Widget build(BuildContext context) {
@@ -304,6 +326,12 @@ class _NodeTile extends StatelessWidget {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (onOpenReview != null)
+              IconButton(
+                tooltip: 'Review',
+                onPressed: onOpenReview,
+                icon: const Icon(Icons.rate_review_outlined),
+              ),
             if (onOpenDiff != null)
               IconButton(
                 tooltip: 'Diff (read-only)',

@@ -131,6 +131,60 @@ class WorkflowApi {
     return NodeDiff.fromJson(_decodeMap(res.body));
   }
 
+  /// `POST .../revise` — App instruction only (no source write-back).
+  Future<WorkflowRun> reviseNode(
+    String workflowId,
+    String nodeId, {
+    required String instruction,
+  }) async {
+    final res = await _post(
+      _uri(
+        '/v1/workflows/${Uri.encodeComponent(workflowId)}/nodes/${Uri.encodeComponent(nodeId)}/revise',
+      ),
+      headers: {
+        ..._headers,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: jsonEncode({'instruction': instruction}),
+    );
+    _throwIfBad(res, 'Revise');
+    final body = _decodeMap(res.body);
+    final wf = body['workflow'];
+    if (wf is Map) {
+      return WorkflowRun.fromJson(Map<String, dynamic>.from(wf));
+    }
+    return getWorkflow(workflowId);
+  }
+
+  /// `POST .../review` decision approve|reject. App never writes progress.md.
+  Future<WorkflowRun> reviewNode(
+    String workflowId,
+    String nodeId, {
+    required String decision,
+    String? comment,
+  }) async {
+    final res = await _post(
+      _uri(
+        '/v1/workflows/${Uri.encodeComponent(workflowId)}/nodes/${Uri.encodeComponent(nodeId)}/review',
+      ),
+      headers: {
+        ..._headers,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: jsonEncode({
+        'decision': decision,
+        if (comment != null && comment.trim().isNotEmpty) 'comment': comment.trim(),
+      }),
+    );
+    _throwIfBad(res, 'Review');
+    final body = _decodeMap(res.body);
+    final wf = body['workflow'];
+    if (wf is Map) {
+      return WorkflowRun.fromJson(Map<String, dynamic>.from(wf));
+    }
+    return getWorkflow(workflowId);
+  }
+
   Map<String, dynamic> _decodeMap(String raw) {
     try {
       final v = jsonDecode(raw);

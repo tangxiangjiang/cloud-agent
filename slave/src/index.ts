@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { parseArgs } from "node:util";
+import { LocalAgentTaskHandler } from "./agent/localHandler.js";
 import {
   ConfigError,
   configSummary,
@@ -9,24 +10,49 @@ import {
   resolveConfigPath,
 } from "./config.js";
 import { GatewayClient } from "./gateway/client.js";
+import type { TaskHandlers } from "./gateway/types.js";
 import { log, setLogLevel } from "./log.js";
 import { StubTaskHandler } from "./tasks/stubHandler.js";
 
 function usage(): void {
-  console.log(`Usage: slave [--config <path>] [--log-level debug|info|warn|error]
+  console.log(`Usage: slave [--config <path>] [--stub] [--log-level debug|info|warn|error]
 
-Outbound Local Slave: load config, connect to Gateway WS, register, heartbeat,
-handle task.assign with stub events (real SDK in M04-P03).
+Outbound Local Slave: Gateway WS + Cursor SDK Local Agent (no cloud).
 
-Requires env named by config tokenEnv (default GATEWAY_TOKEN) = Bearer from
-POST /v1/auth/pair — not CURSOR_API_KEY.
+Env:
+  GATEWAY_TOKEN (or tokenEnv)  — Bearer from POST /v1/auth/pair
+  CURSOR_API_KEY (or apiKeyEnv) — required unless --stub
+
+--stub  use fake status/delta/done (no SDK; for Gateway-only联调)
 `);
+}
+
+function buildHandlers(
+  cfg: ReturnType<typeof loadConfigFile>,
+  stub: boolean,
+): TaskHandlers {
+  if (stub) {
+    log.warn("using stub task handler (--stub); SDK disabled");
+    return new StubTaskHandler(cfg);
+  }
+  const apiKey = process.env[cfg.apiKeyEnv]?.trim();
+  if (!apiKey) {
+    throw new ConfigError(
+      `env ${cfg.apiKeyEnv} is required for Local Agent (or pass --stub)`,
+    );
+  }
+  return new LocalAgentTaskHandler({
+    cfg,
+    apiKey,
+    defaultModel: cfg.defaultModel,
+  });
 }
 
 async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
       config: { type: "string", short: "c" },
+      stub: { type: "boolean", default: false },
       "log-level": { type: "string", default: "info" },
       help: { type: "boolean", short: "h", default: false },
     },
@@ -55,16 +81,15 @@ async function main(): Promise<void> {
       `env ${cfg.tokenEnv} is required (Gateway Bearer from POST /v1/auth/pair)`,
     );
   }
-  if (!process.env[cfg.apiKeyEnv]) {
-    log.warn(`env ${cfg.apiKeyEnv} is unset (required before Local Agent runs)`);
-  }
+
+  const handlers = buildHandlers(cfg, Boolean(values.stub));
 
   const clientOpts: ConstructorParameters<typeof GatewayClient>[0] = {
     url: cfg.gatewayUrl,
     token,
     slaveId: cfg.slaveId,
     repos: cfg.repos,
-    handlers: new StubTaskHandler(cfg),
+    handlers,
   };
   if (cfg.name !== undefined) {
     clientOpts.name = cfg.name;
@@ -80,7 +105,7 @@ async function main(): Promise<void> {
   process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
   client.start();
-  log.info("slave running (outbound WS); Ctrl+C to stop");
+  log.info("slave running (Local Agent + outbound WS); Ctrl+C to stop");
 }
 
 main().catch((err: unknown) => {

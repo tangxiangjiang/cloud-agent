@@ -17,10 +17,10 @@
 
 ## 完成定义（DoD）
 
-- [ ] 显式只使用 local；代码审查无 cloud 默认分支误用
-- [ ] stream 事件映射 assistant.delta / status / done（工具事件尽力）
-- [ ] 每 run 调用 wait；失败区分启动失败 vs run error（若可映射）
-- [ ] 用真实或最小本地目录跑通一次（文档记录所需 env）
+- [x] 显式只使用 local；代码审查无 cloud 默认分支误用
+- [x] stream 事件映射 assistant.delta / status / done（工具事件尽力）
+- [x] 每 run 调用 wait；失败区分启动失败 vs run error（若可映射）
+- [x] 用真实或最小本地目录跑通一次（文档记录所需 env）
 
 ## 禁止事项
 

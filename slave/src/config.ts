@@ -21,6 +21,8 @@ export interface SlaveConfig {
   apiKeyEnv: string;
   /** Environment variable name that holds the Gateway Bearer token (M04-P02+). */
   tokenEnv: string;
+  /** Default Local Agent model id when task.model is omitted. */
+  defaultModel: string;
 }
 
 export class ConfigError extends Error {
@@ -43,6 +45,7 @@ type RawConfig = {
   repos?: unknown;
   apiKeyEnv?: unknown;
   tokenEnv?: unknown;
+  defaultModel?: unknown;
   cloud?: unknown;
   local?: unknown;
 };
@@ -117,6 +120,10 @@ export function validateConfig(raw: unknown): SlaveConfig {
     obj.tokenEnv === undefined || obj.tokenEnv === null
       ? "GATEWAY_TOKEN"
       : requireString(obj.tokenEnv, "tokenEnv");
+  const defaultModel =
+    obj.defaultModel === undefined || obj.defaultModel === null
+      ? "composer-2.5"
+      : requireString(obj.defaultModel, "defaultModel");
 
   if (!Array.isArray(obj.repos) || obj.repos.length === 0) {
     throw new ConfigError("repos must be a non-empty array");
@@ -152,6 +159,7 @@ export function validateConfig(raw: unknown): SlaveConfig {
     repos,
     apiKeyEnv,
     tokenEnv,
+    defaultModel,
   };
   if (name !== undefined) {
     cfg.name = name;
@@ -178,6 +186,7 @@ export function configSummary(cfg: SlaveConfig): Record<string, unknown> {
     name: cfg.name ?? null,
     apiKeyEnv: cfg.apiKeyEnv,
     tokenEnv: cfg.tokenEnv,
+    defaultModel: cfg.defaultModel,
     apiKeyPresent: Boolean(process.env[cfg.apiKeyEnv]),
     tokenPresent: Boolean(process.env[cfg.tokenEnv]),
     repos: cfg.repos.map((r) => ({ id: r.id, name: r.name, cwd: r.cwd })),

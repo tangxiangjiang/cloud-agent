@@ -14,5 +14,8 @@ repos:
 # Name of the env var that holds the Cursor API key (not the key itself).
 apiKeyEnv: CURSOR_API_KEY
 
+# Default model when task.model is omitted (Local Agent requires a model).
+defaultModel: composer-2.5
+
 # Env var name for Gateway Bearer (from POST /v1/auth/pair). Required to run.
 tokenEnv: GATEWAY_TOKEN

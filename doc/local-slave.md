@@ -71,7 +71,7 @@ apiKeyEnv: CURSOR_API_KEY
 
 ## 运行依赖（本机）
 
-- Node.js >= 18（以官方 SDK 要求为准）  
+- Node.js >= 22.13（以官方 `@cursor/sdk` engines 为准）  
 - `@cursor/sdk`  
 - `CURSOR_API_KEY`  
 - 已配置白名单仓库的本地路径  

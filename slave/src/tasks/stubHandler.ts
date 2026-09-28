@@ -7,8 +7,7 @@ import { log } from "../log.js";
 import type { AssignedTask, EmitEvent, TaskHandlers } from "../gateway/types.js";
 
 /**
- * M04-P02 stub: acknowledge tasks with fake status/delta/done (no Cursor SDK).
- * Real Local Agent replaces this in M04-P03.
+ * Fake events for Gateway-only联调 (`--stub`). Production path: LocalAgentTaskHandler.
  */
 export class StubTaskHandler implements TaskHandlers {
   private readonly cancelled = new Set<string>();

@@ -16,6 +16,7 @@ Thumbs.db
 
 # Go
 gateway/bin/
+gateway/config.yaml
 *.exe
 *.test
 *.out

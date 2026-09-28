@@ -1,0 +1,14 @@
+# EXAMPLE configuration for local development.
+# Copy to config.yaml (gitignored) and replace cwd with paths you whitelist.
+# Do not commit machine-specific absolute paths you are not comfortable publishing.
+#
+# online is static in M02; M03 will reflect real Slave registration.
+
+slaves:
+  - id: slave_devpc
+    name: "dev machine"
+    online: false
+    repos:
+      - id: r_cloud_agent
+        name: cloud-agent
+        cwd: /path/to/your/cloud-agent

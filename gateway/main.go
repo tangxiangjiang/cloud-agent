@@ -11,12 +11,14 @@ import (
 	"os"
 
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/auth"
+	"github.com/tangxiangjiang/cloud-agent/gateway/internal/slaves"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/task"
 )
 
 func main() {
 	addr := flag.String("addr", envOr("GATEWAY_ADDR", ":8080"), "HTTP listen address (env GATEWAY_ADDR)")
 	pairCodeFlag := flag.String("pair-code", envOr("GATEWAY_PAIR_CODE", ""), "pairing code (env GATEWAY_PAIR_CODE); generated if empty")
+	configPath := flag.String("config", envOr("GATEWAY_CONFIG", ""), "optional YAML config path (env GATEWAY_CONFIG); see config.example.yaml")
 	flag.Parse()
 
 	pairCode := *pairCodeFlag
@@ -30,12 +32,27 @@ func main() {
 
 	authStore := auth.NewStore(pairCode)
 	taskStore := task.NewStore()
+
+	var slaveList []slaves.Slave
+	if *configPath != "" {
+		cfg, err := slaves.LoadConfigFile(*configPath)
+		if err != nil {
+			log.Fatalf("load config %s: %v", *configPath, err)
+		}
+		slaveList = cfg.Slaves
+		log.Printf("loaded %d slave(s) from %s", len(slaveList), *configPath)
+	} else {
+		log.Printf("no -config set; GET /v1/slaves returns empty list (see config.example.yaml)")
+	}
+	slaveReg := slaves.NewRegistry(slaveList)
+
 	log.Printf("pair code: %s (use POST /v1/auth/pair)", authStore.PairCode())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/health", handleHealth)
 	mux.HandleFunc("POST /v1/auth/pair", authStore.HandlePair)
 	mux.Handle("GET /v1/auth/me", authStore.Middleware(http.HandlerFunc(handleMe)))
+	mux.Handle("GET /v1/slaves", authStore.Middleware(http.HandlerFunc(slaveReg.HandleList)))
 	taskHandler := authStore.Middleware(taskStore.Handler())
 	mux.Handle("/v1/tasks", taskHandler)
 	mux.Handle("/v1/tasks/", taskHandler)

@@ -16,10 +16,10 @@
 
 ## 完成定义（DoD）
 
-- [ ] 鉴权后可 GET slaves
-- [ ] JSON 含 id/name/online/repos[{id,name,cwd}]
-- [ ] online 首版可为配置静态值或 false（M03 再接真实在线）
-- [ ] 与 contracts 或 api-outline 字段名一致（`slaves` 而非 workers）
+- [x] 鉴权后可 GET slaves
+- [x] JSON 含 id/name/online/repos[{id,name,cwd}]
+- [x] online 首版可为配置静态值或 false（M03 再接真实在线）
+- [x] 与 contracts 或 api-outline 字段名一致（`slaves` 而非 workers）
 
 ## 禁止事项
 

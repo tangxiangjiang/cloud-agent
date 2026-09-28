@@ -25,6 +25,7 @@
 | M05-P04 | approved | Revise follow-up + reviseHistory |
 | M05-P05 | approved | Approve 写 progressDoc + 解锁下游 |
 | M06-P01 | approved | Flutter 工程 + 配对登录 |
+| M06-P02 | approved | 工作流列表 / 详情 / Start |
 
 ## 勾选
 
@@ -48,4 +49,5 @@
 - [x] M05-P04 @approved 2026-09-28（IDE）
 - [x] M05-P05 @approved 2026-09-28（IDE）
 - [x] M06-P01 @approved 2026-09-28（IDE）
+- [x] M06-P02 @approved 2026-09-28（IDE）
 - [ ] （其余 phase：Slave 在 App approve 后写入，格式：`- [x] Mxx-Pxx @approved <iso8601>`）

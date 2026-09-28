@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../auth/auth_controller.dart';
 import '../util/redact.dart';
+import 'workflow_list_page.dart';
 
-/// Logged-in shell. Workflow pages arrive in M06-P02+.
+/// Logged-in shell: session summary + entry to workflows.
 class HomeShell extends StatelessWidget {
   const HomeShell({super.key, required this.auth});
 
@@ -38,9 +39,15 @@ class HomeShell extends StatelessWidget {
             child: ListTile(
               leading: const Icon(Icons.account_tree_outlined),
               title: const Text('Workflows'),
-              subtitle: const Text('Coming in M06-P02'),
-              enabled: false,
-              onTap: null,
+              subtitle: const Text('List, detail, start'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => WorkflowListPage(session: session),
+                  ),
+                );
+              },
             ),
           ),
         ],

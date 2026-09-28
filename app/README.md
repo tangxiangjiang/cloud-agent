@@ -49,8 +49,11 @@ cd app && flutter test
 
 | Phase | 状态 |
 |-------|------|
-| **M06-P01** | 工程 + 配对登录 + AuthGate（当前） |
-| M06-P02+ | 工作流 / WS / diff / revise·approve |
+| M06-P01 | 工程 + 配对登录 + AuthGate |
+| **M06-P02** | 工作流列表 / 详情 / Start（当前） |
+| M06-P03+ | WS 日志 / diff / revise·approve |
+
+配对后主页进入 **Workflows**：列表展示 id 与状态；详情展示节点（`awaiting_review` 高亮）；可 **Start**（`POST /v1/workflows/{id}/start`）。状态约每数秒轮询；下拉刷新。App **不**编辑 DAG JSON。
 
 ## 安全注意
 

@@ -14,5 +14,5 @@ repos:
 # Name of the env var that holds the Cursor API key (not the key itself).
 apiKeyEnv: CURSOR_API_KEY
 
-# Optional: Bearer token env var for Gateway (used from M04-P02).
-# tokenEnv: GATEWAY_TOKEN
+# Env var name for Gateway Bearer (from POST /v1/auth/pair). Required to run.
+tokenEnv: GATEWAY_TOKEN

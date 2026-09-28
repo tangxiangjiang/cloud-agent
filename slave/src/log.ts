@@ -10,6 +10,9 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   error: 40,
 };
 
+const SECRET_KEY =
+  /^(token|api[_-]?key|authorization|password|secret|passwd|credential|gateway_token|cursor_api_key)$/i;
+
 let minLevel: LogLevel = "info";
 
 export function setLogLevel(level: LogLevel): void {
@@ -20,10 +23,30 @@ export function setLogLevel(level: LogLevel): void {
 export function redact(value: string): string {
   if (!value) return value;
   let out = value;
-  // Bearer tokens / long hex-ish secrets
   out = out.replace(/\b(Bearer\s+)[A-Za-z0-9._\-+=/]{8,}/gi, "$1***");
-  out = out.replace(/\b[A-Za-z0-9]{32,}\b/g, "***");
+  // Long opaque tokens (hex / base64-ish / hyphenated secrets)
+  out = out.replace(/\b[A-Za-z0-9_+\-/=]{24,}\b/g, "***");
   return out;
+}
+
+function sanitizeValue(key: string, value: unknown): unknown {
+  if (SECRET_KEY.test(key)) {
+    return typeof value === "string" && value.length > 0 ? "***" : value;
+  }
+  if (typeof value === "string") {
+    return redact(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((v, i) => sanitizeValue(String(i), v));
+  }
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = sanitizeValue(k, v);
+    }
+    return out;
+  }
+  return value;
 }
 
 function shouldLog(level: LogLevel): boolean {
@@ -39,11 +62,7 @@ function write(level: LogLevel, msg: string, fields?: Record<string, unknown>): 
   };
   if (fields) {
     for (const [k, v] of Object.entries(fields)) {
-      if (typeof v === "string") {
-        line[k] = redact(v);
-      } else {
-        line[k] = v;
-      }
+      line[k] = sanitizeValue(k, v);
     }
   }
   const text = JSON.stringify(line);

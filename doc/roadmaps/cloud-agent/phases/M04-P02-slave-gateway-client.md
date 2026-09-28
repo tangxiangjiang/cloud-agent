@@ -16,10 +16,10 @@ Slave 实现与 Gateway 的出站协议客户端：登记、心跳、收任务�
 
 ## 完成定义（DoD）
 
-- [ ] Slave 启动后 Gateway `GET /slaves` 显示 online
-- [ ] 能领取 task 并回传至少 status 事件
-- [ ] 断线重连后能重新登记
-- [ ] 日志不打印完整 token/API Key
+- [x] Slave 启动后 Gateway `GET /slaves` 显示 online
+- [x] 能领取 task 并回传至少 status 事件
+- [x] 断线重连后能重新登记
+- [x] 日志不打印完整 token/API Key
 
 ## 禁止事项
 

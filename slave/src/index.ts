@@ -8,13 +8,18 @@ import {
   loadConfigFile,
   resolveConfigPath,
 } from "./config.js";
+import { GatewayClient } from "./gateway/client.js";
 import { log, setLogLevel } from "./log.js";
+import { StubTaskHandler } from "./tasks/stubHandler.js";
 
 function usage(): void {
   console.log(`Usage: slave [--config <path>] [--log-level debug|info|warn|error]
 
-Loads and validates Local Slave config (gatewayUrl, slaveId, repos whitelist, apiKeyEnv).
-Gateway WS client: M04-P02. Local Agent runs: M04-P03.
+Outbound Local Slave: load config, connect to Gateway WS, register, heartbeat,
+handle task.assign with stub events (real SDK in M04-P03).
+
+Requires env named by config tokenEnv (default GATEWAY_TOKEN) = Bearer from
+POST /v1/auth/pair — not CURSOR_API_KEY.
 `);
 }
 
@@ -43,12 +48,39 @@ async function main(): Promise<void> {
   const cfg = loadConfigFile(configPath);
 
   log.info("slave config ok", { configPath, ...configSummary(cfg) });
+
+  const token = process.env[cfg.tokenEnv]?.trim();
+  if (!token) {
+    throw new ConfigError(
+      `env ${cfg.tokenEnv} is required (Gateway Bearer from POST /v1/auth/pair)`,
+    );
+  }
   if (!process.env[cfg.apiKeyEnv]) {
     log.warn(`env ${cfg.apiKeyEnv} is unset (required before Local Agent runs)`);
   }
 
-  log.info("M04-P01 complete: config load + cwd whitelist validation");
-  log.info("next: Gateway outbound client (M04-P02)");
+  const clientOpts: ConstructorParameters<typeof GatewayClient>[0] = {
+    url: cfg.gatewayUrl,
+    token,
+    slaveId: cfg.slaveId,
+    repos: cfg.repos,
+    handlers: new StubTaskHandler(cfg),
+  };
+  if (cfg.name !== undefined) {
+    clientOpts.name = cfg.name;
+  }
+  const client = new GatewayClient(clientOpts);
+
+  const shutdown = async (signal: string) => {
+    log.info("shutting down", { signal });
+    await client.stop();
+    process.exit(0);
+  };
+  process.once("SIGINT", () => void shutdown("SIGINT"));
+  process.once("SIGTERM", () => void shutdown("SIGTERM"));
+
+  client.start();
+  log.info("slave running (outbound WS); Ctrl+C to stop");
 }
 
 main().catch((err: unknown) => {

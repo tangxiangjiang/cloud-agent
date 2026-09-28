@@ -46,18 +46,23 @@ wss://{gateway}/v1/slave/ws
 - 连接断开后经宽限（默认 3s）置 `online=false`  
 - `GET /v1/slaves`（App Bearer）反映上述状态  
 
-## 联调（mock）
+## 联调
+
+**Node Slave（推荐，M04-P02+ stub 事件）：**
 
 ```bash
 # 终端 A
 cd gateway && go run . -pair-code ABCD-EFGH
 
-# 终端 B：配对
+# 终端 B：配对 → 将 token 设为 GATEWAY_TOKEN
 curl -s -X POST http://127.0.0.1:8080/v1/auth/pair -H "Content-Type: application/json" -d "{\"pairCode\":\"ABCD-EFGH\"}"
 
-# 终端 C：mock slave
-go run ./cmd/mockslave -token <token> -id slave_devpc
-
-# 创建任务后 App 订阅 ws://.../v1/ws → subscribe taskId
-# 或 GET /v1/tasks/{id}/events?afterSeq=0 拉快照
+# 终端 C
+cd ../slave && cp config.example.yaml config.yaml
+# 编辑 repos cwd；然后：
+# GATEWAY_TOKEN=<token> npm start
 ```
+
+**Go mockslave（无 Node）：** `go run ./cmd/mockslave -token <token> -id slave_devpc`
+
+创建任务后 App 订 `/v1/ws`，或 `GET /v1/tasks/{id}/events?afterSeq=0`。

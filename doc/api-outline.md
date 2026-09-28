@@ -201,9 +201,12 @@ Agent 成功只许进入 `awaiting_review`，**不得**直接 `approved`。仅�
 
 **只读 diff 数据**
 
-`GET /workflows/{workflowId}/nodes/{nodeId}/diff`  
-→ 文件列表 + unified diff（或按文件分页的 hunks），供 App **只读渲染**，无写回接口。  
+`GET /workflows/{workflowId}/nodes/{nodeId}/diff`（Bearer）  
+→ 文件列表 + `unifiedDiff`（或 hunks），供 App **只读渲染**。  
 Schema：`contracts/schemas/node-diff.schema.json`。
+
+Slave 上传（非 App）：`PUT` 同一路径，body 为 NodeDiff。  
+**无** apply-patch / 写回源码接口。基线策略：节点开始时 `git rev-parse HEAD` → `baseline: "git:<sha>"`，详见 [slave/docs/diff-baseline.md](../slave/docs/diff-baseline.md)。
 
 ### 事件快照（WS 兜底）
 

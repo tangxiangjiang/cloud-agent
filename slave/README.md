@@ -62,6 +62,8 @@ npm run smoke-local
 
 样例两节点 DAG：`fixtures/dag-two-node.json`（亦见 `ai/bundles/m05-p02-two-node.json`）。
 
+Diff 基线与只读 API：[docs/diff-baseline.md](./docs/diff-baseline.md)。
+
 ## 安全注意事项
 
 - **API Key / Bearer 只放环境变量**（`apiKeyEnv` / `tokenEnv` 只写变量名）。配置文件禁止出现 `apiKey` 字面量；日志会对 `apiKey`/`token` 等字段与长 opaque 串脱敏。

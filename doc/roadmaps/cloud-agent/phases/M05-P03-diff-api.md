@@ -17,10 +17,10 @@
 
 ## 完成定义（DoD）
 
-- [ ] diff 含文件列表与 unified patch（或按文件 hunks）
-- [ ] GET diff 需鉴权；响应符合 contracts
-- [ ] 基线策略文档化（如节点开始时的 git stash/ref 或 task 开始 commit）
-- [ ] 无「apply patch」类接口
+- [x] diff 含文件列表与 unified patch（或按文件 hunks）
+- [x] GET diff 需鉴权；响应符合 contracts
+- [x] 基线策略文档化（如节点开始时的 git stash/ref 或 task 开始 commit）
+- [x] 无「apply patch」类接口
 
 ## 禁止事项
 

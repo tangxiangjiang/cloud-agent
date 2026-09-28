@@ -5,6 +5,7 @@ import type { SlaveConfig } from "../config.js";
 import { findRepo } from "../config.js";
 import type { AssignedTask, EmitEvent, TaskHandlers } from "../gateway/types.js";
 import { log } from "../log.js";
+import { captureBaseline, collectNodeDiff } from "./diff.js";
 import { GatewayHttpApi } from "./http.js";
 import { buildNodePrompt } from "./prompt.js";
 import { schedulableNodes, type WorkflowRun } from "./types.js";
@@ -18,6 +19,8 @@ export type NodeRunOutcome = "finished" | "error" | "cancelled";
 export class SerialDagScheduler {
   private chain: Promise<void> = Promise.resolve();
   private readonly active = new Set<string>();
+  /** workflowId\\0nodeId → git:<sha> captured at node start */
+  private readonly baselines = new Map<string, string | null>();
 
   constructor(
     private readonly opts: {
@@ -92,6 +95,15 @@ export class SerialDagScheduler {
         return;
       }
 
+      const baselineKey = `${workflowId}\0${node.id}`;
+      const baseline = await captureBaseline(repo.cwd);
+      this.baselines.set(baselineKey, baseline);
+      log.info("node baseline captured", {
+        workflowId,
+        nodeId: node.id,
+        baseline: baseline ?? null,
+      });
+
       await this.opts.http.patchNode(workflowId, node.id, { status: "running" });
 
       const task = await this.opts.http.createTask({
@@ -110,6 +122,27 @@ export class SerialDagScheduler {
 
       const outcome = await this.executeTask(task);
       if (outcome === "finished") {
+        try {
+          const diff = await collectNodeDiff(
+            repo.cwd,
+            workflowId,
+            node.id,
+            this.baselines.get(baselineKey) ?? baseline,
+          );
+          await this.opts.http.putNodeDiff(diff);
+          log.info("node diff uploaded", {
+            workflowId,
+            nodeId: node.id,
+            files: diff.files.length,
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          log.warn("diff collect/upload failed; continuing to awaiting_review", {
+            workflowId,
+            nodeId: node.id,
+            error: message,
+          });
+        }
         // Hard rule: never approve here.
         await this.opts.http.patchNode(workflowId, node.id, {
           status: "awaiting_review",

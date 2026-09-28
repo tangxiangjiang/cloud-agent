@@ -103,14 +103,16 @@ type nodePatchRequest struct {
 type Store struct {
 	mu      sync.RWMutex
 	runs    map[string]*Run
+	diffs   map[string]*NodeDiff // workflowId\0nodeId
 	now     func() time.Time
 	starter Starter
 }
 
 func NewStore() *Store {
 	return &Store{
-		runs: make(map[string]*Run),
-		now:  func() time.Time { return time.Now().UTC() },
+		runs:  make(map[string]*Run),
+		diffs: make(map[string]*NodeDiff),
+		now:   func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -124,6 +126,8 @@ func (s *Store) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/workflows/{id}/nodes", s.handleListNodes)
 	mux.HandleFunc("POST /v1/workflows/{id}/start", s.handleStart)
 	mux.HandleFunc("PATCH /v1/workflows/{id}/nodes/{nodeId}", s.handlePatchNode)
+	mux.HandleFunc("GET /v1/workflows/{id}/nodes/{nodeId}/diff", s.handleGetDiff)
+	mux.HandleFunc("PUT /v1/workflows/{id}/nodes/{nodeId}/diff", s.handlePutDiff)
 	return mux
 }
 
@@ -425,6 +429,101 @@ func allNodesTerminalSuccess(nodes []Node) bool {
 		}
 	}
 	return len(nodes) > 0
+}
+
+func (s *Store) handleGetDiff(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	nodeID := r.PathValue("nodeId")
+	s.mu.RLock()
+	if _, ok := s.runs[id]; !ok {
+		s.mu.RUnlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "workflow not found"})
+		return
+	}
+	d, ok := s.diffs[diffKey(id, nodeID)]
+	s.mu.RUnlock()
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "diff not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, cloneDiff(d))
+}
+
+func (s *Store) handlePutDiff(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	nodeID := r.PathValue("nodeId")
+	var body NodeDiff
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	run, ok := s.runs[id]
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "workflow not found"})
+		return
+	}
+	found := false
+	for _, n := range run.Nodes {
+		if n.ID == nodeID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
+		return
+	}
+	if body.Files == nil {
+		body.Files = []NodeDiffFile{}
+	}
+	for i := range body.Files {
+		f := &body.Files[i]
+		if strings.TrimSpace(f.Path) == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "files[].path required"})
+			return
+		}
+		if f.UnifiedDiff == "" && len(f.Hunks) == 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "files[] need unifiedDiff or hunks"})
+			return
+		}
+	}
+	body.WorkflowID = id
+	body.NodeID = nodeID
+	stored := cloneDiff(&body)
+	s.diffs[diffKey(id, nodeID)] = stored
+	writeJSON(w, http.StatusOK, stored)
+}
+
+func cloneDiff(d *NodeDiff) *NodeDiff {
+	if d == nil {
+		return nil
+	}
+	cp := *d
+	if d.Baseline != nil {
+		v := *d.Baseline
+		cp.Baseline = &v
+	}
+	cp.Files = make([]NodeDiffFile, len(d.Files))
+	for i, f := range d.Files {
+		cp.Files[i] = f
+		if f.Additions != nil {
+			v := *f.Additions
+			cp.Files[i].Additions = &v
+		}
+		if f.Deletions != nil {
+			v := *f.Deletions
+			cp.Files[i].Deletions = &v
+		}
+		if f.Hunks != nil {
+			cp.Files[i].Hunks = append([]NodeDiffHunk(nil), f.Hunks...)
+			for j := range cp.Files[i].Hunks {
+				cp.Files[i].Hunks[j].Lines = append([]string(nil), f.Hunks[j].Lines...)
+			}
+		}
+	}
+	return &cp
 }
 
 func cloneRun(r *Run) *Run {

@@ -204,6 +204,80 @@ func TestStartAndPatchNode(t *testing.T) {
 	}
 }
 
+func TestPutAndGetDiff(t *testing.T) {
+	authStore := auth.NewStore("PAIR")
+	wfStore := workflow.NewStore()
+	pairRec := httptest.NewRecorder()
+	authStore.HandlePair(pairRec, httptest.NewRequest(http.MethodPost, "/v1/auth/pair", strings.NewReader(`{"pairCode":"PAIR"}`)))
+	var pairResp struct {
+		Token string `json:"token"`
+	}
+	_ = json.NewDecoder(pairRec.Body).Decode(&pairResp)
+
+	mux := http.NewServeMux()
+	mux.Handle("/v1/workflows", authStore.Middleware(wfStore.Handler()))
+	mux.Handle("/v1/workflows/", authStore.Middleware(wfStore.Handler()))
+
+	createBody := `{"bundleId":"b","repoId":"r","nodes":[{"id":"N1","dependsOn":[]}]}`
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(createBody))
+	createReq.Header.Set("Authorization", "Bearer "+pairResp.Token)
+	createRec := httptest.NewRecorder()
+	mux.ServeHTTP(createRec, createReq)
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	unauth := httptest.NewRecorder()
+	mux.ServeHTTP(unauth, httptest.NewRequest(http.MethodGet, "/v1/workflows/"+run.ID+"/nodes/N1/diff", nil))
+	if unauth.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", unauth.Code)
+	}
+
+	putBody := `{
+		"workflowId":"` + run.ID + `",
+		"nodeId":"N1",
+		"baseline":"git:abc1234",
+		"files":[{"path":"README.md","status":"added","additions":1,"deletions":0,"unifiedDiff":"--- /dev/null\n+++ b/README.md\n@@ -0,0 +1 @@\n+# hi\n"}]
+	}`
+	putReq := httptest.NewRequest(http.MethodPut, "/v1/workflows/"+run.ID+"/nodes/N1/diff", strings.NewReader(putBody))
+	putReq.Header.Set("Authorization", "Bearer "+pairResp.Token)
+	putReq.Header.Set("Content-Type", "application/json")
+	putRec := httptest.NewRecorder()
+	mux.ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("put: %d %s", putRec.Code, putRec.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/workflows/"+run.ID+"/nodes/N1/diff", nil)
+	getReq.Header.Set("Authorization", "Bearer "+pairResp.Token)
+	getRec := httptest.NewRecorder()
+	mux.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("get: %d %s", getRec.Code, getRec.Body.String())
+	}
+	var diff workflow.NodeDiff
+	if err := json.NewDecoder(getRec.Body).Decode(&diff); err != nil {
+		t.Fatal(err)
+	}
+	if diff.WorkflowID != run.ID || diff.NodeID != "N1" {
+		t.Fatalf("ids: %+v", diff)
+	}
+	if diff.Baseline == nil || *diff.Baseline != "git:abc1234" {
+		t.Fatalf("baseline: %+v", diff.Baseline)
+	}
+	if len(diff.Files) != 1 || diff.Files[0].Path != "README.md" || diff.Files[0].UnifiedDiff == "" {
+		t.Fatalf("files: %+v", diff.Files)
+	}
+
+	// No apply-patch endpoint
+	applyReq := httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/N1/apply-patch", strings.NewReader(`{}`))
+	applyReq.Header.Set("Authorization", "Bearer "+pairResp.Token)
+	applyRec := httptest.NewRecorder()
+	mux.ServeHTTP(applyRec, applyReq)
+	if applyRec.Code != http.StatusNotFound && applyRec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("apply-patch must not be supported, got %d", applyRec.Code)
+	}
+}
+
 func TestCreateRejectsCycle(t *testing.T) {
 	store := workflow.NewStore()
 	h := store.Handler()

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { AssignedTask } from "../gateway/types.js";
+import type { NodeDiffPayload } from "./diff.js";
 import type { WorkflowNode, WorkflowRun } from "./types.js";
 
 export function gatewayHttpBase(wsUrl: string): string {
@@ -85,6 +86,39 @@ export class GatewayHttpApi {
       throw new Error(`getWorkflow ${res.status}: ${text}`);
     }
     return (await res.json()) as WorkflowRun;
+  }
+
+  async putNodeDiff(diff: NodeDiffPayload): Promise<NodeDiffPayload> {
+    const res = await fetch(
+      `${this.baseUrl}/v1/workflows/${encodeURIComponent(diff.workflowId)}/nodes/${encodeURIComponent(diff.nodeId)}/diff`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${this.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(diff),
+      },
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`putNodeDiff ${res.status}: ${text}`);
+    }
+    return (await res.json()) as NodeDiffPayload;
+  }
+
+  async getNodeDiff(workflowId: string, nodeId: string): Promise<NodeDiffPayload> {
+    const res = await fetch(
+      `${this.baseUrl}/v1/workflows/${encodeURIComponent(workflowId)}/nodes/${encodeURIComponent(nodeId)}/diff`,
+      {
+        headers: { Authorization: `Bearer ${this.token}` },
+      },
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`getNodeDiff ${res.status}: ${text}`);
+    }
+    return (await res.json()) as NodeDiffPayload;
   }
 }
 

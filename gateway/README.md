@@ -45,6 +45,8 @@ go build -o bin/gateway .
 | GET | `/v1/workflows/{id}/nodes` | Bearer |
 | POST | `/v1/workflows/{id}/start` | Bearer；推 `workflow.assign` 给 Slave |
 | PATCH | `/v1/workflows/{id}/nodes/{nodeId}` | Bearer；节点状态 / taskId |
+| GET | `/v1/workflows/{id}/nodes/{nodeId}/diff` | Bearer；只读 NodeDiff |
+| PUT | `/v1/workflows/{id}/nodes/{nodeId}/diff` | Bearer；Slave 上传 diff（无 apply-patch） |
 | GET | `/v1/ws` | App WebSocket；query `token=` 或首帧 auth |
 | GET | `/v1/slave/ws` | **Slave 出站** WebSocket（register / heartbeat） |
 

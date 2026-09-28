@@ -17,10 +17,10 @@
 
 ## 完成定义（DoD）
 
-- [ ] `go.mod` 存在，主包可 `go run` / `go build`
-- [ ] `GET /v1/health` 返回 JSON `{"ok":true}`
-- [ ] 端口可配置（env 或 flag）
-- [ ] 简短 `gateway/README.md` 启动说明
+- [x] `go.mod` 存在，主包可 `go run` / `go build`
+- [x] `GET /v1/health` 返回 JSON `{"ok":true}`
+- [x] 端口可配置（env 或 flag）
+- [x] 简短 `gateway/README.md` 启动说明
 
 ## 禁止事项
 

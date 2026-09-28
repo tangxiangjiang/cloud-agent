@@ -3,7 +3,7 @@
 | Milestone | 状态 | 备注 |
 |-----------|------|------|
 | M01 仓库骨架与契约 | done | M01-P01～P03 已完成 |
-| M02 Gateway HTTP 基础 | pending | |
+| M02 Gateway HTTP 基础 | in_progress | M02-P01 已完成 |
 | M03 Gateway WS + Slave 协议 | pending | |
 | M04 Node Slave + Local Agent | pending | |
 | M05 工作流 DAG + 审核闸门 | pending | |
@@ -17,7 +17,7 @@
 - [x] M01-P01 @approved 2026-09-28（IDE）
 - [x] M01-P02 @approved 2026-09-28（IDE）
 - [x] M01-P03 @approved 2026-09-28（IDE）
-- [ ] M02-P01
+- [x] M02-P01 @approved 2026-09-28（IDE）
 - [ ] M02-P02
 - [ ] M02-P03
 - [ ] M02-P04

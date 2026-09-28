@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "bundle_cloud_agent_sample",
+  "title": "cloud-agent sample DAG (roadmaps phases)",
+  "repoId": "r_cloud_agent",
+  "preferredSlaveId": "slave_devpc",
+  "progressDoc": "doc/roadmaps/cloud-agent/progress.md",
+  "roadmapRef": "doc/roadmaps/cloud-agent/README.md",
+  "nodes": [
+    {
+      "id": "M07-P02",
+      "phaseRef": "doc/roadmaps/cloud-agent/phases/M07-P02-sample-dag-deploy.md",
+      "title": "Sample DAG & deploy docs",
+      "dependsOn": [],
+      "model": "composer-2.5",
+      "onFailure": "stop",
+      "prompt": {
+        "mode": "phase_file",
+        "extra": "Do not mark approved; human review required."
+      }
+    },
+    {
+      "id": "M07-P03",
+      "phaseRef": "doc/roadmaps/cloud-agent/phases/M07-P03-docs-align.md",
+      "title": "Docs align & MVP checklist",
+      "dependsOn": ["M07-P02"],
+      "model": "composer-2.5",
+      "onFailure": "stop",
+      "prompt": {
+        "mode": "phase_file",
+        "extra": "Do not mark approved; human review required."
+      }
+    }
+  ]
+}

@@ -47,6 +47,9 @@ go build -o bin/gateway .
 | PATCH | `/v1/workflows/{id}/nodes/{nodeId}` | Bearer；节点状态 / taskId |
 | GET | `/v1/workflows/{id}/nodes/{nodeId}/diff` | Bearer；只读 NodeDiff |
 | PUT | `/v1/workflows/{id}/nodes/{nodeId}/diff` | Bearer；Slave 上传 diff（无 apply-patch） |
+| POST | `/v1/workflows/{id}/nodes/{nodeId}/revise` | Bearer；限流；推 `workflow.revise` |
+| POST | `/v1/workflows/{id}/nodes/{nodeId}/review` | Bearer；approve/reject |
+| GET | `/v1/audit` | Bearer；近期审计事件 |
 | GET | `/v1/ws` | App WebSocket；query `token=` 或首帧 auth |
 | GET | `/v1/slave/ws` | **Slave 出站** WebSocket（register / heartbeat） |
 
@@ -67,6 +70,7 @@ curl -s http://127.0.0.1:8080/v1/auth/me \
 |------|------|
 | `-addr` / `GATEWAY_ADDR` | 监听地址，默认 `:8080` |
 | `-pair-code` / `GATEWAY_PAIR_CODE` | 配对码；为空则启动时随机生成并打日志 |
+| `-audit-log` / `GATEWAY_AUDIT_LOG` | 审计 JSONL 路径；默认 stderr（见 [docs/audit.md](./docs/audit.md)） |
 | `-config` / `GATEWAY_CONFIG` | YAML 配置（slave 占位列表）；见 `config.example.yaml` |
 
 ```bash

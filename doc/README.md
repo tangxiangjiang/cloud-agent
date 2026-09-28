@@ -7,6 +7,7 @@
 
 | 文档 | 内容 |
 |------|------|
+| [deploy.md](./deploy.md) | **本机部署联调**：环境变量、配对、启动顺序、样例 DAG |
 | [architecture.md](./architecture.md) | 总体架构、角色边界、安全约束 |
 | [workflow.md](./workflow.md) | **工作流**：人工设计 → milestone/phase → DAG → Slave/App |
 | [workflow-ingest.md](./workflow-ingest.md) | **投喂**：Skill → **`ai/`** → Slave → 手机任务单元 |

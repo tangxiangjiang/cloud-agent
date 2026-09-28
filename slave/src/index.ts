@@ -98,6 +98,7 @@ async function main(): Promise<void> {
     handlers,
     onWorkflowAssign: (run) => scheduler.enqueue(run),
     onWorkflowRevise: (msg) => scheduler.enqueueRevise(msg),
+    onWorkflowReview: (msg) => scheduler.enqueueReview(msg),
   };
   if (cfg.name !== undefined) {
     clientOpts.name = cfg.name;

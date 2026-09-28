@@ -8,8 +8,10 @@ import { log } from "../log.js";
 import { captureBaseline, collectNodeDiff } from "./diff.js";
 import { GatewayHttpApi } from "./http.js";
 import { buildNodePrompt, buildRevisePrompt } from "./prompt.js";
+import { writeProgressOnApprove } from "./progress.js";
 import {
   schedulableNodes,
+  type WorkflowReviewMessage,
   type WorkflowReviseMessage,
   type WorkflowRun,
 } from "./types.js";
@@ -64,6 +66,20 @@ export class SerialDagScheduler {
     this.chain = this.chain.then(() =>
       this.runRevise(msg.workflowId, msg.nodeId, instruction),
     );
+    return this.chain;
+  }
+
+  /**
+   * Enqueue a workflow.review from Gateway.
+   * approve → write progressDoc only; reject → never write progress.
+   * Downstream scheduling is driven by workflow.assign after approve.
+   */
+  enqueueReview(msg: WorkflowReviewMessage): Promise<void> {
+    if (!msg.workflowId || !msg.nodeId || !msg.decision) {
+      log.warn("workflow.review missing fields");
+      return this.chain;
+    }
+    this.chain = this.chain.then(() => this.runReview(msg));
     return this.chain;
   }
 
@@ -168,6 +184,75 @@ export class SerialDagScheduler {
       }
       await this.opts.http.patchNode(workflowId, node.id, { status: "skipped" });
     }
+  }
+
+  private async runReview(msg: WorkflowReviewMessage): Promise<void> {
+    const decision = String(msg.decision).trim().toLowerCase();
+    log.info("review received", {
+      workflowId: msg.workflowId,
+      nodeId: msg.nodeId,
+      decision,
+    });
+
+    if (decision === "reject") {
+      log.info("review reject: progress unchanged", {
+        workflowId: msg.workflowId,
+        nodeId: msg.nodeId,
+      });
+      return;
+    }
+    if (decision !== "approve") {
+      log.warn("review ignored: unknown decision", { decision });
+      return;
+    }
+
+    const run = await this.opts.http.getWorkflow(msg.workflowId);
+    const node = run.nodes.find((n) => n.id === msg.nodeId);
+    if (!node) {
+      log.error("review: node not found", {
+        workflowId: msg.workflowId,
+        nodeId: msg.nodeId,
+      });
+      return;
+    }
+
+    const repo = findRepo(this.opts.cfg, run.repoId);
+    if (!repo) {
+      log.error("review: repo not in whitelist", { repoId: run.repoId });
+      return;
+    }
+
+    try {
+      const result = writeProgressOnApprove({
+        repoCwd: repo.cwd,
+        progressDoc: run.progressDoc,
+        node,
+      });
+      if (result.written) {
+        log.info("progress.md updated on approve", {
+          workflowId: msg.workflowId,
+          nodeId: msg.nodeId,
+          phaseKey: result.phaseKey,
+          path: result.path,
+        });
+      } else {
+        log.warn("progress.md not written", {
+          workflowId: msg.workflowId,
+          nodeId: msg.nodeId,
+          phaseKey: result.phaseKey,
+          reason: result.reason,
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error("progress.md write failed", {
+        workflowId: msg.workflowId,
+        nodeId: msg.nodeId,
+        error: message,
+      });
+    }
+    // Gateway already set approved + RecomputeReady and sends workflow.assign
+    // for newly ready nodes; no further action here.
   }
 
   private async runRevise(

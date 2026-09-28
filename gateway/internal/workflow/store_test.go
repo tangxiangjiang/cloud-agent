@@ -263,6 +263,79 @@ func TestReviseOnlyWhenAwaitingReview(t *testing.T) {
 	}
 }
 
+func TestReviewApproveUnlocksDownstream(t *testing.T) {
+	store := workflow.NewStore()
+	h := store.Handler()
+	body := `{
+		"bundleId":"b","repoId":"r","slaveId":"s1","progressDoc":"ai/progress.md",
+		"nodes":[
+			{"id":"A","dependsOn":[]},
+			{"id":"B","dependsOn":["A"]}
+		]
+	}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A", strings.NewReader(`{"status":"awaiting_review"}`)))
+
+	// reject must not approve
+	badDec := httptest.NewRecorder()
+	h.ServeHTTP(badDec, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/review", strings.NewReader(`{"decision":"nope"}`)))
+	if badDec.Code != http.StatusBadRequest {
+		t.Fatalf("bad decision: %d", badDec.Code)
+	}
+
+	okRec := httptest.NewRecorder()
+	h.ServeHTTP(okRec, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/review", strings.NewReader(`{"decision":"approve","comment":"lgtm"}`)))
+	if okRec.Code != http.StatusOK {
+		t.Fatalf("approve: %d %s", okRec.Code, okRec.Body.String())
+	}
+	var resp struct {
+		Workflow workflow.Run `json:"workflow"`
+		Decision string       `json:"decision"`
+	}
+	_ = json.NewDecoder(okRec.Body).Decode(&resp)
+	if resp.Decision != "approve" {
+		t.Fatalf("decision: %s", resp.Decision)
+	}
+	if resp.Workflow.Nodes[0].Status != workflow.NodeApproved {
+		t.Fatalf("A want approved, got %s", resp.Workflow.Nodes[0].Status)
+	}
+	if resp.Workflow.Nodes[1].Status != workflow.NodeReady {
+		t.Fatalf("B want ready after approve, got %s", resp.Workflow.Nodes[1].Status)
+	}
+}
+
+func TestReviewRejectDoesNotUnlock(t *testing.T) {
+	store := workflow.NewStore()
+	h := store.Handler()
+	body := `{"bundleId":"b","repoId":"r","nodes":[{"id":"A","dependsOn":[]},{"id":"B","dependsOn":["A"]}]}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A", strings.NewReader(`{"status":"awaiting_review"}`)))
+
+	rej := httptest.NewRecorder()
+	h.ServeHTTP(rej, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/review", strings.NewReader(`{"decision":"reject"}`)))
+	if rej.Code != http.StatusOK {
+		t.Fatalf("reject: %d", rej.Code)
+	}
+	var resp struct {
+		Workflow workflow.Run `json:"workflow"`
+	}
+	_ = json.NewDecoder(rej.Body).Decode(&resp)
+	if resp.Workflow.Nodes[0].Status != workflow.NodeRejected {
+		t.Fatalf("A want rejected, got %s", resp.Workflow.Nodes[0].Status)
+	}
+	if resp.Workflow.Nodes[1].Status == workflow.NodeReady || resp.Workflow.Nodes[1].Status == workflow.NodeApproved {
+		t.Fatalf("B must not unlock on reject, got %s", resp.Workflow.Nodes[1].Status)
+	}
+}
+
 func TestPutAndGetDiff(t *testing.T) {
 	authStore := auth.NewStore("PAIR")
 	wfStore := workflow.NewStore()

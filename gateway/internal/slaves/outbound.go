@@ -151,6 +151,34 @@ func (h *OutboundHub) AssignRevise(slaveID, workflowID, nodeID, instruction stri
 	return true
 }
 
+// AssignReview implements workflow.Starter — notify Slave of approve/reject.
+// On approve, Slave writes progressDoc; reject must not write progress.
+func (h *OutboundHub) AssignReview(slaveID, workflowID, nodeID, decision, comment string) bool {
+	if slaveID == "" || workflowID == "" || nodeID == "" {
+		return false
+	}
+	if decision != "approve" && decision != "reject" {
+		return false
+	}
+	h.mu.Lock()
+	c := h.conns[slaveID]
+	h.mu.Unlock()
+	if c == nil {
+		return false
+	}
+	body := map[string]any{
+		"type":       "workflow.review",
+		"workflowId": workflowID,
+		"nodeId":     nodeID,
+		"decision":   decision,
+	}
+	if comment != "" {
+		body["comment"] = comment
+	}
+	c.sendJSON(body)
+	return true
+}
+
 type slaveConn struct {
 	hub    *OutboundHub
 	conn   *websocket.Conn

@@ -4,7 +4,11 @@
 import WebSocket from "ws";
 import type { RepoConfig } from "../config.js";
 import { log } from "../log.js";
-import type { WorkflowReviseMessage, WorkflowRun } from "../workflow/types.js";
+import type {
+  WorkflowReviewMessage,
+  WorkflowReviseMessage,
+  WorkflowRun,
+} from "../workflow/types.js";
 import type { AssignedTask, EmitEvent, InboundMessage, TaskHandlers } from "./types.js";
 
 export interface GatewayClientOptions {
@@ -19,6 +23,8 @@ export interface GatewayClientOptions {
   onWorkflowAssign?: (run: WorkflowRun) => void | Promise<void>;
   /** Optional revise follow-up hook for workflow.revise */
   onWorkflowRevise?: (msg: WorkflowReviseMessage) => void | Promise<void>;
+  /** Optional review hook: approve → write progress; reject → no progress */
+  onWorkflowReview?: (msg: WorkflowReviewMessage) => void | Promise<void>;
   heartbeatMs?: number;
   /** Initial reconnect delay; doubles up to maxReconnectMs. */
   reconnectMs?: number;
@@ -250,6 +256,44 @@ export class GatewayClient {
           }
         } else {
           log.warn("workflow.revise ignored (no scheduler)");
+        }
+        break;
+      }
+      case "workflow.review": {
+        const m = msg as {
+          workflowId?: string;
+          nodeId?: string;
+          decision?: string;
+          comment?: string;
+        };
+        if (!m.workflowId || !m.nodeId || !m.decision) {
+          log.warn("workflow.review missing fields");
+          break;
+        }
+        log.info("workflow review", {
+          workflowId: m.workflowId,
+          nodeId: m.nodeId,
+          decision: m.decision,
+        });
+        if (this.opts.onWorkflowReview) {
+          try {
+            const payload: WorkflowReviewMessage = {
+              workflowId: m.workflowId,
+              nodeId: m.nodeId,
+              decision: m.decision,
+            };
+            if (m.comment !== undefined) payload.comment = m.comment;
+            await this.opts.onWorkflowReview(payload);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            log.error("review handler failed", {
+              workflowId: m.workflowId,
+              nodeId: m.nodeId,
+              error: message,
+            });
+          }
+        } else {
+          log.warn("workflow.review ignored (no scheduler)");
         }
         break;
       }

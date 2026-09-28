@@ -36,7 +36,9 @@ wss://{gateway}/v1/slave/ws
 | `pong` | — | 对 `ping` |
 | `task.assign` | `task`（Task JSON） | 下发 queued 任务（无 workflowId 的自由任务） |
 | `task.cancel` | `taskId` | 取消 |
-| `workflow.assign` | `workflow`（WorkflowRun JSON） | `POST /workflows/{id}/start` 后推给目标 Slave；串行 DAG 调度 |
+| `workflow.assign` | `workflow`（WorkflowRun JSON） | `POST /workflows/{id}/start` 或 approve 后续跑；串行 DAG 调度 |
+| `workflow.revise` | `workflowId`, `nodeId`, `instruction` | App revise；Slave follow-up / 再跑（不写 progress） |
+| `workflow.review` | `workflowId`, `nodeId`, `decision`, `comment?` | `approve` → Slave 写 `progressDoc`；`reject` → 不写 |
 | `error` | `error` | 失败 |
 
 `task.event.kind` 与 App 侧一致：`status` / `assistant.delta` / `tool.*` / `error` / `done`。

@@ -53,6 +53,13 @@ export type InboundMessage =
       nodeId: string;
       instruction: string;
     }
+  | {
+      type: "workflow.review";
+      workflowId: string;
+      nodeId: string;
+      decision: "approve" | "reject" | string;
+      comment?: string;
+    }
   | { type: "error"; error?: string }
   | { type: string; [k: string]: unknown };
 

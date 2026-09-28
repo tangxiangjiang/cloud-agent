@@ -161,7 +161,7 @@ Agent 成功只许进入 `awaiting_review`，**不得**直接 `approved`。仅�
 样例 DAG：`slave/fixtures/dag-two-node.json`、`ai/bundles/m05-p02-two-node.json`。
 
 节点状态枚举：`pending / ready / running / awaiting_review / approved / rejected / failed / cancelled / skipped`。  
-审核 / diff / approve 写进度见后续 M05 phases。
+审核 / diff：只读 diff 见 M05-P03；revise 见 M05-P04；approve 写进度见 M05-P05（`POST .../review`，Slave 仅 approve 时更新 `progressDoc`）。
 
 ### 工作流节点审核（App 闸门）
 

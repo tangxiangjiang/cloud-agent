@@ -22,6 +22,8 @@
 | M05-P01 | approved | Workflow/DAG 模型与 API |
 | M05-P02 | approved | Slave 串行 DAG 调度 + awaiting_review 闸门 |
 | M05-P03 | approved | 只读 NodeDiff API + git 基线采集 |
+| M05-P04 | approved | Revise follow-up + reviseHistory |
+| M05-P05 | approved | Approve 写 progressDoc + 解锁下游 |
 
 ## 勾选
 
@@ -42,4 +44,6 @@
 - [x] M05-P01 @approved 2026-09-28（IDE）
 - [x] M05-P02 @approved 2026-09-28（IDE）
 - [x] M05-P03 @approved 2026-09-28（IDE）
-- [ ] （其余 phase：Slave 在 App approve 后写入，格式：`- [x] <nodeId> @approved <iso8601>`）
+- [x] M05-P04 @approved 2026-09-28（IDE）
+- [x] M05-P05 @approved 2026-09-28（IDE）
+- [ ] （其余 phase：Slave 在 App approve 后写入，格式：`- [x] Mxx-Pxx @approved <iso8601>`）

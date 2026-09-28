@@ -59,6 +59,13 @@ export interface WorkflowReviseMessage {
   instruction: string;
 }
 
+export interface WorkflowReviewMessage {
+  workflowId: string;
+  nodeId: string;
+  decision: "approve" | "reject" | string;
+  comment?: string;
+}
+
 /**
  * Nodes that may run: status===ready AND (no deps OR all deps approved).
  * Awaiting_review does not unlock dependents.

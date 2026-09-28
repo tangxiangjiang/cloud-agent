@@ -56,13 +56,15 @@ npm run smoke-local
 1. 校验配置与 `repos[].cwd` 绝对路径白名单；拒绝配置中的 `cloud` / 明文 `apiKey`
 2. 出站 WS：`auth` → `register` → `heartbeat`；断线重连
 3. `task.assign` → 仅用 `repoId` 查白名单 cwd → Local Agent → stream 映射 → **必** `wait` → dispose
-4. `workflow.assign`（`POST /workflows/{id}/start`）→ **串行**取 `ready` 节点 → 创建 task → 执行 → 节点进 `awaiting_review`（**绝不**直接 approved）；下游须依赖节点 `approved` 后才 `ready`（M05-P05）
-5. `task.cancel` → `run.cancel()`（若 `supports`）；否则记原因并停止转发后续 stream（含 tool）
-6. 错误：`phase: policy|startup|run`；日志脱敏
+4. `workflow.assign`（`POST /workflows/{id}/start`）→ **串行**取 `ready` 节点 → 创建 task → 执行 → 节点进 `awaiting_review`（**绝不**直接 approved）；下游须依赖节点 `approved` 后才 `ready`
+5. `workflow.revise` → follow-up / 再跑 → 刷新 diff → 再 `awaiting_review`（不写 progress）
+6. `workflow.review` approve → **仅此时**更新 `progressDoc`（须为相对路径且 basename=`progress.md`）；reject 不写；approve 后 Gateway 再 `workflow.assign` 续跑下游
+7. `task.cancel` → `run.cancel()`（若 `supports`）；否则记原因并停止转发后续 stream（含 tool）
+8. 错误：`phase: policy|startup|run`；日志脱敏
 
 样例两节点 DAG：`fixtures/dag-two-node.json`（亦见 `ai/bundles/m05-p02-two-node.json`）。
 
-Diff 基线与只读 API：[docs/diff-baseline.md](./docs/diff-baseline.md)。
+Diff：[docs/diff-baseline.md](./docs/diff-baseline.md) · Approve 写进度：[docs/progress-approve.md](./docs/progress-approve.md)。
 
 ## 安全注意事项
 
@@ -92,7 +94,10 @@ Diff 基线与只读 API：[docs/diff-baseline.md](./docs/diff-baseline.md)。
 | M04-P02 | Gateway 出站客户端 |
 | M04-P03 | Local Agent create/send/stream/wait |
 | M04-P04 | 取消 / 错误 / 安全默认 |
-| **M05-P02** | 串行 DAG：`workflow.assign` → ready 节点 → task → `awaiting_review`（当前） |
+| M05-P02 | 串行 DAG + `awaiting_review` 闸门 |
+| M05-P03 | 只读 NodeDiff + git 基线 |
+| M05-P04 | Revise follow-up 循环 |
+| **M05-P05** | Approve 写 `progressDoc` + 解锁下游（当前） |
 
 协议：[../gateway/docs/slave-ws.md](../gateway/docs/slave-ws.md)  
 设计：[doc/local-slave.md](../doc/local-slave.md) · [doc/architecture.md](../doc/architecture.md)

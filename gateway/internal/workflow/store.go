@@ -98,10 +98,11 @@ type createRequest struct {
 	Nodes       []createNodeRequest `json:"nodes"`
 }
 
-// Starter delivers workflow / revise messages to an online Slave.
+// Starter delivers workflow / revise / review messages to an online Slave.
 type Starter interface {
 	AssignWorkflow(run *Run) bool
 	AssignRevise(slaveID, workflowID, nodeID, instruction string) bool
+	AssignReview(slaveID, workflowID, nodeID, decision, comment string) bool
 }
 
 type nodePatchRequest struct {
@@ -112,6 +113,11 @@ type nodePatchRequest struct {
 
 type reviseRequest struct {
 	Instruction string `json:"instruction"`
+}
+
+type reviewRequest struct {
+	Decision string `json:"decision"`
+	Comment  string `json:"comment"`
 }
 
 type Store struct {
@@ -143,6 +149,7 @@ func (s *Store) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/workflows/{id}/nodes/{nodeId}/diff", s.handleGetDiff)
 	mux.HandleFunc("PUT /v1/workflows/{id}/nodes/{nodeId}/diff", s.handlePutDiff)
 	mux.HandleFunc("POST /v1/workflows/{id}/nodes/{nodeId}/revise", s.handleRevise)
+	mux.HandleFunc("POST /v1/workflows/{id}/nodes/{nodeId}/review", s.handleReview)
 	return mux
 }
 
@@ -517,6 +524,87 @@ func (s *Store) handleRevise(w http.ResponseWriter, r *http.Request) {
 		"workflow":  out,
 		"delivered": delivered,
 		"revise":    entry,
+	})
+}
+
+func (s *Store) handleReview(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	nodeID := r.PathValue("nodeId")
+	var req reviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	decision := strings.TrimSpace(strings.ToLower(req.Decision))
+	if decision != "approve" && decision != "reject" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "decision must be approve or reject"})
+		return
+	}
+	comment := strings.TrimSpace(req.Comment)
+
+	s.mu.Lock()
+	run, ok := s.runs[id]
+	if !ok {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "workflow not found"})
+		return
+	}
+	idx := -1
+	for i := range run.Nodes {
+		if run.Nodes[i].ID == nodeID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
+		return
+	}
+	if run.Nodes[idx].Status != NodeAwaitingReview {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "node must be awaiting_review"})
+		return
+	}
+
+	u := s.now().Format(time.RFC3339Nano)
+	if decision == "approve" {
+		run.Nodes[idx].Status = NodeApproved
+	} else {
+		run.Nodes[idx].Status = NodeRejected
+	}
+	RecomputeReady(run.Nodes)
+	if anyNode(run.Nodes, NodeFailed) {
+		run.Status = StatusFailed
+	} else if allNodesTerminalSuccess(run.Nodes) {
+		run.Status = StatusCompleted
+	} else if decision == "reject" {
+		// Reject stops the gate; leave workflow running/failed-ish — mark failed if no path.
+		run.Status = StatusFailed
+	} else {
+		run.Status = StatusRunning
+	}
+	run.UpdatedAt = &u
+	slaveID := ""
+	if run.SlaveID != nil {
+		slaveID = *run.SlaveID
+	}
+	out := cloneRun(run)
+	s.mu.Unlock()
+
+	delivered := false
+	if s.starter != nil && slaveID != "" {
+		delivered = s.starter.AssignReview(slaveID, id, nodeID, decision, comment)
+		// After approve, push workflow again so Slave can schedule newly ready nodes.
+		if decision == "approve" {
+			_ = s.starter.AssignWorkflow(out)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"workflow":  out,
+		"delivered": delivered,
+		"decision":  decision,
+		"comment":   comment,
 	})
 }
 

@@ -80,12 +80,17 @@ func (s *Store) HandlePair(w http.ResponseWriter, r *http.Request) {
 func (s *Store) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := bearerToken(r.Header.Get("Authorization"))
-		if token == "" || !s.valid(token) {
+		if token == "" || !s.ValidToken(token) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// ValidToken reports whether token is issued and unexpired.
+func (s *Store) ValidToken(token string) bool {
+	return s.valid(token)
 }
 
 func (s *Store) valid(token string) bool {

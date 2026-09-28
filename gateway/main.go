@@ -13,12 +13,14 @@ import (
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/auth"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/slaves"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/task"
+	"github.com/tangxiangjiang/cloud-agent/gateway/internal/ws"
 )
 
 func main() {
 	addr := flag.String("addr", envOr("GATEWAY_ADDR", ":8080"), "HTTP listen address (env GATEWAY_ADDR)")
 	pairCodeFlag := flag.String("pair-code", envOr("GATEWAY_PAIR_CODE", ""), "pairing code (env GATEWAY_PAIR_CODE); generated if empty")
 	configPath := flag.String("config", envOr("GATEWAY_CONFIG", ""), "optional YAML config path (env GATEWAY_CONFIG); see config.example.yaml")
+	debug := flag.Bool("debug", envOr("GATEWAY_DEBUG", "") == "1", "enable debug event inject endpoint")
 	flag.Parse()
 
 	pairCode := *pairCodeFlag
@@ -32,6 +34,7 @@ func main() {
 
 	authStore := auth.NewStore(pairCode)
 	taskStore := task.NewStore()
+	hub := ws.NewHub(authStore)
 
 	var slaveList []slaves.Slave
 	if *configPath != "" {
@@ -56,6 +59,24 @@ func main() {
 	taskHandler := authStore.Middleware(taskStore.Handler())
 	mux.Handle("/v1/tasks", taskHandler)
 	mux.Handle("/v1/tasks/", taskHandler)
+	mux.HandleFunc("GET /v1/ws", hub.HandleWS)
+
+	if *debug {
+		log.Printf("debug inject enabled: POST /v1/debug/tasks/{id}/events")
+		mux.Handle("POST /v1/debug/tasks/{id}/events", authStore.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body struct {
+				Kind    string         `json:"kind"`
+				Payload map[string]any `json:"payload"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Kind == "" {
+				http.Error(w, `{"error":"kind required"}`, http.StatusBadRequest)
+				return
+			}
+			env := hub.Publish(r.PathValue("id"), body.Kind, body.Payload)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(env)
+		})))
+	}
 
 	log.Printf("gateway listening on %s", *addr)
 	if err := http.ListenAndServe(*addr, mux); err != nil {

@@ -38,6 +38,7 @@ go build -o bin/gateway .
 | GET | `/v1/tasks` | Bearer；query `status`、`limit` |
 | GET | `/v1/tasks/{id}` | Bearer |
 | POST | `/v1/tasks/{id}/cancel` | Bearer；无执行器时直接 `cancelled` |
+| GET | `/v1/ws` | WebSocket；query `token=` 或首帧 `{"type":"auth","token":"..."}` |
 
 ```bash
 curl -s http://127.0.0.1:8080/v1/health
@@ -68,10 +69,32 @@ go run . -config config.yaml -pair-code ABCD-EFGH
 
 Token 仅存网关内存，**不会**包含或返回 `CURSOR_API_KEY`。
 
+## WebSocket（App）
+
+```text
+1) 配对拿到 token
+2) 连接 ws://127.0.0.1:8080/v1/ws
+3) {"type":"auth","token":"<token>"}  → auth.ok
+4) {"type":"subscribe","taskId":"tsk_xxx","lastSeq":0} → subscribed + 补发
+5) {"type":"ping"} → {"type":"pong"}
+6) 服务端推送 {"type":"task.event","taskId":"...","seq":n,"at":"...","event":{...}}
+```
+
+开发注入事件（勿用于生产习惯）：
+
+```bash
+go run . -debug -pair-code ABCD-EFGH
+# POST /v1/debug/tasks/{id}/events  Authorization: Bearer …
+# body: {"kind":"assistant.delta","payload":{"text":"hi"}}
+```
+
+**禁止**在 WS 上传 `CURSOR_API_KEY`；只用 Gateway Bearer token。
+
 ## 测试
 
 ```bash
 go test ./...
+# 含 internal/ws：鉴权失败、subscribe、ping/pong、seq 递增事件
 ```
 
-参见：[doc/api-outline.md](../doc/api-outline.md)
+参见：[doc/api-outline.md](../doc/api-outline.md)、[doc/communication.md](../doc/communication.md)

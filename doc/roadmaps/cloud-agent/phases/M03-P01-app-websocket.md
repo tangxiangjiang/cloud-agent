@@ -17,10 +17,10 @@ Gateway 实现 `/v1/ws`：鉴权、subscribe/unsubscribe、ping/pong、按 taskI
 
 ## 完成定义（DoD）
 
-- [ ] 无效 token 无法完成订阅（握手或首帧 auth 失败）
-- [ ] subscribe 后能收到带递增 `seq` 的事件
-- [ ] ping/pong 可用
-- [ ] 有最小手动或自动测试说明
+- [x] 无效 token 无法完成订阅（握手或首帧 auth 失败）
+- [x] subscribe 后能收到带递增 `seq` 的事件
+- [x] ping/pong 可用
+- [x] 有最小手动或自动测试说明
 
 ## 禁止事项
 

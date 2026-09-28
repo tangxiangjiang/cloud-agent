@@ -1,4 +1,4 @@
-# Slave ↔ Gateway 出站协议（M03-P02）
+# Slave ↔ Gateway 出站协议
 
 Slave **主动出站**连接 Gateway，不对公网开入站端口。
 
@@ -21,9 +21,10 @@ wss://{gateway}/v1/slave/ws
 | type | 字段 | 说明 |
 |------|------|------|
 | `auth` | `token` | 鉴权 |
-| `register` | `slaveId`, `name?`, `repos[{id,name,cwd}]` | 登记；Gateway 将 `online=true` |
-| `heartbeat` | — | 保活；刷新 online |
+| `register` | `slaveId`, `name?`, `repos[{id,name,cwd}]` | 登记；`online=true`；并领取该 slave 的 queued tasks |
+| `heartbeat` | — | 保活 |
 | `ping` | — | 应用层 ping |
+| `task.event` | `taskId`, `event.kind`, `event.payload` | 上报事件；Gateway 赋 `seq` 并 fan-out 到 App WS |
 
 ### Gateway → Slave
 
@@ -33,9 +34,11 @@ wss://{gateway}/v1/slave/ws
 | `registered` | `slaveId` | 登记成功 |
 | `heartbeat.ok` | — | 心跳应答 |
 | `pong` | — | 对 `ping` |
+| `task.assign` | `task`（Task JSON） | 下发 queued 任务 |
+| `task.cancel` | `taskId` | 取消 |
 | `error` | `error` | 失败 |
 
-后续 M03-P03 将增加任务下发 / 事件上报消息，本阶段仅登记与在线态。
+`task.event.kind` 与 App 侧一致：`status` / `assistant.delta` / `tool.*` / `error` / `done`。
 
 ## 在线语义
 
@@ -43,14 +46,18 @@ wss://{gateway}/v1/slave/ws
 - 连接断开后经宽限（默认 3s）置 `online=false`  
 - `GET /v1/slaves`（App Bearer）反映上述状态  
 
-## 最小客户端
+## 联调（mock）
 
 ```bash
 # 终端 A
-cd gateway && go run . -pair-code ABCD-EFGH -debug
+cd gateway && go run . -pair-code ABCD-EFGH
 
-# 终端 B：配对拿 token，再
-go run ./cmd/slaveping -token <token> -id slave_devpc -cwd /path/to/repo
+# 终端 B：配对
+curl -s -X POST http://127.0.0.1:8080/v1/auth/pair -H "Content-Type: application/json" -d "{\"pairCode\":\"ABCD-EFGH\"}"
+
+# 终端 C：mock slave
+go run ./cmd/mockslave -token <token> -id slave_devpc
+
+# 创建任务后 App 订阅 ws://.../v1/ws → subscribe taskId
+# 或 GET /v1/tasks/{id}/events?afterSeq=0 拉快照
 ```
-
-然后 App/`curl` 带 Bearer 访问 `GET /v1/slaves` 应见 `online: true`。

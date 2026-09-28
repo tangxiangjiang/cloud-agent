@@ -83,7 +83,7 @@ func TestOutboundRegisterHeartbeatAndOffline(t *testing.T) {
 	store := auth.NewStore("PAIR")
 	reg := slaves.NewRegistry(nil)
 	reg.SetGrace(200 * time.Millisecond)
-	hub := slaves.NewOutboundHub(store, reg)
+	hub := slaves.NewOutboundHub(store, reg, nil, nil)
 
 	pairRec := httptest.NewRecorder()
 	store.HandlePair(pairRec, httptest.NewRequest(http.MethodPost, "/v1/auth/pair", strings.NewReader(`{"pairCode":"PAIR"}`)))

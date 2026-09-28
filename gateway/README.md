@@ -98,15 +98,18 @@ go run . -debug -pair-code ABCD-EFGH
 ```bash
 go run . -pair-code ABCD-EFGH
 # 另开终端：配对拿 token 后
-go run ./cmd/slaveping -token <token> -id slave_devpc
-# GET /v1/slaves 应见 online=true
+go run ./cmd/mockslave -token <token> -id slave_devpc
+# 创建 POST /v1/tasks 后 mock 会上报 running/delta/done；App 订 /v1/ws
+# 事件兜底：GET /v1/tasks/{id}/events?afterSeq=0
 ```
+
+仅登记探活仍可用 `go run ./cmd/slaveping ...`。
 
 ## 测试
 
 ```bash
 go test ./...
-# internal/ws：App 枢纽；internal/slaves：出站登记/心跳/离线宽限
+# internal/ws：App 枢纽；internal/slaves：登记/下发/fan-out/取消
 ```
 
 参见：[doc/api-outline.md](../doc/api-outline.md)、[doc/communication.md](../doc/communication.md)

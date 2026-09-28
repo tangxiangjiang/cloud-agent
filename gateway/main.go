@@ -35,6 +35,7 @@ func main() {
 	authStore := auth.NewStore(pairCode)
 	taskStore := task.NewStore()
 	hub := ws.NewHub(authStore)
+	taskStore.SetEventSource(hub)
 
 	var slaveList []slaves.Slave
 	if *configPath != "" {
@@ -48,7 +49,8 @@ func main() {
 		log.Printf("no -config set; GET /v1/slaves returns empty list (see config.example.yaml)")
 	}
 	slaveReg := slaves.NewRegistry(slaveList)
-	slaveHub := slaves.NewOutboundHub(authStore, slaveReg)
+	slaveHub := slaves.NewOutboundHub(authStore, slaveReg, taskStore, hub)
+	taskStore.SetDispatcher(slaveHub)
 
 	log.Printf("pair code: %s (use POST /v1/auth/pair)", authStore.PairCode())
 

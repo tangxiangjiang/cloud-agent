@@ -17,10 +17,10 @@ queued Task 下发给已登记 Slave；Slave（mock）上报事件；Gateway 写
 
 ## 完成定义（DoD）
 
-- [ ] 创建 task → mock slave 收到 → 回报 running/delta/done
-- [ ] App WS 订阅者能看到对应事件
-- [ ] cancel 能下达到 mock slave（mock 标记 cancelled 即可）
-- [ ] `GET /tasks/{id}/events?afterSeq=` 可用作兜底（若已实现）
+- [x] 创建 task → mock slave 收到 → 回报 running/delta/done
+- [x] App WS 订阅者能看到对应事件
+- [x] cancel 能下达到 mock slave（mock 标记 cancelled 即可）
+- [x] `GET /tasks/{id}/events?afterSeq=` 可用作兜底（若已实现）
 
 ## 禁止事项
 

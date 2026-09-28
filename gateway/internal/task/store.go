@@ -48,6 +48,17 @@ type Task struct {
 	UpdatedAt     *string    `json:"updatedAt"`
 }
 
+// Dispatcher delivers tasks/cancels to an online Slave (implemented by slaves.OutboundHub).
+type Dispatcher interface {
+	Assign(t *Task) bool
+	RequestCancel(taskID, slaveID string) bool
+}
+
+// EventSource provides HTTP fallback snapshots of task.event stream.
+type EventSource interface {
+	EventsAfterMaps(taskID string, afterSeq int) (events []map[string]any, latestSeq int)
+}
+
 type createRequest struct {
 	SlaveID string `json:"slaveId"`
 	RepoID  string `json:"repoId"`
@@ -56,10 +67,12 @@ type createRequest struct {
 }
 
 type Store struct {
-	mu      sync.RWMutex
-	tasks   map[string]*Task
-	byIdem  map[string]string // Idempotency-Key -> task id
-	now     func() time.Time
+	mu         sync.RWMutex
+	tasks      map[string]*Task
+	byIdem     map[string]string
+	now        func() time.Time
+	dispatcher Dispatcher
+	events     EventSource
 }
 
 func NewStore() *Store {
@@ -70,11 +83,16 @@ func NewStore() *Store {
 	}
 }
 
+func (s *Store) SetDispatcher(d Dispatcher) { s.dispatcher = d }
+
+func (s *Store) SetEventSource(e EventSource) { s.events = e }
+
 func (s *Store) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/tasks", s.handleCreate)
 	mux.HandleFunc("GET /v1/tasks", s.handleList)
 	mux.HandleFunc("GET /v1/tasks/{id}", s.handleGet)
+	mux.HandleFunc("GET /v1/tasks/{id}/events", s.handleEvents)
 	mux.HandleFunc("POST /v1/tasks/{id}/cancel", s.handleCancel)
 	return mux
 }
@@ -135,6 +153,10 @@ func (s *Store) handleCreate(w http.ResponseWriter, r *http.Request) {
 	out := cloneTask(t)
 	s.mu.Unlock()
 
+	if s.dispatcher != nil {
+		go s.dispatcher.Assign(out)
+	}
+
 	writeJSON(w, http.StatusCreated, out)
 }
 
@@ -183,28 +205,129 @@ func (s *Store) handleGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+func (s *Store) handleEvents(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	s.mu.RLock()
+	_, ok := s.tasks[id]
+	s.mu.RUnlock()
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	after := 0
+	if v := r.URL.Query().Get("afterSeq"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err == nil && n >= 0 {
+			after = n
+		}
+	}
+	events := []map[string]any{}
+	latest := 0
+	if s.events != nil {
+		events, latest = s.events.EventsAfterMaps(id, after)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"events":    events,
+		"latestSeq": latest,
+	})
+}
+
 func (s *Store) handleCancel(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	t, ok := s.tasks[id]
 	if !ok {
+		s.mu.Unlock()
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
 	switch t.Status {
 	case StatusFinished, StatusError, StatusCancelled:
-		writeJSON(w, http.StatusOK, map[string]string{"status": t.Status})
+		st := t.Status
+		s.mu.Unlock()
+		writeJSON(w, http.StatusOK, map[string]string{"status": st})
 		return
 	case StatusCancelling:
+		s.mu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]string{"status": StatusCancelling})
 		return
-	default:
-		// No executor yet: go straight to cancelled (phase allows this).
-		t.Status = StatusCancelled
-		u := s.now().Format(time.RFC3339Nano)
-		t.UpdatedAt = &u
-		writeJSON(w, http.StatusOK, map[string]string{"status": StatusCancelled})
+	}
+	slaveID := ""
+	if t.SlaveID != nil {
+		slaveID = *t.SlaveID
+	}
+	s.mu.Unlock()
+
+	delivered := false
+	if s.dispatcher != nil && slaveID != "" {
+		delivered = s.dispatcher.RequestCancel(id, slaveID)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok = s.tasks[id]
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	u := s.now().Format(time.RFC3339Nano)
+	t.UpdatedAt = &u
+	if delivered {
+		t.Status = StatusCancelling
+		writeJSON(w, http.StatusOK, map[string]string{"status": StatusCancelling})
+		return
+	}
+	t.Status = StatusCancelled
+	writeJSON(w, http.StatusOK, map[string]string{"status": StatusCancelled})
+}
+
+// ListQueuedForSlave returns queued tasks for a slave (for claim-on-register).
+func (s *Store) ListQueuedForSlave(slaveID string) []*Task {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []*Task
+	for _, t := range s.tasks {
+		if t.Status != StatusQueued {
+			continue
+		}
+		if t.SlaveID != nil && *t.SlaveID == slaveID {
+			out = append(out, cloneTask(t))
+		}
+	}
+	return out
+}
+
+// ApplySlaveEvent updates task status from a slave-reported event kind/payload.
+func (s *Store) ApplySlaveEvent(taskID, kind string, payload map[string]any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[taskID]
+	if !ok {
+		return
+	}
+	u := s.now().Format(time.RFC3339Nano)
+	t.UpdatedAt = &u
+	switch kind {
+	case "status":
+		if st, _ := payload["status"].(string); st != "" {
+			t.Status = st
+		}
+	case "done":
+		st, _ := payload["status"].(string)
+		switch st {
+		case StatusFinished, StatusError, StatusCancelled:
+			t.Status = st
+		default:
+			t.Status = StatusFinished
+		}
+	case "error":
+		msg, _ := payload["message"].(string)
+		if msg == "" {
+			msg = "slave error"
+		}
+		t.Status = StatusError
+		t.Error = &TaskError{Message: msg}
 	}
 }
 

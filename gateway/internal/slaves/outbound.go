@@ -12,6 +12,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/auth"
+	"github.com/tangxiangjiang/cloud-agent/gateway/internal/task"
+	"github.com/tangxiangjiang/cloud-agent/gateway/internal/ws"
 )
 
 var slaveUpgrader = websocket.Upgrader{
@@ -19,21 +21,39 @@ var slaveUpgrader = websocket.Upgrader{
 }
 
 type slaveClientMsg struct {
-	Type    string `json:"type"`
-	Token   string `json:"token"`
-	SlaveID string `json:"slaveId"`
-	Name    string `json:"name"`
-	Repos   []Repo `json:"repos"`
+	Type    string         `json:"type"`
+	Token   string         `json:"token"`
+	SlaveID string         `json:"slaveId"`
+	Name    string         `json:"name"`
+	Repos   []Repo         `json:"repos"`
+	TaskID  string         `json:"taskId"`
+	Event   *slaveEventIn  `json:"event"`
+}
+
+type slaveEventIn struct {
+	Kind    string         `json:"kind"`
+	Payload map[string]any `json:"payload"`
 }
 
 // OutboundHub accepts Slave → Gateway WebSocket connections (slaves dial out).
 type OutboundHub struct {
-	auth *auth.Store
-	reg  *Registry
+	auth   *auth.Store
+	reg    *Registry
+	tasks  *task.Store
+	appHub *ws.Hub
+
+	mu    sync.Mutex
+	conns map[string]*slaveConn // slaveId -> connection
 }
 
-func NewOutboundHub(store *auth.Store, reg *Registry) *OutboundHub {
-	return &OutboundHub{auth: store, reg: reg}
+func NewOutboundHub(store *auth.Store, reg *Registry, tasks *task.Store, appHub *ws.Hub) *OutboundHub {
+	return &OutboundHub{
+		auth:   store,
+		reg:    reg,
+		tasks:  tasks,
+		appHub: appHub,
+		conns:  make(map[string]*slaveConn),
+	}
 }
 
 func (h *OutboundHub) HandleWS(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +65,7 @@ func (h *OutboundHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	c := &slaveConn{
 		hub:  h,
 		conn: conn,
-		send: make(chan []byte, 16),
+		send: make(chan []byte, 32),
 	}
 	if tok := r.URL.Query().Get("token"); tok != "" {
 		if !h.auth.ValidToken(tok) {
@@ -57,6 +77,39 @@ func (h *OutboundHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	go c.writePump()
 	c.readPump()
+}
+
+// Assign implements task.Dispatcher.
+func (h *OutboundHub) Assign(t *task.Task) bool {
+	if t == nil || t.SlaveID == nil || *t.SlaveID == "" {
+		return false
+	}
+	h.mu.Lock()
+	c := h.conns[*t.SlaveID]
+	h.mu.Unlock()
+	if c == nil {
+		return false
+	}
+	c.sendJSON(map[string]any{
+		"type": "task.assign",
+		"task": t,
+	})
+	return true
+}
+
+// RequestCancel implements task.Dispatcher.
+func (h *OutboundHub) RequestCancel(taskID, slaveID string) bool {
+	h.mu.Lock()
+	c := h.conns[slaveID]
+	h.mu.Unlock()
+	if c == nil {
+		return false
+	}
+	c.sendJSON(map[string]any{
+		"type":   "task.cancel",
+		"taskId": taskID,
+	})
+	return true
 }
 
 type slaveConn struct {
@@ -72,6 +125,11 @@ type slaveConn struct {
 func (c *slaveConn) readPump() {
 	defer func() {
 		if c.id != "" {
+			c.hub.mu.Lock()
+			if cur, ok := c.hub.conns[c.id]; ok && cur == c {
+				delete(c.hub.conns, c.id)
+			}
+			c.hub.mu.Unlock()
 			c.hub.reg.ScheduleOffline(c.id)
 		}
 		c.closeSend()
@@ -115,7 +173,16 @@ func (c *slaveConn) readPump() {
 			}
 			c.hub.reg.UpsertOnline(msg.SlaveID, msg.Name, msg.Repos)
 			c.id = msg.SlaveID
+			c.hub.mu.Lock()
+			c.hub.conns[msg.SlaveID] = c
+			c.hub.mu.Unlock()
 			c.sendJSON(map[string]any{"type": "registered", "slaveId": msg.SlaveID})
+			// claim queued tasks for this slave
+			if c.hub.tasks != nil {
+				for _, t := range c.hub.tasks.ListQueuedForSlave(msg.SlaveID) {
+					c.sendJSON(map[string]any{"type": "task.assign", "task": t})
+				}
+			}
 		case "heartbeat":
 			if !c.requireAuth() {
 				continue
@@ -124,6 +191,24 @@ func (c *slaveConn) readPump() {
 				c.hub.reg.Touch(c.id)
 			}
 			c.sendJSON(map[string]string{"type": "heartbeat.ok"})
+		case "task.event":
+			if !c.requireAuth() {
+				continue
+			}
+			if msg.TaskID == "" || msg.Event == nil || msg.Event.Kind == "" {
+				c.sendJSON(map[string]string{"type": "error", "error": "taskId and event.kind required"})
+				continue
+			}
+			payload := msg.Event.Payload
+			if payload == nil {
+				payload = map[string]any{}
+			}
+			if c.hub.tasks != nil {
+				c.hub.tasks.ApplySlaveEvent(msg.TaskID, msg.Event.Kind, payload)
+			}
+			if c.hub.appHub != nil {
+				c.hub.appHub.Publish(msg.TaskID, msg.Event.Kind, payload)
+			}
 		case "ping":
 			c.sendJSON(map[string]string{"type": "pong"})
 		default:

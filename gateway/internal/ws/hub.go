@@ -272,3 +272,37 @@ func (h *Hub) replay(c *client, taskID string, lastSeq int) {
 		}
 	}
 }
+
+// EventsAfter returns buffered task.event envelopes with seq > afterSeq, plus latestSeq.
+func (h *Hub) EventsAfter(taskID string, afterSeq int) (events []Envelope, latestSeq int) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	latestSeq = h.seqs[taskID]
+	for _, env := range h.buf[taskID] {
+		if env.Seq > afterSeq {
+			events = append(events, env)
+		}
+	}
+	if events == nil {
+		events = []Envelope{}
+	}
+	return events, latestSeq
+}
+
+// EventsAfterMaps implements task.EventSource for HTTP snapshots.
+func (h *Hub) EventsAfterMaps(taskID string, afterSeq int) ([]map[string]any, int) {
+	envs, latest := h.EventsAfter(taskID, afterSeq)
+	out := make([]map[string]any, 0, len(envs))
+	for _, env := range envs {
+		raw, err := json.Marshal(env)
+		if err != nil {
+			continue
+		}
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out, latest
+}

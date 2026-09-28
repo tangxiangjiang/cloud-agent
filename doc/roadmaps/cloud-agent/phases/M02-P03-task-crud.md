@@ -17,11 +17,11 @@
 
 ## 完成定义（DoD）
 
-- [ ] `POST /v1/tasks` 支持 Idempotency-Key（重复提交不双建）
-- [ ] `GET /v1/tasks`、`GET /v1/tasks/{id}`
-- [ ] `POST /v1/tasks/{id}/cancel` → cancelling 或终态 cancelled（无执行器时可直接 cancelled）
-- [ ] 状态字段与 contracts 一致
-- [ ] 测试覆盖创建与取消主路径
+- [x] `POST /v1/tasks` 支持 Idempotency-Key（重复提交不双建）
+- [x] `GET /v1/tasks`、`GET /v1/tasks/{id}`
+- [x] `POST /v1/tasks/{id}/cancel` → cancelling 或终态 cancelled（无执行器时可直接 cancelled）
+- [x] 状态字段与 contracts 一致
+- [x] 测试覆盖创建与取消主路径
 
 ## 禁止事项
 

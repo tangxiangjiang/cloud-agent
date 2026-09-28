@@ -33,6 +33,10 @@ go build -o bin/gateway .
 | GET | `/v1/health` | 无 |
 | POST | `/v1/auth/pair` | body: `{"pairCode":"..."}` |
 | GET | `/v1/auth/me` | `Authorization: Bearer <token>` |
+| POST | `/v1/tasks` | Bearer；可选头 `Idempotency-Key` |
+| GET | `/v1/tasks` | Bearer；query `status`、`limit` |
+| GET | `/v1/tasks/{id}` | Bearer |
+| POST | `/v1/tasks/{id}/cancel` | Bearer；无执行器时直接 `cancelled` |
 
 ```bash
 curl -s http://127.0.0.1:8080/v1/health

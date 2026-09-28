@@ -1,3 +1,6 @@
+// Copyright (c) 2026 smarttang
+// SPDX-License-Identifier: MIT
+
 package auth_test
 
 import (

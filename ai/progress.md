@@ -10,6 +10,7 @@
 | M01-P03 | approved | Workflow/Review/Diff JSON Schema |
 | M02-P01 | approved | Gateway HTTP 骨架 + /v1/health |
 | M02-P02 | approved | 配对鉴权 + Bearer middleware |
+| M02-P03 | approved | Task CRUD / 取消 / Idempotency-Key |
 
 ## 勾选
 
@@ -18,4 +19,5 @@
 - [x] M01-P03 @approved 2026-09-28（IDE）
 - [x] M02-P01 @approved 2026-09-28（IDE）
 - [x] M02-P02 @approved 2026-09-28（IDE）
+- [x] M02-P03 @approved 2026-09-28（IDE）
 - [ ] （其余 phase：Slave 在 App approve 后写入，格式：`- [x] <nodeId> @approved <iso8601>`）

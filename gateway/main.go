@@ -1,3 +1,6 @@
+// Copyright (c) 2026 smarttang
+// SPDX-License-Identifier: MIT
+
 package main
 
 import (
@@ -8,6 +11,7 @@ import (
 	"os"
 
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/auth"
+	"github.com/tangxiangjiang/cloud-agent/gateway/internal/task"
 )
 
 func main() {
@@ -24,13 +28,17 @@ func main() {
 		}
 	}
 
-	store := auth.NewStore(pairCode)
-	log.Printf("pair code: %s (use POST /v1/auth/pair)", store.PairCode())
+	authStore := auth.NewStore(pairCode)
+	taskStore := task.NewStore()
+	log.Printf("pair code: %s (use POST /v1/auth/pair)", authStore.PairCode())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/health", handleHealth)
-	mux.HandleFunc("POST /v1/auth/pair", store.HandlePair)
-	mux.Handle("GET /v1/auth/me", store.Middleware(http.HandlerFunc(handleMe)))
+	mux.HandleFunc("POST /v1/auth/pair", authStore.HandlePair)
+	mux.Handle("GET /v1/auth/me", authStore.Middleware(http.HandlerFunc(handleMe)))
+	taskHandler := authStore.Middleware(taskStore.Handler())
+	mux.Handle("/v1/tasks", taskHandler)
+	mux.Handle("/v1/tasks/", taskHandler)
 
 	log.Printf("gateway listening on %s", *addr)
 	if err := http.ListenAndServe(*addr, mux); err != nil {

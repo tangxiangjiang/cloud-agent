@@ -1,0 +1,18 @@
+# Copy to config.yaml (gitignored). Do not put API keys in this file.
+# API key is read from the environment variable named by apiKeyEnv.
+
+gatewayUrl: ws://127.0.0.1:8080/v1/slave/ws
+slaveId: slave_devpc
+name: dev-pc
+
+# Whitelist only. Each cwd must be an absolute path on this machine.
+repos:
+  - id: r_cloud_agent
+    name: cloud-agent
+    cwd: E:/workspace/cloud-agent
+
+# Name of the env var that holds the Cursor API key (not the key itself).
+apiKeyEnv: CURSOR_API_KEY
+
+# Optional: Bearer token env var for Gateway (used from M04-P02).
+# tokenEnv: GATEWAY_TOKEN

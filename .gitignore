@@ -26,6 +26,8 @@ vendor/
 node_modules/
 slave/dist/
 slave/build/
+slave/config.yaml
+slave/config.local.yaml
 *.tsbuildinfo
 npm-debug.log*
 yarn-error.log*

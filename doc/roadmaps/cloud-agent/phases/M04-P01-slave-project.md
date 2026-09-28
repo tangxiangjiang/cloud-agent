@@ -16,10 +16,10 @@
 
 ## 完成定义（DoD）
 
-- [ ] `package.json` + TS 构建/运行脚本
-- [ ] 配置文件或 env 示例（**不含真实 API Key**）
-- [ ] 启动时校验：repos cwd 为绝对路径白名单列表
-- [ ] `slave/README.md` 说明依赖 Node 版本
+- [x] `package.json` + TS 构建/运行脚本
+- [x] 配置文件或 env 示例（**不含真实 API Key**）
+- [x] 启动时校验：repos cwd 为绝对路径白名单列表
+- [x] `slave/README.md` 说明依赖 Node 版本
 
 ## 禁止事项
 

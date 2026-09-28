@@ -1,0 +1,61 @@
+// Copyright (c) 2026 smarttang
+// SPDX-License-Identifier: MIT
+
+import assert from "node:assert/strict";
+import path from "node:path";
+import { describe, it } from "node:test";
+import { ConfigError, isAllowedCwd, validateConfig } from "./config.js";
+
+const absA = path.resolve("/tmp/repo-a");
+const absB = path.resolve("/tmp/repo-b");
+
+describe("validateConfig", () => {
+  it("accepts absolute cwd whitelist", () => {
+    const cfg = validateConfig({
+      gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
+      slaveId: "slave_devpc",
+      repos: [{ id: "r1", name: "a", cwd: absA }],
+    });
+    assert.equal(cfg.apiKeyEnv, "CURSOR_API_KEY");
+    assert.equal(cfg.repos[0]?.cwd, path.normalize(absA));
+    assert.equal(isAllowedCwd(cfg, absA), true);
+    assert.equal(isAllowedCwd(cfg, absB), false);
+  });
+
+  it("rejects relative cwd", () => {
+    assert.throws(
+      () =>
+        validateConfig({
+          gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
+          slaveId: "slave_devpc",
+          repos: [{ id: "r1", name: "a", cwd: "./relative" }],
+        }),
+      (e: unknown) => e instanceof ConfigError && /absolute path/.test(e.message),
+    );
+  });
+
+  it("rejects cloud key", () => {
+    assert.throws(
+      () =>
+        validateConfig({
+          gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
+          slaveId: "slave_devpc",
+          cloud: {},
+          repos: [{ id: "r1", name: "a", cwd: absA }],
+        }),
+      (e: unknown) => e instanceof ConfigError && /cloud is not allowed/.test(e.message),
+    );
+  });
+
+  it("rejects empty repos", () => {
+    assert.throws(
+      () =>
+        validateConfig({
+          gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
+          slaveId: "slave_devpc",
+          repos: [],
+        }),
+      ConfigError,
+    );
+  });
+});

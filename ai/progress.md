@@ -15,6 +15,7 @@
 | M03-P01 | approved | App WebSocket 枢纽 |
 | M03-P02 | approved | Slave 出站登记 / 心跳 / online |
 | M03-P03 | approved | 任务下发 + 事件 fan-out + mockslave |
+| M04-P01 | approved | Slave TS 工程 + 配置 / cwd 白名单 |
 
 ## 勾选
 
@@ -28,4 +29,5 @@
 - [x] M03-P01 @approved 2026-09-28（IDE）
 - [x] M03-P02 @approved 2026-09-28（IDE）
 - [x] M03-P03 @approved 2026-09-28（IDE）
+- [x] M04-P01 @approved 2026-09-28（IDE）
 - [ ] （其余 phase：Slave 在 App approve 后写入，格式：`- [x] <nodeId> @approved <iso8601>`）

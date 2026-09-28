@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../auth/session.dart';
 import '../workflow/models.dart';
 import '../workflow/workflow_api.dart';
+import 'node_logs_page.dart';
 import 'node_status_chip.dart';
 
 /// Workflow detail: node statuses + Start. Polls Gateway; no diff/revise here.
@@ -212,11 +213,29 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
           const SizedBox(height: 20),
           Text('Nodes', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          ...run.nodes.map((n) => _NodeTile(node: n)),
+          ...run.nodes.map(
+            (n) => _NodeTile(
+              node: n,
+              onOpenLogs: n.taskId != null && n.taskId!.isNotEmpty
+                  ? () {
+                      Navigator.of(context).push<void>(
+                        MaterialPageRoute(
+                          builder: (_) => NodeLogsPage(
+                            session: widget.session,
+                            taskId: n.taskId!,
+                            nodeId: n.id,
+                            api: _api,
+                          ),
+                        ),
+                      );
+                    }
+                  : null,
+            ),
+          ),
           const SizedBox(height: 16),
           Text(
-            'Diff / revise arrive in later phases. '
-            'Highlight: awaiting_review = human gate.',
+            'Open a node with taskId to view WS logs. '
+            'Diff / revise in later phases.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -228,9 +247,10 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
 }
 
 class _NodeTile extends StatelessWidget {
-  const _NodeTile({required this.node});
+  const _NodeTile({required this.node, this.onOpenLogs});
 
   final WorkflowNode node;
+  final VoidCallback? onOpenLogs;
 
   @override
   Widget build(BuildContext context) {
@@ -261,7 +281,18 @@ class _NodeTile extends StatelessWidget {
           ].where((s) => s.isNotEmpty).join('\n'),
         ),
         isThreeLine: node.dependsOn.isNotEmpty || node.taskId != null,
-        trailing: NodeStatusChip(status: node.status),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (onOpenLogs != null)
+              IconButton(
+                tooltip: 'Logs',
+                onPressed: onOpenLogs,
+                icon: const Icon(Icons.terminal),
+              ),
+            NodeStatusChip(status: node.status),
+          ],
+        ),
       ),
     );
   }

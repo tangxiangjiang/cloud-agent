@@ -6,7 +6,7 @@ Node.js / TypeScript **Local Slave**：出站连接 Go Gateway，用官方 `@cur
 
 | 依赖 | 版本 / 说明 |
 |------|-------------|
-| **Node.js** | **>= 22.13**（`@cursor/sdk` engines；当前机若仍是 18 请先升级） |
+| **Node.js** | **>= 22.13**（`@cursor/sdk` engines） |
 | npm | 随 Node 自带即可 |
 | Gateway Bearer | 环境变量（默认 `GATEWAY_TOKEN`），来自 `POST /v1/auth/pair` |
 | Cursor API Key | 环境变量（默认 `CURSOR_API_KEY`），**不要**写入配置文件 |
@@ -45,27 +45,28 @@ npm start -- --config config.yaml
 ### 本地 smoke（无 Gateway，验证 SDK Local）
 
 ```bash
-# Node >= 22.13；CURSOR_API_KEY 必填
-# 默认 cwd = fixtures/smoke-repo
 $env:CURSOR_API_KEY = "<cursor-api-key>"
 npm run smoke-local
-
-# 可选覆盖
-# $env:SMOKE_CWD = "E:/workspace/some-repo"
-# $env:SMOKE_MODEL = "composer-2.5"
-# $env:SMOKE_PROMPT = "Reply with exactly: smoke-ok."
 ```
 
-成功时日志含 stream 映射的 `assistant.delta` / `tool.*`，并以 `status: finished` 结束。启动失败（鉴权等）exit 1；run 失败 exit 2。
+成功时日志含 `assistant.delta` / `tool.*`，并以 `status: finished` 结束。启动失败 exit 1；run 失败 exit 2。
 
 ## 行为
 
-1. 校验配置与 `repos[].cwd` 绝对路径白名单；拒绝配置中的 `cloud`
+1. 校验配置与 `repos[].cwd` 绝对路径白名单；拒绝配置中的 `cloud` / 明文 `apiKey`
 2. 出站 WS：`auth` → `register` → `heartbeat`；断线重连
-3. `task.assign` → `Agent.create({ local: { cwd, settingSources: [] }, model, apiKey })` → `send` → `stream` 映射契约事件 → **必须** `wait` → dispose  
-   - 无 `cloud` 字段；默认不加载 `settingSources: "all"`
-4. 错误区分：`CursorAgentError` → `phase: startup`；`result.status === "error"` → `phase: run`
-5. 日志脱敏，不打印 API Key / Bearer
+3. `task.assign` → 仅用 `repoId` 查白名单 cwd → Local Agent → stream 映射 → **必** `wait` → dispose
+4. `task.cancel` → `run.cancel()`（若 `supports`）；否则记原因并停止转发后续 stream（含 tool）
+5. 错误：`phase: policy|startup|run`；日志脱敏
+
+## 安全注意事项
+
+- **API Key / Bearer 只放环境变量**（`apiKeyEnv` / `tokenEnv` 只写变量名）。配置文件禁止出现 `apiKey` 字面量；日志会对 `apiKey`/`token` 等字段与长 opaque 串脱敏。
+- **cwd 白名单**：执行目录只来自本机 `repos[].cwd`，通过任务的 `repoId` 查找。**忽略/拒绝**任务里携带的任意 `cwd` 字符串，防止 App 指到白名单外路径。
+- **仅 Local runtime**：`Agent.create` 只传 `local: { cwd, settingSources: [] }`，禁止 `cloud`，默认不加载 `settingSources: "all"`。
+- **不对公网开 Slave HTTP**；Slave 只出站连 Gateway。
+- 取消尽力而为：SDK 支持则 `run.cancel()`；不支持则停止向 Gateway 转发新的 tool/assistant 事件，仍 `wait()` 收尾。
+- Key 泄露后：在 Cursor Dashboard 吊销并轮换；勿把 `.env` / `config.yaml` 提交进 git（已 gitignore）。
 
 ## 配置字段
 
@@ -84,8 +85,8 @@ npm run smoke-local
 |-------|------|
 | M04-P01 | 工程 + 配置 / cwd 白名单 |
 | M04-P02 | Gateway 出站客户端 |
-| **M04-P03** | Local Agent create/send/stream/wait（当前） |
-| M04-P04 | 取消 / 错误 / 安全默认加强 |
+| M04-P03 | Local Agent create/send/stream/wait |
+| **M04-P04** | 取消 / 错误 / 安全默认（当前） |
 
 协议：[../gateway/docs/slave-ws.md](../gateway/docs/slave-ws.md)  
-设计：[doc/local-slave.md](../doc/local-slave.md)
+设计：[doc/local-slave.md](../doc/local-slave.md) · [doc/architecture.md](../doc/architecture.md)

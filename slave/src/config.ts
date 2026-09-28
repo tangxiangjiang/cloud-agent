@@ -46,6 +46,9 @@ type RawConfig = {
   apiKeyEnv?: unknown;
   tokenEnv?: unknown;
   defaultModel?: unknown;
+  /** Forbidden: secrets must come from env named by apiKeyEnv. */
+  apiKey?: unknown;
+  cursorApiKey?: unknown;
   cloud?: unknown;
   local?: unknown;
 };
@@ -93,6 +96,11 @@ export function validateConfig(raw: unknown): SlaveConfig {
   }
   const obj = raw as RawConfig;
 
+  if (obj.apiKey !== undefined || obj.cursorApiKey !== undefined) {
+    throw new ConfigError(
+      "apiKey must not appear in config file; set apiKeyEnv and put the secret in that environment variable",
+    );
+  }
   if (obj.cloud !== undefined) {
     throw new ConfigError("cloud is not allowed; Local Slave uses local cwd only");
   }

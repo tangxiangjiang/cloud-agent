@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import type { SlaveConfig } from "../config.js";
-import { findRepo } from "../config.js";
 import { log } from "../log.js";
 import type { AssignedTask, EmitEvent, TaskHandlers } from "../gateway/types.js";
+import { resolveAssignedRepo } from "../safety/repo.js";
 
 /**
  * Fake events for Gateway-only联调 (`--stub`). Production path: LocalAgentTaskHandler.
@@ -23,18 +23,23 @@ export class StubTaskHandler implements TaskHandlers {
 
   onCancel(taskId: string, emit: EmitEvent): void {
     this.cancelled.add(taskId);
+    emit(taskId, "status", { status: "cancelling" });
     emit(taskId, "done", { status: "cancelled" });
   }
 
   private async run(task: AssignedTask, emit: EmitEvent): Promise<void> {
-    const repoId = task.repoId ?? "";
-    const repo = repoId ? findRepo(this.cfg, repoId) : undefined;
-    if (!repo) {
-      log.warn("assign rejected: repo not in whitelist", {
+    const resolved = resolveAssignedRepo(this.cfg, task);
+    if (!resolved.ok) {
+      log.warn("assign rejected", {
         taskId: task.id,
-        repoId: repoId || null,
+        code: resolved.code,
+        message: resolved.message,
       });
-      emit(task.id, "error", { message: `repo not in whitelist: ${repoId}` });
+      emit(task.id, "error", {
+        message: resolved.message,
+        code: resolved.code,
+        phase: "policy",
+      });
       emit(task.id, "done", { status: "error" });
       return;
     }
@@ -47,7 +52,7 @@ export class StubTaskHandler implements TaskHandlers {
     }
 
     emit(task.id, "assistant.delta", {
-      text: "stub slave (M04-P02): no SDK yet",
+      text: "stub slave (--stub): no SDK",
     });
     await sleep(30);
     if (this.cancelled.has(task.id)) {
@@ -56,7 +61,7 @@ export class StubTaskHandler implements TaskHandlers {
     }
 
     emit(task.id, "done", { status: "finished" });
-    log.info("stub task finished", { taskId: task.id, cwd: repo.cwd });
+    log.info("stub task finished", { taskId: task.id, cwd: resolved.repo.cwd });
   }
 }
 

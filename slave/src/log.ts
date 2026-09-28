@@ -49,6 +49,15 @@ function sanitizeValue(key: string, value: unknown): unknown {
   return value;
 }
 
+/** Test helper: sanitize log fields the same way as real log output. */
+export function sanitizeFields(fields: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fields)) {
+    out[k] = sanitizeValue(k, v);
+  }
+  return out;
+}
+
 function shouldLog(level: LogLevel): boolean {
   return LEVEL_ORDER[level] >= LEVEL_ORDER[minLevel];
 }

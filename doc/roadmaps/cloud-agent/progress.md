@@ -5,7 +5,7 @@
 | M01 仓库骨架与契约 | done | M01-P01～P03 已完成 |
 | M02 Gateway HTTP 基础 | done | M02-P01～P04 已完成 |
 | M03 Gateway WS + Slave 协议 | done | M03-P01～P03 已完成 |
-| M04 Node Slave + Local Agent | in_progress | M04-P01～P03 已完成 |
+| M04 Node Slave + Local Agent | done | M04-P01～P04 已完成 |
 | M05 工作流 DAG + 审核闸门 | pending | |
 | M06 Flutter App MVP | pending | |
 | M07 硬化与收尾 | pending | |
@@ -27,7 +27,7 @@
 - [x] M04-P01 @approved 2026-09-28（IDE）
 - [x] M04-P02 @approved 2026-09-28（IDE）
 - [x] M04-P03 @approved 2026-09-28（IDE）
-- [ ] M04-P04
+- [x] M04-P04 @approved 2026-09-28（IDE）
 - [ ] M05-P01
 - [ ] M05-P02
 - [ ] M05-P03

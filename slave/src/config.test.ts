@@ -58,4 +58,17 @@ describe("validateConfig", () => {
       ConfigError,
     );
   });
+
+  it("rejects apiKey literal in config", () => {
+    assert.throws(
+      () =>
+        validateConfig({
+          gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
+          slaveId: "slave_devpc",
+          apiKey: "cursor_should_not_be_here",
+          repos: [{ id: "r1", name: "a", cwd: absA }],
+        }),
+      (e: unknown) => e instanceof ConfigError && /apiKey must not appear/.test(e.message),
+    );
+  });
 });

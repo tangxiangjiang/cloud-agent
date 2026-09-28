@@ -3,9 +3,10 @@
 
 import { Agent, CursorAgentError, type AgentOptions, type Run } from "@cursor/sdk";
 import type { SlaveConfig } from "../config.js";
-import { findRepo } from "../config.js";
 import type { AssignedTask, EmitEvent, TaskHandlers } from "../gateway/types.js";
 import { log } from "../log.js";
+import { attemptRunCancel } from "../safety/cancel.js";
+import { resolveAssignedRepo } from "../safety/repo.js";
 import { mapSdkMessage } from "./mapStream.js";
 
 export interface LocalAgentHandlerOptions {
@@ -18,7 +19,7 @@ export interface LocalAgentHandlerOptions {
 
 /**
  * Execute assigned tasks with @cursor/sdk **Local** runtime only.
- * Never sets `cloud` on AgentOptions.
+ * Never sets `cloud` on AgentOptions; cwd only from whitelist.
  */
 export class LocalAgentTaskHandler implements TaskHandlers {
   private readonly cancelled = new Set<string>();
@@ -33,45 +34,58 @@ export class LocalAgentTaskHandler implements TaskHandlers {
     return this.chain;
   }
 
-  async onCancel(taskId: string, _emit: EmitEvent): Promise<void> {
+  async onCancel(taskId: string, emit: EmitEvent): Promise<void> {
     this.cancelled.add(taskId);
+    emit(taskId, "status", { status: "cancelling" });
+
     const run = this.activeRuns.get(taskId);
     if (!run) {
       log.info("cancel: no active run yet", { taskId });
       return;
     }
-    if (run.supports("cancel")) {
-      log.info("cancel: requesting run.cancel", { taskId, runId: run.id });
-      try {
-        await run.cancel();
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        log.warn("cancel failed", { taskId, error: message });
+
+    try {
+      const attempt = await attemptRunCancel(run);
+      if (attempt.supported) {
+        log.info("cancel: run.cancel requested", { taskId, runId: run.id });
+      } else {
+        log.warn("cancel: unsupported; stopping stream relay (best effort)", {
+          taskId,
+          runId: run.id,
+          reason: attempt.reason,
+        });
       }
-    } else {
-      log.warn("cancel: run does not support cancel", {
-        taskId,
-        reason: run.unsupportedReason("cancel") ?? "unknown",
-      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn("cancel failed", { taskId, error: message });
     }
   }
 
   private async runTask(task: AssignedTask, emit: EmitEvent): Promise<void> {
-    const repoId = task.repoId ?? "";
-    const repo = repoId ? findRepo(this.opts.cfg, repoId) : undefined;
-    if (!repo) {
-      log.warn("assign rejected: repo not in whitelist", {
+    const resolved = resolveAssignedRepo(this.opts.cfg, task);
+    if (!resolved.ok) {
+      log.warn("assign rejected", {
         taskId: task.id,
-        repoId: repoId || null,
+        code: resolved.code,
+        message: resolved.message,
       });
-      emit(task.id, "error", { message: `repo not in whitelist: ${repoId}` });
+      emit(task.id, "error", {
+        message: resolved.message,
+        code: resolved.code,
+        phase: "policy",
+      });
       emit(task.id, "done", { status: "error" });
       return;
     }
+    const { repo } = resolved;
 
     const prompt = (task.prompt ?? "").trim();
     if (!prompt) {
-      emit(task.id, "error", { message: "empty prompt" });
+      emit(task.id, "error", {
+        message: "empty prompt",
+        code: "empty_prompt",
+        phase: "policy",
+      });
       emit(task.id, "done", { status: "error" });
       return;
     }
@@ -83,7 +97,7 @@ export class LocalAgentTaskHandler implements TaskHandlers {
 
     const modelId = (task.model ?? this.opts.defaultModel).trim() || this.opts.defaultModel;
 
-    // Local-only options: explicit `local.cwd`, never `cloud`, never settingSources "all".
+    // Local-only: whitelist cwd only; never cloud; never settingSources "all".
     const createOptions: AgentOptions = {
       apiKey: this.opts.apiKey,
       model: { id: modelId },
@@ -119,13 +133,27 @@ export class LocalAgentTaskHandler implements TaskHandlers {
         agentId: run.agentId,
       });
 
+      let cancelAttempted = false;
       try {
         for await (const event of run.stream()) {
           if (this.cancelled.has(task.id)) {
-            if (run.supports("cancel")) {
-              await run.cancel().catch(() => undefined);
+            if (!cancelAttempted) {
+              cancelAttempted = true;
+              try {
+                const attempt = await attemptRunCancel(run);
+                if (!attempt.supported) {
+                  log.warn("cancel: unsupported during stream; dropping further events", {
+                    taskId: task.id,
+                    reason: attempt.reason,
+                  });
+                }
+              } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                log.warn("cancel during stream failed", { taskId: task.id, error: message });
+              }
             }
-            break;
+            // DoD: stop relaying new tool/assistant events ASAP after cancel.
+            continue;
           }
           mapSdkMessage(event, (kind, payload) => emit(task.id, kind, payload));
         }
@@ -137,7 +165,6 @@ export class LocalAgentTaskHandler implements TaskHandlers {
         });
       }
 
-      // Required: wait for terminal result even if stream aborted.
       const result = await run.wait();
       log.info("local run finished", {
         taskId: task.id,

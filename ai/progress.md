@@ -19,6 +19,7 @@
 | M04-P02 | approved | Gateway 出站客户端 + stub 事件 |
 | M04-P03 | approved | Local Agent create/send/stream/wait |
 | M04-P04 | approved | 取消 / 白名单 / 安全默认 |
+| M05-P01 | approved | Workflow/DAG 模型与 API |
 
 ## 勾选
 
@@ -36,4 +37,5 @@
 - [x] M04-P02 @approved 2026-09-28（IDE）
 - [x] M04-P03 @approved 2026-09-28（IDE）
 - [x] M04-P04 @approved 2026-09-28（IDE）
+- [x] M05-P01 @approved 2026-09-28（IDE）
 - [ ] （其余 phase：Slave 在 App approve 后写入，格式：`- [x] <nodeId> @approved <iso8601>`）

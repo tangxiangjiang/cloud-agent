@@ -105,6 +105,48 @@ Header 可选：`Idempotency-Key: <uuid>`
 
 `POST /tasks/{id}/cancel` → `{ "status": "cancelling" }`
 
+### 工作流（DAG 实例）
+
+机器可读契约：`contracts/schemas/workflow-run.schema.json`、`workflow-bundle.schema.json`、`workflow-node-status.schema.json`。
+
+**创建 / 加载 DAG 快照**（Bearer）
+
+`POST /workflows`
+
+```json
+{
+  "bundleId": "bundle_m01_demo",
+  "bundleRef": "ai/bundles/m01.json",
+  "slaveId": "slave_devpc",
+  "repoId": "r_cloud_agent",
+  "progressDoc": "ai/progress.md",
+  "nodes": [
+    {
+      "id": "M01-P01",
+      "phaseRef": "doc/roadmaps/.../M01-P01-xxx.md",
+      "title": "…",
+      "dependsOn": [],
+      "model": "composer-2.5"
+    },
+    {
+      "id": "M01-P02",
+      "phaseRef": "…",
+      "dependsOn": ["M01-P01"]
+    }
+  ]
+}
+```
+
+→ `201` WorkflowRun：`status=pending`；无依赖节点为 `ready`，其余 `pending`。  
+**环检测：** Gateway 拒绝含环或未知 `dependsOn` 的图（HTTP 400）。客户端应只提交已校验的 DAG。
+
+`GET /workflows?status=&limit=` → `{ "workflows": [ … ] }`  
+`GET /workflows/{workflowId}` → 完整 Run（含 `nodes`、`dependsOn`、节点状态）  
+`GET /workflows/{workflowId}/nodes` → `{ "nodes": [ … ] }`
+
+节点状态枚举：`pending / ready / running / awaiting_review / approved / rejected / failed / cancelled / skipped`。  
+调度执行、审核、diff 见后续 M05 phases；本资源首版只存状态。
+
 ### 工作流节点审核（App 闸门）
 
 节点须为 `awaiting_review`。  

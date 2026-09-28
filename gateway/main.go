@@ -13,6 +13,7 @@ import (
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/auth"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/slaves"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/task"
+	"github.com/tangxiangjiang/cloud-agent/gateway/internal/workflow"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/ws"
 )
 
@@ -34,6 +35,7 @@ func main() {
 
 	authStore := auth.NewStore(pairCode)
 	taskStore := task.NewStore()
+	wfStore := workflow.NewStore()
 	hub := ws.NewHub(authStore)
 	taskStore.SetEventSource(hub)
 
@@ -62,6 +64,9 @@ func main() {
 	taskHandler := authStore.Middleware(taskStore.Handler())
 	mux.Handle("/v1/tasks", taskHandler)
 	mux.Handle("/v1/tasks/", taskHandler)
+	wfHandler := authStore.Middleware(wfStore.Handler())
+	mux.Handle("/v1/workflows", wfHandler)
+	mux.Handle("/v1/workflows/", wfHandler)
 	mux.HandleFunc("GET /v1/ws", hub.HandleWS)
 	mux.HandleFunc("GET /v1/slave/ws", slaveHub.HandleWS)
 

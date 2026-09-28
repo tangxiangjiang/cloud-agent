@@ -1,6 +1,6 @@
 # gateway
 
-Go 网关（HTTP + WebSocket）。当前：**M02** HTTP 基础（health / 配对 / tasks / slaves 占位）。
+Go 网关（HTTP + WebSocket）：鉴权、tasks、slaves 出站、App WS、**workflows（DAG）**。
 
 ## 要求
 
@@ -37,7 +37,12 @@ go build -o bin/gateway .
 | POST | `/v1/tasks` | Bearer；可选头 `Idempotency-Key` |
 | GET | `/v1/tasks` | Bearer；query `status`、`limit` |
 | GET | `/v1/tasks/{id}` | Bearer |
-| POST | `/v1/tasks/{id}/cancel` | Bearer；无执行器时直接 `cancelled` |
+| POST | `/v1/tasks/{id}/cancel` | Bearer |
+| GET | `/v1/tasks/{id}/events` | Bearer；事件快照 |
+| POST | `/v1/workflows` | Bearer；加载 DAG 快照（环检测） |
+| GET | `/v1/workflows` | Bearer；query `status`、`limit` |
+| GET | `/v1/workflows/{id}` | Bearer |
+| GET | `/v1/workflows/{id}/nodes` | Bearer |
 | GET | `/v1/ws` | App WebSocket；query `token=` 或首帧 auth |
 | GET | `/v1/slave/ws` | **Slave 出站** WebSocket（register / heartbeat） |
 

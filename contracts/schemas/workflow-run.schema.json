@@ -36,7 +36,28 @@
             "$ref": "workflow-node-status.schema.json"
           },
           "taskId": { "type": ["string", "null"] },
-          "unitId": { "type": ["string", "null"] }
+          "unitId": { "type": ["string", "null"] },
+          "model": { "type": "string" },
+          "dodChecks": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "onFailure": {
+            "type": "string",
+            "enum": ["stop", "skip", "retry"]
+          },
+          "prompt": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": ["phase_file", "inline"]
+              },
+              "extra": { "type": "string" },
+              "inline": { "type": "string" }
+            }
+          }
         }
       }
     },

@@ -17,10 +17,10 @@ Gateway 增加 workflow 资源：创建/加载 DAG、查询状态、节点列表
 
 ## 完成定义（DoD）
 
-- [ ] 可 POST/GET workflow（含 nodes、dependsOn）
-- [ ] 节点状态字段完整
-- [ ] 非法环检测或文档声明「首版仅支持已校验 DAG」
-- [ ] 鉴权保护
+- [x] 可 POST/GET workflow（含 nodes、dependsOn）
+- [x] 节点状态字段完整
+- [x] 非法环检测或文档声明「首版仅支持已校验 DAG」
+- [x] 鉴权保护
 
 ## 禁止事项
 

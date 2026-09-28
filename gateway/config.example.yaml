@@ -2,7 +2,7 @@
 # Copy to config.yaml (gitignored) and replace cwd with paths you whitelist.
 # Do not commit machine-specific absolute paths you are not comfortable publishing.
 #
-# online is static in M02; M03 will reflect real Slave registration.
+# online in this file is ignored; presence comes from outbound register (M03).
 
 slaves:
   - id: slave_devpc

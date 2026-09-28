@@ -214,12 +214,14 @@ Schema：`contracts/schemas/node-diff.schema.json`。
 
 ## Slave ↔ Gateway（内部）
 
-Node Slave **出站**连 Go Gateway（WS 或 HTTP 长拉），不反向对公网开端口。
+Node Slave **出站**连 Go Gateway WebSocket，不反向对公网开端口。
 
-要求：
+- URL：`GET /v1/slave/ws`（升级为 WS）  
+- 消息：`auth` / `register` / `heartbeat`（详见 [gateway/docs/slave-ws.md](../gateway/docs/slave-ws.md)）  
+- `register` 后 `GET /v1/slaves` 中对应项 `online=true`；断开经宽限后 `online=false`  
+
+后续（M03-P03+）还将要求：
 
 1. 事件带 `taskId` + `seq`  
-2. 终态必须落到 Gateway 存储  
-3. 取消指令能传到正在跑的 `run.cancel()`（若 `supports("cancel")`）
-
-对 App 只暴露上文公网 API；Slave 内部协议实现阶段再定。
+2. 终态落到 Gateway 存储  
+3. 取消指令能传到 `run.cancel()`（若 `supports("cancel")`）

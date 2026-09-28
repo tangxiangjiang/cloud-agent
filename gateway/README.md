@@ -38,7 +38,8 @@ go build -o bin/gateway .
 | GET | `/v1/tasks` | Bearer；query `status`、`limit` |
 | GET | `/v1/tasks/{id}` | Bearer |
 | POST | `/v1/tasks/{id}/cancel` | Bearer；无执行器时直接 `cancelled` |
-| GET | `/v1/ws` | WebSocket；query `token=` 或首帧 `{"type":"auth","token":"..."}` |
+| GET | `/v1/ws` | App WebSocket；query `token=` 或首帧 auth |
+| GET | `/v1/slave/ws` | **Slave 出站** WebSocket（register / heartbeat） |
 
 ```bash
 curl -s http://127.0.0.1:8080/v1/health
@@ -90,11 +91,22 @@ go run . -debug -pair-code ABCD-EFGH
 
 **禁止**在 WS 上传 `CURSOR_API_KEY`；只用 Gateway Bearer token。
 
+## Slave 出站
+
+协议说明：[docs/slave-ws.md](./docs/slave-ws.md)
+
+```bash
+go run . -pair-code ABCD-EFGH
+# 另开终端：配对拿 token 后
+go run ./cmd/slaveping -token <token> -id slave_devpc
+# GET /v1/slaves 应见 online=true
+```
+
 ## 测试
 
 ```bash
 go test ./...
-# 含 internal/ws：鉴权失败、subscribe、ping/pong、seq 递增事件
+# internal/ws：App 枢纽；internal/slaves：出站登记/心跳/离线宽限
 ```
 
 参见：[doc/api-outline.md](../doc/api-outline.md)、[doc/communication.md](../doc/communication.md)

@@ -48,6 +48,7 @@ func main() {
 		log.Printf("no -config set; GET /v1/slaves returns empty list (see config.example.yaml)")
 	}
 	slaveReg := slaves.NewRegistry(slaveList)
+	slaveHub := slaves.NewOutboundHub(authStore, slaveReg)
 
 	log.Printf("pair code: %s (use POST /v1/auth/pair)", authStore.PairCode())
 
@@ -60,6 +61,7 @@ func main() {
 	mux.Handle("/v1/tasks", taskHandler)
 	mux.Handle("/v1/tasks/", taskHandler)
 	mux.HandleFunc("GET /v1/ws", hub.HandleWS)
+	mux.HandleFunc("GET /v1/slave/ws", slaveHub.HandleWS)
 
 	if *debug {
 		log.Printf("debug inject enabled: POST /v1/debug/tasks/{id}/events")

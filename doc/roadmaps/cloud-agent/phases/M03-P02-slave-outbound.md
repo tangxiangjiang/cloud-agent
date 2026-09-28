@@ -17,10 +17,10 @@
 
 ## 完成定义（DoD）
 
-- [ ] 文档化出站 URL 与消息类型（register/heartbeat/…）
-- [ ] Gateway 接受出站连接并更新 online
-- [ ] 断开后 online=false（允许短暂宽限）
-- [ ] 最小测试客户端或脚本能完成登记
+- [x] 文档化出站 URL 与消息类型（register/heartbeat/…）
+- [x] Gateway 接受出站连接并更新 online
+- [x] 断开后 online=false（允许短暂宽限）
+- [x] 最小测试客户端或脚本能完成登记
 
 ## 禁止事项
 

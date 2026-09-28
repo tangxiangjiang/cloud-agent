@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../auth/session.dart';
+import 'diff_models.dart';
 import 'models.dart';
 
 class WorkflowApiException implements Exception {
@@ -116,6 +117,18 @@ class WorkflowApi {
     }
     final latest = (body['latestSeq'] as num?)?.toInt() ?? 0;
     return (events: list, latestSeq: latest);
+  }
+
+  /// Read-only diff: `GET /v1/workflows/{id}/nodes/{nodeId}/diff`
+  Future<NodeDiff> getNodeDiff(String workflowId, String nodeId) async {
+    final res = await _get(
+      _uri(
+        '/v1/workflows/${Uri.encodeComponent(workflowId)}/nodes/${Uri.encodeComponent(nodeId)}/diff',
+      ),
+      headers: _headers,
+    );
+    _throwIfBad(res, 'Get node diff');
+    return NodeDiff.fromJson(_decodeMap(res.body));
   }
 
   Map<String, dynamic> _decodeMap(String raw) {

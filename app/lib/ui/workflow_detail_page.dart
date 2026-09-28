@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../auth/session.dart';
 import '../workflow/models.dart';
 import '../workflow/workflow_api.dart';
+import 'node_diff_page.dart';
 import 'node_logs_page.dart';
 import 'node_status_chip.dart';
 
@@ -230,12 +231,26 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
                       );
                     }
                   : null,
+              onOpenDiff: n.isAwaitingReview
+                  ? () {
+                      Navigator.of(context).push<void>(
+                        MaterialPageRoute(
+                          builder: (_) => NodeDiffPage(
+                            session: widget.session,
+                            workflowId: widget.workflowId,
+                            nodeId: n.id,
+                            api: _api,
+                          ),
+                        ),
+                      );
+                    }
+                  : null,
             ),
           ),
           const SizedBox(height: 16),
           Text(
-            'Open a node with taskId to view WS logs. '
-            'Diff / revise in later phases.',
+            'Logs via WS when taskId is set. Diff when awaiting_review. '
+            'Revise / approve in M06-P05.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -247,10 +262,15 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
 }
 
 class _NodeTile extends StatelessWidget {
-  const _NodeTile({required this.node, this.onOpenLogs});
+  const _NodeTile({
+    required this.node,
+    this.onOpenLogs,
+    this.onOpenDiff,
+  });
 
   final WorkflowNode node;
   final VoidCallback? onOpenLogs;
+  final VoidCallback? onOpenDiff;
 
   @override
   Widget build(BuildContext context) {
@@ -284,6 +304,12 @@ class _NodeTile extends StatelessWidget {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (onOpenDiff != null)
+              IconButton(
+                tooltip: 'Diff (read-only)',
+                onPressed: onOpenDiff,
+                icon: const Icon(Icons.difference_outlined),
+              ),
             if (onOpenLogs != null)
               IconButton(
                 tooltip: 'Logs',

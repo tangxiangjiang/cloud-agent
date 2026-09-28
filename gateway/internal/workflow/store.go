@@ -89,10 +89,22 @@ type createRequest struct {
 	Nodes       []createNodeRequest `json:"nodes"`
 }
 
+// Starter delivers a workflow run to an online Slave (implemented by slaves.OutboundHub).
+type Starter interface {
+	AssignWorkflow(run *Run) bool
+}
+
+type nodePatchRequest struct {
+	Status *string `json:"status"`
+	TaskID *string `json:"taskId"`
+	UnitID *string `json:"unitId"`
+}
+
 type Store struct {
-	mu   sync.RWMutex
-	runs map[string]*Run
-	now  func() time.Time
+	mu      sync.RWMutex
+	runs    map[string]*Run
+	now     func() time.Time
+	starter Starter
 }
 
 func NewStore() *Store {
@@ -102,12 +114,16 @@ func NewStore() *Store {
 	}
 }
 
+func (s *Store) SetStarter(st Starter) { s.starter = st }
+
 func (s *Store) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/workflows", s.handleCreate)
 	mux.HandleFunc("GET /v1/workflows", s.handleList)
 	mux.HandleFunc("GET /v1/workflows/{id}", s.handleGet)
 	mux.HandleFunc("GET /v1/workflows/{id}/nodes", s.handleListNodes)
+	mux.HandleFunc("POST /v1/workflows/{id}/start", s.handleStart)
+	mux.HandleFunc("PATCH /v1/workflows/{id}/nodes/{nodeId}", s.handlePatchNode)
 	return mux
 }
 
@@ -275,6 +291,140 @@ func (s *Store) handleListNodes(w http.ResponseWriter, r *http.Request) {
 	nodes := cloneNodes(run.Nodes)
 	s.mu.RUnlock()
 	writeJSON(w, http.StatusOK, map[string]any{"nodes": nodes})
+}
+
+func (s *Store) handleStart(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	s.mu.Lock()
+	run, ok := s.runs[id]
+	if !ok {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	switch run.Status {
+	case StatusCompleted, StatusFailed, StatusCancelled:
+		s.mu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "workflow already terminal"})
+		return
+	}
+	u := s.now().Format(time.RFC3339Nano)
+	run.UpdatedAt = &u
+	run.Status = StatusRunning
+	out := cloneRun(run)
+	s.mu.Unlock()
+
+	delivered := false
+	if s.starter != nil {
+		delivered = s.starter.AssignWorkflow(out)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"workflow":  out,
+		"delivered": delivered,
+	})
+}
+
+func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	nodeID := r.PathValue("nodeId")
+	var req nodePatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	if req.Status == nil && req.TaskID == nil && req.UnitID == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no fields to patch"})
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	run, ok := s.runs[id]
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	idx := -1
+	for i := range run.Nodes {
+		if run.Nodes[i].ID == nodeID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
+		return
+	}
+	if req.Status != nil {
+		st := strings.TrimSpace(*req.Status)
+		if !validNodeStatus(st) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid node status"})
+			return
+		}
+		// Review gate: never accept approved via this path in P02? Approve is P05.
+		// Still allow storing approved when App/Slave later patches — but RecomputeReady only unlocks on approved.
+		run.Nodes[idx].Status = st
+	}
+	if req.TaskID != nil {
+		v := strings.TrimSpace(*req.TaskID)
+		if v == "" {
+			run.Nodes[idx].TaskID = nil
+		} else {
+			run.Nodes[idx].TaskID = &v
+		}
+	}
+	if req.UnitID != nil {
+		v := strings.TrimSpace(*req.UnitID)
+		if v == "" {
+			run.Nodes[idx].UnitID = nil
+		} else {
+			run.Nodes[idx].UnitID = &v
+		}
+	}
+	RecomputeReady(run.Nodes)
+
+	// Workflow-level status from nodes (simple).
+	if anyNode(run.Nodes, NodeFailed) {
+		run.Status = StatusFailed
+	} else if allNodesTerminalSuccess(run.Nodes) {
+		run.Status = StatusCompleted
+	} else if run.Status == StatusPending {
+		run.Status = StatusRunning
+	}
+	u := s.now().Format(time.RFC3339Nano)
+	run.UpdatedAt = &u
+	writeJSON(w, http.StatusOK, cloneRun(run))
+}
+
+func validNodeStatus(st string) bool {
+	switch st {
+	case NodePending, NodeReady, NodeRunning, NodeAwaitingReview, NodeApproved,
+		NodeRejected, NodeFailed, NodeCancelled, NodeSkipped:
+		return true
+	default:
+		return false
+	}
+}
+
+func anyNode(nodes []Node, status string) bool {
+	for _, n := range nodes {
+		if n.Status == status {
+			return true
+		}
+	}
+	return false
+}
+
+func allNodesTerminalSuccess(nodes []Node) bool {
+	for _, n := range nodes {
+		switch n.Status {
+		case NodeApproved, NodeSkipped:
+			continue
+		default:
+			return false
+		}
+	}
+	return len(nodes) > 0
 }
 
 func cloneRun(r *Run) *Run {

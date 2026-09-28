@@ -1,6 +1,8 @@
 // Copyright (c) 2026 smarttang
 // SPDX-License-Identifier: MIT
 
+import type { WorkflowRun } from "../workflow/types.js";
+
 /** Task payload as delivered in Gateway → Slave `task.assign`. */
 export interface AssignedTask {
   id: string;
@@ -10,6 +12,8 @@ export interface AssignedTask {
   prompt?: string | null;
   model?: string | null;
   agentId?: string | null;
+  workflowId?: string | null;
+  nodeId?: string | null;
   createdAt?: string;
   updatedAt?: string | null;
   error?: { code?: string; message?: string } | null;
@@ -40,5 +44,8 @@ export type InboundMessage =
   | { type: "pong" }
   | { type: "task.assign"; task: AssignedTask }
   | { type: "task.cancel"; taskId: string }
+  | { type: "workflow.assign"; workflow: WorkflowRun }
   | { type: "error"; error?: string }
   | { type: string; [k: string]: unknown };
+
+export type { WorkflowRun };

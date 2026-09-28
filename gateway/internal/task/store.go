@@ -60,10 +60,12 @@ type EventSource interface {
 }
 
 type createRequest struct {
-	SlaveID string `json:"slaveId"`
-	RepoID  string `json:"repoId"`
-	Prompt  string `json:"prompt"`
-	Model   string `json:"model"`
+	SlaveID    string `json:"slaveId"`
+	RepoID     string `json:"repoId"`
+	Prompt     string `json:"prompt"`
+	Model      string `json:"model"`
+	WorkflowID string `json:"workflowId"`
+	NodeID     string `json:"nodeId"`
 }
 
 type Store struct {
@@ -138,6 +140,12 @@ func (s *Store) handleCreate(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: created,
 		UpdatedAt: &updated,
 	}
+	if v := strings.TrimSpace(req.WorkflowID); v != "" {
+		t.WorkflowID = strPtr(v)
+	}
+	if v := strings.TrimSpace(req.NodeID); v != "" {
+		t.NodeID = strPtr(v)
+	}
 
 	s.mu.Lock()
 	if idem != "" {
@@ -153,7 +161,8 @@ func (s *Store) handleCreate(w http.ResponseWriter, r *http.Request) {
 	out := cloneTask(t)
 	s.mu.Unlock()
 
-	if s.dispatcher != nil {
+	// Workflow-owned tasks are executed by Slave DAG scheduler; skip WS assign.
+	if s.dispatcher != nil && (out.WorkflowID == nil || *out.WorkflowID == "") {
 		go s.dispatcher.Assign(out)
 	}
 

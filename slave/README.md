@@ -56,8 +56,11 @@ npm run smoke-local
 1. 校验配置与 `repos[].cwd` 绝对路径白名单；拒绝配置中的 `cloud` / 明文 `apiKey`
 2. 出站 WS：`auth` → `register` → `heartbeat`；断线重连
 3. `task.assign` → 仅用 `repoId` 查白名单 cwd → Local Agent → stream 映射 → **必** `wait` → dispose
-4. `task.cancel` → `run.cancel()`（若 `supports`）；否则记原因并停止转发后续 stream（含 tool）
-5. 错误：`phase: policy|startup|run`；日志脱敏
+4. `workflow.assign`（`POST /workflows/{id}/start`）→ **串行**取 `ready` 节点 → 创建 task → 执行 → 节点进 `awaiting_review`（**绝不**直接 approved）；下游须依赖节点 `approved` 后才 `ready`（M05-P05）
+5. `task.cancel` → `run.cancel()`（若 `supports`）；否则记原因并停止转发后续 stream（含 tool）
+6. 错误：`phase: policy|startup|run`；日志脱敏
+
+样例两节点 DAG：`fixtures/dag-two-node.json`（亦见 `ai/bundles/m05-p02-two-node.json`）。
 
 ## 安全注意事项
 
@@ -86,7 +89,8 @@ npm run smoke-local
 | M04-P01 | 工程 + 配置 / cwd 白名单 |
 | M04-P02 | Gateway 出站客户端 |
 | M04-P03 | Local Agent create/send/stream/wait |
-| **M04-P04** | 取消 / 错误 / 安全默认（当前） |
+| M04-P04 | 取消 / 错误 / 安全默认 |
+| **M05-P02** | 串行 DAG：`workflow.assign` → ready 节点 → task → `awaiting_review`（当前） |
 
 协议：[../gateway/docs/slave-ws.md](../gateway/docs/slave-ws.md)  
 设计：[doc/local-slave.md](../doc/local-slave.md) · [doc/architecture.md](../doc/architecture.md)

@@ -53,6 +53,7 @@ func main() {
 	slaveReg := slaves.NewRegistry(slaveList)
 	slaveHub := slaves.NewOutboundHub(authStore, slaveReg, taskStore, hub)
 	taskStore.SetDispatcher(slaveHub)
+	wfStore.SetStarter(slaveHub)
 
 	log.Printf("pair code: %s (use POST /v1/auth/pair)", authStore.PairCode())
 

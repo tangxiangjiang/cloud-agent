@@ -142,6 +142,68 @@ func TestCreateGetListAndAuth(t *testing.T) {
 	}
 }
 
+func TestRecomputeReadyRequiresApproved(t *testing.T) {
+	nodes := []workflow.Node{
+		{ID: "A", DependsOn: []string{}, Status: workflow.NodeAwaitingReview},
+		{ID: "B", DependsOn: []string{"A"}, Status: workflow.NodePending},
+	}
+	workflow.RecomputeReady(nodes)
+	if nodes[1].Status != workflow.NodePending {
+		t.Fatalf("B must stay pending while A awaiting_review, got %s", nodes[1].Status)
+	}
+	nodes[0].Status = workflow.NodeApproved
+	workflow.RecomputeReady(nodes)
+	if nodes[1].Status != workflow.NodeReady {
+		t.Fatalf("B should become ready after A approved, got %s", nodes[1].Status)
+	}
+}
+
+func TestStartAndPatchNode(t *testing.T) {
+	store := workflow.NewStore()
+	h := store.Handler()
+	body := `{
+		"bundleId":"b","repoId":"r","slaveId":"slave_devpc",
+		"nodes":[
+			{"id":"A","dependsOn":[],"prompt":{"mode":"inline","inline":"hi"}},
+			{"id":"B","dependsOn":["A"]}
+		]
+	}`
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body))
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", createRec.Code, createRec.Body.String())
+	}
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	startReq := httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/start", nil)
+	startRec := httptest.NewRecorder()
+	h.ServeHTTP(startRec, startReq)
+	if startRec.Code != http.StatusOK {
+		t.Fatalf("start: %d %s", startRec.Code, startRec.Body.String())
+	}
+
+	patchBody := `{"status":"awaiting_review","taskId":"tsk_1"}`
+	patchReq := httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A", strings.NewReader(patchBody))
+	patchRec := httptest.NewRecorder()
+	h.ServeHTTP(patchRec, patchReq)
+	if patchRec.Code != http.StatusOK {
+		t.Fatalf("patch: %d %s", patchRec.Code, patchRec.Body.String())
+	}
+	var after workflow.Run
+	_ = json.NewDecoder(patchRec.Body).Decode(&after)
+	if after.Nodes[0].Status != workflow.NodeAwaitingReview {
+		t.Fatalf("A status: %s", after.Nodes[0].Status)
+	}
+	if after.Nodes[0].TaskID == nil || *after.Nodes[0].TaskID != "tsk_1" {
+		t.Fatalf("taskId: %+v", after.Nodes[0].TaskID)
+	}
+	if after.Nodes[1].Status != workflow.NodePending {
+		t.Fatalf("B must remain pending, got %s", after.Nodes[1].Status)
+	}
+}
+
 func TestCreateRejectsCycle(t *testing.T) {
 	store := workflow.NewStore()
 	h := store.Handler()

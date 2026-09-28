@@ -81,3 +81,31 @@ func InitialNodeStatus(dependsOn []string) string {
 	}
 	return NodePending
 }
+
+// RecomputeReady promotes pending nodes to ready only when every dependency is approved.
+// Awaiting_review / running / rejected do NOT unlock dependents (review gate).
+func RecomputeReady(nodes []Node) {
+	byID := make(map[string]string, len(nodes))
+	for _, n := range nodes {
+		byID[n.ID] = n.Status
+	}
+	for i := range nodes {
+		if nodes[i].Status != NodePending {
+			continue
+		}
+		ok := true
+		for _, dep := range nodes[i].DependsOn {
+			if byID[dep] != NodeApproved {
+				ok = false
+				break
+			}
+		}
+		if ok && len(nodes[i].DependsOn) > 0 {
+			nodes[i].Status = NodeReady
+		}
+		// roots with empty dependsOn stay as initially set; if somehow pending, promote
+		if ok && len(nodes[i].DependsOn) == 0 {
+			nodes[i].Status = NodeReady
+		}
+	}
+}

@@ -13,11 +13,13 @@ import { GatewayClient } from "./gateway/client.js";
 import type { TaskHandlers } from "./gateway/types.js";
 import { log, setLogLevel } from "./log.js";
 import { StubTaskHandler } from "./tasks/stubHandler.js";
+import { GatewayHttpApi, gatewayHttpBase } from "./workflow/http.js";
+import { SerialDagScheduler } from "./workflow/scheduler.js";
 
 function usage(): void {
   console.log(`Usage: slave [--config <path>] [--stub] [--log-level debug|info|warn|error]
 
-Outbound Local Slave: Gateway WS + Cursor SDK Local Agent (no cloud).
+Outbound Local Slave: Gateway WS + Cursor SDK Local Agent + serial DAG scheduler.
 
 Env:
   GATEWAY_TOKEN (or tokenEnv)  — Bearer from POST /v1/auth/pair
@@ -83,6 +85,10 @@ async function main(): Promise<void> {
   }
 
   const handlers = buildHandlers(cfg, Boolean(values.stub));
+  const http = new GatewayHttpApi(gatewayHttpBase(cfg.gatewayUrl), token);
+
+  // Client is created first so scheduler can emit via it; scheduler wired after.
+  let scheduler!: SerialDagScheduler;
 
   const clientOpts: ConstructorParameters<typeof GatewayClient>[0] = {
     url: cfg.gatewayUrl,
@@ -90,11 +96,19 @@ async function main(): Promise<void> {
     slaveId: cfg.slaveId,
     repos: cfg.repos,
     handlers,
+    onWorkflowAssign: (run) => scheduler.enqueue(run),
   };
   if (cfg.name !== undefined) {
     clientOpts.name = cfg.name;
   }
   const client = new GatewayClient(clientOpts);
+
+  scheduler = new SerialDagScheduler({
+    cfg,
+    http,
+    handlers,
+    emit: (taskId, kind, payload) => client.emitTaskEvent(taskId, kind, payload),
+  });
 
   const shutdown = async (signal: string) => {
     log.info("shutting down", { signal });
@@ -105,7 +119,7 @@ async function main(): Promise<void> {
   process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
   client.start();
-  log.info("slave running (Local Agent + outbound WS); Ctrl+C to stop");
+  log.info("slave running (Local Agent + DAG scheduler); Ctrl+C to stop");
 }
 
 main().catch((err: unknown) => {

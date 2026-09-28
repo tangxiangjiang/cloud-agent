@@ -13,7 +13,7 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test src/config.test.ts src/gateway/client.test.ts src/agent/mapStream.test.ts src/agent/localHandler.test.ts src/safety/repo.test.ts src/safety/cancel.test.ts src/log.test.ts",
+    "test": "tsx --test src/config.test.ts src/gateway/client.test.ts src/agent/mapStream.test.ts src/agent/localHandler.test.ts src/safety/repo.test.ts src/safety/cancel.test.ts src/log.test.ts src/workflow/scheduler.test.ts",
     "smoke-local": "tsx src/agent/smokeLocal.ts"
   },
   "dependencies": {

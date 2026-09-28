@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "bundle_m05_p02_two_node",
+  "title": "M05-P02 two-node serial DAG fixture",
+  "repoId": "r_cloud_agent",
+  "preferredSlaveId": "slave_devpc",
+  "progressDoc": "ai/progress.md",
+  "roadmapRef": "doc/roadmaps/cloud-agent/README.md",
+  "nodes": [
+    {
+      "id": "N1",
+      "phaseRef": "slave/fixtures/smoke-repo/README.md",
+      "title": "First node",
+      "dependsOn": [],
+      "model": "composer-2.5",
+      "dodChecks": [],
+      "onFailure": "stop",
+      "prompt": {
+        "mode": "inline",
+        "inline": "Reply with exactly: node-1-ok. Do not modify files.",
+        "extra": "Human review required after this node."
+      }
+    },
+    {
+      "id": "N2",
+      "phaseRef": "slave/fixtures/smoke-repo/README.md",
+      "title": "Second node",
+      "dependsOn": ["N1"],
+      "model": "composer-2.5",
+      "onFailure": "stop",
+      "prompt": {
+        "mode": "inline",
+        "inline": "Reply with exactly: node-2-ok. Do not modify files."
+      }
+    }
+  ]
+}

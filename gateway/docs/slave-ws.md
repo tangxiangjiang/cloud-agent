@@ -34,8 +34,9 @@ wss://{gateway}/v1/slave/ws
 | `registered` | `slaveId` | 登记成功 |
 | `heartbeat.ok` | — | 心跳应答 |
 | `pong` | — | 对 `ping` |
-| `task.assign` | `task`（Task JSON） | 下发 queued 任务 |
+| `task.assign` | `task`（Task JSON） | 下发 queued 任务（无 workflowId 的自由任务） |
 | `task.cancel` | `taskId` | 取消 |
+| `workflow.assign` | `workflow`（WorkflowRun JSON） | `POST /workflows/{id}/start` 后推给目标 Slave；串行 DAG 调度 |
 | `error` | `error` | 失败 |
 
 `task.event.kind` 与 App 侧一致：`status` / `assistant.delta` / `tool.*` / `error` / `done`。

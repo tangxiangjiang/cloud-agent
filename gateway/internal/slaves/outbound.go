@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/auth"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/task"
+	"github.com/tangxiangjiang/cloud-agent/gateway/internal/workflow"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/ws"
 )
 
@@ -21,13 +22,13 @@ var slaveUpgrader = websocket.Upgrader{
 }
 
 type slaveClientMsg struct {
-	Type    string         `json:"type"`
-	Token   string         `json:"token"`
-	SlaveID string         `json:"slaveId"`
-	Name    string         `json:"name"`
-	Repos   []Repo         `json:"repos"`
-	TaskID  string         `json:"taskId"`
-	Event   *slaveEventIn  `json:"event"`
+	Type    string        `json:"type"`
+	Token   string        `json:"token"`
+	SlaveID string        `json:"slaveId"`
+	Name    string        `json:"name"`
+	Repos   []Repo        `json:"repos"`
+	TaskID  string        `json:"taskId"`
+	Event   *slaveEventIn `json:"event"`
 }
 
 type slaveEventIn struct {
@@ -108,6 +109,24 @@ func (h *OutboundHub) RequestCancel(taskID, slaveID string) bool {
 	c.sendJSON(map[string]any{
 		"type":   "task.cancel",
 		"taskId": taskID,
+	})
+	return true
+}
+
+// AssignWorkflow implements workflow.Starter — push DAG run to the target slave.
+func (h *OutboundHub) AssignWorkflow(run *workflow.Run) bool {
+	if run == nil || run.SlaveID == nil || *run.SlaveID == "" {
+		return false
+	}
+	h.mu.Lock()
+	c := h.conns[*run.SlaveID]
+	h.mu.Unlock()
+	if c == nil {
+		return false
+	}
+	c.sendJSON(map[string]any{
+		"type":     "workflow.assign",
+		"workflow": run,
 	})
 	return true
 }

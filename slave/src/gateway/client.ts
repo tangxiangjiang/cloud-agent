@@ -4,7 +4,8 @@
 import WebSocket from "ws";
 import type { RepoConfig } from "../config.js";
 import { log } from "../log.js";
-import type { AssignedTask, InboundMessage, TaskHandlers } from "./types.js";
+import type { WorkflowRun } from "../workflow/types.js";
+import type { AssignedTask, EmitEvent, InboundMessage, TaskHandlers } from "./types.js";
 
 export interface GatewayClientOptions {
   url: string;
@@ -14,6 +15,8 @@ export interface GatewayClientOptions {
   name?: string;
   repos: RepoConfig[];
   handlers: TaskHandlers;
+  /** Optional DAG scheduler hook for workflow.assign */
+  onWorkflowAssign?: (run: WorkflowRun) => void | Promise<void>;
   heartbeatMs?: number;
   /** Initial reconnect delay; doubles up to maxReconnectMs. */
   reconnectMs?: number;
@@ -192,6 +195,28 @@ export class GatewayClient {
         }
         break;
       }
+      case "workflow.assign": {
+        const wf = (msg as { workflow?: WorkflowRun }).workflow;
+        if (!wf?.id || !Array.isArray(wf.nodes)) {
+          log.warn("workflow.assign missing workflow");
+          break;
+        }
+        log.info("workflow assigned", {
+          workflowId: wf.id,
+          nodes: wf.nodes.length,
+        });
+        if (this.opts.onWorkflowAssign) {
+          try {
+            await this.opts.onWorkflowAssign(wf);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            log.error("workflow handler failed", { workflowId: wf.id, error: message });
+          }
+        } else {
+          log.warn("workflow.assign ignored (no scheduler)");
+        }
+        break;
+      }
       case "error":
         log.error("gateway error", {
           error: (msg as { error?: string }).error ?? "unknown",
@@ -201,6 +226,11 @@ export class GatewayClient {
         log.debug("gateway message", { type: msg.type });
     }
   }
+
+  /** Public emit for DAG scheduler-owned tasks. */
+  emitTaskEvent: EmitEvent = (taskId, kind, payload) => {
+    this.emitEvent(taskId, kind, payload);
+  };
 
   private sendRegister(): void {
     const body: Record<string, unknown> = {

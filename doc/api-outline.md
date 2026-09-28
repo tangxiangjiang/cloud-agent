@@ -144,8 +144,24 @@ Header 可选：`Idempotency-Key: <uuid>`
 `GET /workflows/{workflowId}` → 完整 Run（含 `nodes`、`dependsOn`、节点状态）  
 `GET /workflows/{workflowId}/nodes` → `{ "nodes": [ … ] }`
 
+**启动调度**（Bearer）
+
+`POST /workflows/{workflowId}/start` → `{ "workflow", "delivered" }`  
+Gateway 将 Run 标为 `running`，并向 `slaveId` 出站推送 `workflow.assign`（Slave 串行调度）。
+
+**节点状态同步**（Bearer；Slave 在跑节点时调用）
+
+`PATCH /workflows/{workflowId}/nodes/{nodeId}`
+
+```json
+{ "status": "awaiting_review", "taskId": "tsk_…" }
+```
+
+Agent 成功只许进入 `awaiting_review`，**不得**直接 `approved`。仅当依赖节点均为 `approved` 时，下游才变为 `ready`（审核闸门）。  
+样例 DAG：`slave/fixtures/dag-two-node.json`、`ai/bundles/m05-p02-two-node.json`。
+
 节点状态枚举：`pending / ready / running / awaiting_review / approved / rejected / failed / cancelled / skipped`。  
-调度执行、审核、diff 见后续 M05 phases；本资源首版只存状态。
+审核 / diff / approve 写进度见后续 M05 phases。
 
 ### 工作流节点审核（App 闸门）
 

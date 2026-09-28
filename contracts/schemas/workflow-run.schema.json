@@ -61,6 +61,21 @@
         }
       }
     },
+    "reviseHistory": {
+      "type": "array",
+      "description": "Audit log of App revise instructions (never discarded). Revise does not approve or write progress.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["nodeId", "instruction", "at"],
+        "properties": {
+          "nodeId": { "type": "string" },
+          "instruction": { "type": "string", "minLength": 1 },
+          "at": { "type": "string", "format": "date-time" },
+          "taskId": { "type": "string" }
+        }
+      }
+    },
     "createdAt": { "type": "string", "format": "date-time" },
     "updatedAt": { "type": ["string", "null"], "format": "date-time" }
   }

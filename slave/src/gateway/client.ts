@@ -4,7 +4,7 @@
 import WebSocket from "ws";
 import type { RepoConfig } from "../config.js";
 import { log } from "../log.js";
-import type { WorkflowRun } from "../workflow/types.js";
+import type { WorkflowReviseMessage, WorkflowRun } from "../workflow/types.js";
 import type { AssignedTask, EmitEvent, InboundMessage, TaskHandlers } from "./types.js";
 
 export interface GatewayClientOptions {
@@ -17,6 +17,8 @@ export interface GatewayClientOptions {
   handlers: TaskHandlers;
   /** Optional DAG scheduler hook for workflow.assign */
   onWorkflowAssign?: (run: WorkflowRun) => void | Promise<void>;
+  /** Optional revise follow-up hook for workflow.revise */
+  onWorkflowRevise?: (msg: WorkflowReviseMessage) => void | Promise<void>;
   heartbeatMs?: number;
   /** Initial reconnect delay; doubles up to maxReconnectMs. */
   reconnectMs?: number;
@@ -214,6 +216,40 @@ export class GatewayClient {
           }
         } else {
           log.warn("workflow.assign ignored (no scheduler)");
+        }
+        break;
+      }
+      case "workflow.revise": {
+        const m = msg as {
+          workflowId?: string;
+          nodeId?: string;
+          instruction?: string;
+        };
+        if (!m.workflowId || !m.nodeId || !m.instruction?.trim()) {
+          log.warn("workflow.revise missing fields");
+          break;
+        }
+        log.info("workflow revise", {
+          workflowId: m.workflowId,
+          nodeId: m.nodeId,
+        });
+        if (this.opts.onWorkflowRevise) {
+          try {
+            await this.opts.onWorkflowRevise({
+              workflowId: m.workflowId,
+              nodeId: m.nodeId,
+              instruction: m.instruction,
+            });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            log.error("revise handler failed", {
+              workflowId: m.workflowId,
+              nodeId: m.nodeId,
+              error: message,
+            });
+          }
+        } else {
+          log.warn("workflow.revise ignored (no scheduler)");
         }
         break;
       }

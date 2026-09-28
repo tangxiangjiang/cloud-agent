@@ -112,13 +112,42 @@ export class LocalAgentTaskHandler implements TaskHandlers {
 
     let agent: Awaited<ReturnType<typeof Agent.create>> | undefined;
     try {
-      agent = await Agent.create(createOptions);
-      log.info("local agent created", {
-        taskId: task.id,
-        agentId: agent.agentId,
-        model: modelId,
-        cwd: repo.cwd,
-      });
+      const resumeId = (task.resumeAgentId ?? "").trim();
+      if (resumeId) {
+        try {
+          agent = await Agent.resume(resumeId, {
+            apiKey: this.opts.apiKey,
+            model: { id: modelId },
+            local: {
+              cwd: repo.cwd,
+              settingSources: [],
+            },
+          });
+          log.info("local agent resumed (revise follow-up)", {
+            taskId: task.id,
+            agentId: agent.agentId,
+            model: modelId,
+            cwd: repo.cwd,
+          });
+        } catch (resumeErr) {
+          const message =
+            resumeErr instanceof Error ? resumeErr.message : String(resumeErr);
+          log.warn("Agent.resume failed; falling back to Agent.create", {
+            taskId: task.id,
+            resumeAgentId: resumeId,
+            error: message,
+          });
+        }
+      }
+      if (!agent) {
+        agent = await Agent.create(createOptions);
+        log.info("local agent created", {
+          taskId: task.id,
+          agentId: agent.agentId,
+          model: modelId,
+          cwd: repo.cwd,
+        });
+      }
 
       if (this.cancelled.has(task.id)) {
         emit(task.id, "done", { status: "cancelled" });
@@ -172,8 +201,9 @@ export class LocalAgentTaskHandler implements TaskHandlers {
         status: result.status,
       });
 
+      const agentId = agent.agentId ?? run.agentId;
       if (result.status === "cancelled" || this.cancelled.has(task.id)) {
-        emit(task.id, "done", { status: "cancelled" });
+        emit(task.id, "done", { status: "cancelled", agentId });
         return;
       }
       if (result.status === "error") {
@@ -182,10 +212,10 @@ export class LocalAgentTaskHandler implements TaskHandlers {
           code: result.error?.code ?? "run_error",
           phase: "run",
         });
-        emit(task.id, "done", { status: "error" });
+        emit(task.id, "done", { status: "error", agentId });
         return;
       }
-      emit(task.id, "done", { status: "finished" });
+      emit(task.id, "done", { status: "finished", agentId });
     } catch (err) {
       if (err instanceof CursorAgentError) {
         log.error("local agent startup failed", {

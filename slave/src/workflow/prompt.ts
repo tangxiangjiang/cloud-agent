@@ -40,3 +40,19 @@ export function buildNodePrompt(node: WorkflowNode, repoCwd: string): string {
   );
   return parts.join("\n\n");
 }
+
+/** Prompt for App revise follow-up (natural-language instruction only). */
+export function buildRevisePrompt(
+  node: WorkflowNode,
+  instruction: string,
+): string {
+  const title = node.title?.trim();
+  const header = title
+    ? `Human revise for workflow node ${node.id} (${title})`
+    : `Human revise for workflow node ${node.id}`;
+  return [
+    header,
+    instruction.trim(),
+    "Apply the requested changes in the repo. When finished, stop. Do not mark the workflow node approved; human review is required.",
+  ].join("\n\n");
+}

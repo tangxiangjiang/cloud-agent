@@ -12,6 +12,8 @@ export interface AssignedTask {
   prompt?: string | null;
   model?: string | null;
   agentId?: string | null;
+  /** When set, Local Agent prefers Agent.resume then send (revise follow-up). */
+  resumeAgentId?: string | null;
   workflowId?: string | null;
   nodeId?: string | null;
   createdAt?: string;
@@ -45,6 +47,12 @@ export type InboundMessage =
   | { type: "task.assign"; task: AssignedTask }
   | { type: "task.cancel"; taskId: string }
   | { type: "workflow.assign"; workflow: WorkflowRun }
+  | {
+      type: "workflow.revise";
+      workflowId: string;
+      nodeId: string;
+      instruction: string;
+    }
   | { type: "error"; error?: string }
   | { type: string; [k: string]: unknown };
 

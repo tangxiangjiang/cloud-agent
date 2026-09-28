@@ -20,4 +20,13 @@
 - 仓库非 git 或 `rev-parse` 失败时：`baseline=null`，`files=[]`（仍可审核摘要/日志）。
 - Diff 仅用于手机**只读渲染**；修改意见走 `revise`，不接受客户端提交的文件内容覆盖仓库。
 
+## Revise（M05-P04）
+
+| 时机 | 动作 |
+|------|------|
+| App `POST .../revise` | Gateway：仅 `awaiting_review` 允许；写入 `reviseHistory`；节点 → `running`；WS `workflow.revise` |
+| Slave 收到 revise | 优先 `Agent.resume` + `agent.send(instruction)`，失败则新建 Agent 再跑；**沿用节点首次 baseline** |
+| Agent 成功 | 再 `PUT` diff → 节点回 `awaiting_review` |
+| 禁止 | revise 路径直接 `approved`；不写 `progress.md` |
+
 样例响应见 `contracts/examples/node-diff.json`。

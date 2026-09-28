@@ -32,6 +32,13 @@ export interface WorkflowNode {
   prompt?: WorkflowPrompt | null;
 }
 
+export interface ReviseEntry {
+  nodeId: string;
+  instruction: string;
+  at: string;
+  taskId?: string | null;
+}
+
 export interface WorkflowRun {
   id: string;
   bundleId: string;
@@ -41,8 +48,15 @@ export interface WorkflowRun {
   progressDoc?: string | null;
   status: string;
   nodes: WorkflowNode[];
+  reviseHistory?: ReviseEntry[];
   createdAt: string;
   updatedAt?: string | null;
+}
+
+export interface WorkflowReviseMessage {
+  workflowId: string;
+  nodeId: string;
+  instruction: string;
 }
 
 /**

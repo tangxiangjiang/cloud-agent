@@ -131,6 +131,26 @@ func (h *OutboundHub) AssignWorkflow(run *workflow.Run) bool {
 	return true
 }
 
+// AssignRevise implements workflow.Starter — ask Slave to follow-up on a node.
+func (h *OutboundHub) AssignRevise(slaveID, workflowID, nodeID, instruction string) bool {
+	if slaveID == "" || workflowID == "" || nodeID == "" {
+		return false
+	}
+	h.mu.Lock()
+	c := h.conns[slaveID]
+	h.mu.Unlock()
+	if c == nil {
+		return false
+	}
+	c.sendJSON(map[string]any{
+		"type":        "workflow.revise",
+		"workflowId":  workflowID,
+		"nodeId":      nodeID,
+		"instruction": instruction,
+	})
+	return true
+}
+
 type slaveConn struct {
 	hub    *OutboundHub
 	conn   *websocket.Conn

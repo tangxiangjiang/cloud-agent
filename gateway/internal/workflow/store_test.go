@@ -204,6 +204,65 @@ func TestStartAndPatchNode(t *testing.T) {
 	}
 }
 
+func TestReviseOnlyWhenAwaitingReview(t *testing.T) {
+	store := workflow.NewStore()
+	h := store.Handler()
+	body := `{"bundleId":"b","repoId":"r","slaveId":"s1","nodes":[{"id":"N1","dependsOn":[]}]}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	// Not awaiting_review yet
+	bad := httptest.NewRecorder()
+	h.ServeHTTP(bad, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/N1/revise", strings.NewReader(`{"instruction":"fix it"}`)))
+	if bad.Code != http.StatusConflict {
+		t.Fatalf("want 409, got %d %s", bad.Code, bad.Body.String())
+	}
+
+	patchRec := httptest.NewRecorder()
+	h.ServeHTTP(patchRec, httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/N1", strings.NewReader(`{"status":"awaiting_review","taskId":"tsk_1"}`)))
+	if patchRec.Code != http.StatusOK {
+		t.Fatalf("patch: %d", patchRec.Code)
+	}
+
+	okRec := httptest.NewRecorder()
+	h.ServeHTTP(okRec, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/N1/revise", strings.NewReader(`{"instruction":"把错误码改掉"}`)))
+	if okRec.Code != http.StatusOK {
+		t.Fatalf("revise: %d %s", okRec.Code, okRec.Body.String())
+	}
+	var resp struct {
+		Workflow workflow.Run           `json:"workflow"`
+		Revise   workflow.ReviseEntry   `json:"revise"`
+	}
+	_ = json.NewDecoder(okRec.Body).Decode(&resp)
+	if resp.Workflow.Nodes[0].Status != workflow.NodeRunning {
+		t.Fatalf("status want running, got %s", resp.Workflow.Nodes[0].Status)
+	}
+	if len(resp.Workflow.ReviseHistory) != 1 || resp.Workflow.ReviseHistory[0].Instruction != "把错误码改掉" {
+		t.Fatalf("audit: %+v", resp.Workflow.ReviseHistory)
+	}
+	if resp.Revise.Instruction != "把错误码改掉" {
+		t.Fatalf("revise entry: %+v", resp.Revise)
+	}
+	// Must not be approved
+	for _, n := range resp.Workflow.Nodes {
+		if n.Status == workflow.NodeApproved {
+			t.Fatal("revise must not approve")
+		}
+	}
+
+	// Slave patching taskId should attach to reviseHistory audit.
+	tid := "tsk_revise_1"
+	attach := httptest.NewRecorder()
+	h.ServeHTTP(attach, httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/N1", strings.NewReader(`{"taskId":"`+tid+`"}`)))
+	var after workflow.Run
+	_ = json.NewDecoder(attach.Body).Decode(&after)
+	if len(after.ReviseHistory) != 1 || after.ReviseHistory[0].TaskID == nil || *after.ReviseHistory[0].TaskID != tid {
+		t.Fatalf("reviseHistory taskId: %+v", after.ReviseHistory)
+	}
+}
+
 func TestPutAndGetDiff(t *testing.T) {
 	authStore := auth.NewStore("PAIR")
 	wfStore := workflow.NewStore()

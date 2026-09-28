@@ -55,18 +55,27 @@ type Node struct {
 	Prompt    *PromptSpec `json:"prompt,omitempty"`
 }
 
+// ReviseEntry is an audit record for App revise instructions (never discarded).
+type ReviseEntry struct {
+	NodeID      string  `json:"nodeId"`
+	Instruction string  `json:"instruction"`
+	At          string  `json:"at"`
+	TaskID      *string `json:"taskId,omitempty"`
+}
+
 // Run is a runtime workflow instance (WorkflowRun).
 type Run struct {
-	ID          string  `json:"id"`
-	BundleID    string  `json:"bundleId"`
-	BundleRef   *string `json:"bundleRef"`
-	SlaveID     *string `json:"slaveId"`
-	RepoID      string  `json:"repoId"`
-	ProgressDoc *string `json:"progressDoc"`
-	Status      string  `json:"status"`
-	Nodes       []Node  `json:"nodes"`
-	CreatedAt   string  `json:"createdAt"`
-	UpdatedAt   *string `json:"updatedAt"`
+	ID            string        `json:"id"`
+	BundleID      string        `json:"bundleId"`
+	BundleRef     *string       `json:"bundleRef"`
+	SlaveID       *string       `json:"slaveId"`
+	RepoID        string        `json:"repoId"`
+	ProgressDoc   *string       `json:"progressDoc"`
+	Status        string        `json:"status"`
+	Nodes         []Node        `json:"nodes"`
+	ReviseHistory []ReviseEntry `json:"reviseHistory,omitempty"`
+	CreatedAt     string        `json:"createdAt"`
+	UpdatedAt     *string       `json:"updatedAt"`
 }
 
 type createNodeRequest struct {
@@ -89,15 +98,20 @@ type createRequest struct {
 	Nodes       []createNodeRequest `json:"nodes"`
 }
 
-// Starter delivers a workflow run to an online Slave (implemented by slaves.OutboundHub).
+// Starter delivers workflow / revise messages to an online Slave.
 type Starter interface {
 	AssignWorkflow(run *Run) bool
+	AssignRevise(slaveID, workflowID, nodeID, instruction string) bool
 }
 
 type nodePatchRequest struct {
 	Status *string `json:"status"`
 	TaskID *string `json:"taskId"`
 	UnitID *string `json:"unitId"`
+}
+
+type reviseRequest struct {
+	Instruction string `json:"instruction"`
 }
 
 type Store struct {
@@ -128,6 +142,7 @@ func (s *Store) Handler() http.Handler {
 	mux.HandleFunc("PATCH /v1/workflows/{id}/nodes/{nodeId}", s.handlePatchNode)
 	mux.HandleFunc("GET /v1/workflows/{id}/nodes/{nodeId}/diff", s.handleGetDiff)
 	mux.HandleFunc("PUT /v1/workflows/{id}/nodes/{nodeId}/diff", s.handlePutDiff)
+	mux.HandleFunc("POST /v1/workflows/{id}/nodes/{nodeId}/revise", s.handleRevise)
 	return mux
 }
 
@@ -375,6 +390,13 @@ func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 			run.Nodes[idx].TaskID = nil
 		} else {
 			run.Nodes[idx].TaskID = &v
+			// Attach taskId to the latest revise audit entry for this node (if any).
+			for i := len(run.ReviseHistory) - 1; i >= 0; i-- {
+				if run.ReviseHistory[i].NodeID == nodeID && run.ReviseHistory[i].TaskID == nil {
+					run.ReviseHistory[i].TaskID = &v
+					break
+				}
+			}
 		}
 	}
 	if req.UnitID != nil {
@@ -429,6 +451,73 @@ func allNodesTerminalSuccess(nodes []Node) bool {
 		}
 	}
 	return len(nodes) > 0
+}
+
+func (s *Store) handleRevise(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	nodeID := r.PathValue("nodeId")
+	var req reviseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	instruction := strings.TrimSpace(req.Instruction)
+	if instruction == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "instruction required"})
+		return
+	}
+
+	s.mu.Lock()
+	run, ok := s.runs[id]
+	if !ok {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "workflow not found"})
+		return
+	}
+	idx := -1
+	for i := range run.Nodes {
+		if run.Nodes[i].ID == nodeID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
+		return
+	}
+	if run.Nodes[idx].Status != NodeAwaitingReview {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "node must be awaiting_review"})
+		return
+	}
+	// Never approve via revise.
+	u := s.now().Format(time.RFC3339Nano)
+	run.Nodes[idx].Status = NodeRunning
+	run.UpdatedAt = &u
+	run.Status = StatusRunning
+	entry := ReviseEntry{
+		NodeID:      nodeID,
+		Instruction: instruction,
+		At:          u,
+	}
+	run.ReviseHistory = append(run.ReviseHistory, entry)
+	slaveID := ""
+	if run.SlaveID != nil {
+		slaveID = *run.SlaveID
+	}
+	out := cloneRun(run)
+	s.mu.Unlock()
+
+	delivered := false
+	if s.starter != nil && slaveID != "" {
+		delivered = s.starter.AssignRevise(slaveID, id, nodeID, instruction)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"workflow":  out,
+		"delivered": delivered,
+		"revise":    entry,
+	})
 }
 
 func (s *Store) handleGetDiff(w http.ResponseWriter, r *http.Request) {
@@ -547,6 +636,16 @@ func cloneRun(r *Run) *Run {
 	if r.UpdatedAt != nil {
 		v := *r.UpdatedAt
 		cp.UpdatedAt = &v
+	}
+	if r.ReviseHistory != nil {
+		cp.ReviseHistory = make([]ReviseEntry, len(r.ReviseHistory))
+		copy(cp.ReviseHistory, r.ReviseHistory)
+		for i := range cp.ReviseHistory {
+			if r.ReviseHistory[i].TaskID != nil {
+				v := *r.ReviseHistory[i].TaskID
+				cp.ReviseHistory[i].TaskID = &v
+			}
+		}
 	}
 	return &cp
 }

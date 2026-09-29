@@ -1,6 +1,6 @@
 # 工程状态同步（Project Sync）
 
-**状态：Gateway API + 对账 warnings 已落地（M08-P01～P03）；App UI / 可选 AI 摘要见后续 phase**  
+**状态：Gateway API + 对账 + App 同步 UI 已落地（M08-P01～P04）；可选 AI 摘要见 M08-P05**  
 目的：让 Gateway 侧工作流状态与各 Slave 工作区（git / progress / milestone）可对账，避免「本机已推进、Gateway 仍停在旧节点」或反之。
 
 相关：

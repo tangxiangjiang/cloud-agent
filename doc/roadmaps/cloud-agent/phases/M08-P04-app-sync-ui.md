@@ -18,11 +18,11 @@
 
 ## 完成定义（DoD）
 
-- [ ] 工程列表或工程详情可触发同步；Slave offline 时禁用并提示
-- [ ] loading / 成功 / 失败反馈
-- [ ] 展示 `syncedAt`、branch、dirty、summary、warnings 列表
-- [ ] warnings 可引导「继续当前 Workflow」（若报告带 workflowId）
-- [ ] widget/API 单测覆盖主路径
+- [x] 工程列表或工程详情可触发同步；Slave offline 时禁用并提示
+- [x] loading / 成功 / 失败反馈
+- [x] 展示 `syncedAt`、branch、dirty、summary、warnings 列表
+- [x] warnings 可引导「继续当前 Workflow」（若报告带 workflowId）
+- [x] widget/API 单测覆盖主路径
 
 ## 禁止事项
 

@@ -11,6 +11,9 @@
   python run.py status
   python run.py test
   python run.py app
+  python run.py build --server --target linux-amd64 ./build
+  python run.py build --ios ./build
+  python run.py build --ios --ipa --export-method development ./build
 
 密钥只走环境变量；勿把 token / API key 提交进 git。
 详见 doc/deploy.md、ai/INDEX.md。
@@ -21,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -50,6 +54,16 @@ if not STUB_BUNDLE.is_file():
     STUB_BUNDLE = ROOT / "slave" / "fixtures" / "dag-two-node.json"
 DEFAULT_PAIR = "ABCD-EFGH"
 DEFAULT_BASE = "http://127.0.0.1:8080"
+DEFAULT_BUILD_DIR = ROOT / "build"
+
+# Gateway GOOS/GOARCH。Slave 是 Node/JS，不分平台，只随 --server 打包。
+BUILD_TARGETS: dict[str, tuple[str, str]] = {
+    "linux-amd64": ("linux", "amd64"),
+    "linux-arm64": ("linux", "arm64"),
+    "darwin-amd64": ("darwin", "amd64"),
+    "darwin-arm64": ("darwin", "arm64"),
+    "windows-amd64": ("windows", "amd64"),
+}
 
 
 def load_plan_index() -> dict[str, Any]:
@@ -320,7 +334,38 @@ def _npm() -> str:
 
 
 def _flutter() -> str:
-    return "flutter.bat" if sys.platform == "win32" else "flutter"
+    """Resolve flutter binary: PATH, then FVM default / newest under ~/fvm/versions."""
+    if sys.platform == "win32":
+        found = shutil.which("flutter.bat") or shutil.which("flutter")
+        if found:
+            return found
+        die("flutter not found on PATH (install Flutter or add it to PATH)")
+
+    found = shutil.which("flutter")
+    if found:
+        return found
+
+    home = Path.home()
+    candidates: list[Path] = []
+    for p in (
+        home / "fvm" / "default" / "bin" / "flutter",
+        home / "flutter" / "bin" / "flutter",
+        home / "development" / "flutter" / "bin" / "flutter",
+    ):
+        if p.is_file():
+            candidates.append(p)
+    versions = home / "fvm" / "versions"
+    if versions.is_dir():
+        for ver in sorted(versions.iterdir(), reverse=True):
+            flutter_bin = ver / "bin" / "flutter"
+            if flutter_bin.is_file():
+                candidates.append(flutter_bin)
+                break
+    if candidates:
+        return str(candidates[0])
+    die(
+        "flutter not found. Install Flutter, or use FVM (e.g. ~/fvm/versions/<ver>/bin/flutter)"
+    )
 
 
 def start_slave(*, stub: bool, token: str, cursor_key: str | None) -> int:
@@ -619,6 +664,268 @@ def cmd_app(args: argparse.Namespace) -> None:
     info("路径: Workflows → 详情 → Start（若未自动）→ Diff / Review / Logs")
 
 
+def parse_build_target(target: str) -> tuple[str, str]:
+    key = target.strip().lower().replace("_", "-")
+    if key not in BUILD_TARGETS:
+        known = ", ".join(sorted(BUILD_TARGETS))
+        die(f"unknown --target {target!r}. Known: {known}")
+    return BUILD_TARGETS[key]
+
+
+def resolve_outdir(raw: str | None) -> Path:
+    p = Path(raw) if raw else DEFAULT_BUILD_DIR
+    if not p.is_absolute():
+        p = (ROOT / p).resolve()
+    else:
+        p = p.resolve()
+    return p
+
+
+def _run_checked(cmd: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> None:
+    info(f">>> {' '.join(cmd)}  ({cwd.relative_to(ROOT) if cwd.is_relative_to(ROOT) else cwd})")
+    r = subprocess.run(cmd, cwd=cwd, env=env)
+    if r.returncode != 0:
+        die(f"failed: {' '.join(cmd)} exit={r.returncode}")
+
+
+def build_gateway(outdir: Path, *, goos: str, goarch: str) -> Path:
+    gateway_dir = ROOT / "gateway"
+    if not (gateway_dir / "go.mod").is_file():
+        die(f"missing gateway module: {gateway_dir}")
+    outdir.mkdir(parents=True, exist_ok=True)
+    name = "gateway.exe" if goos == "windows" else "gateway"
+    out = outdir / name
+    env = os.environ.copy()
+    env["GOOS"] = goos
+    env["GOARCH"] = goarch
+    env["CGO_ENABLED"] = "0"
+    _run_checked(
+        ["go", "build", "-trimpath", "-ldflags=-s -w", "-o", str(out), "."],
+        cwd=gateway_dir,
+        env=env,
+    )
+    info(f"gateway → {out.relative_to(ROOT) if out.is_relative_to(ROOT) else out} ({goos}/{goarch})")
+    return out
+
+
+def build_slave(outdir: Path) -> Path:
+    """Compile TypeScript and stage a Node package (platform-agnostic)."""
+    slave_src = ROOT / "slave"
+    pkg = slave_src / "package.json"
+    if not pkg.is_file():
+        die(f"missing slave package: {pkg}")
+
+    npm = _npm()
+    if not (slave_src / "node_modules").is_dir():
+        _run_checked([npm, "ci"], cwd=slave_src)
+    _run_checked([npm, "run", "build"], cwd=slave_src)
+
+    dist_src = slave_src / "dist"
+    if not dist_src.is_dir():
+        die("slave build produced no dist/")
+
+    slave_out = outdir / "slave"
+    if slave_out.exists():
+        shutil.rmtree(slave_out)
+    slave_out.mkdir(parents=True, exist_ok=True)
+
+    shutil.copytree(dist_src, slave_out / "dist")
+    for name in ("package.json", "package-lock.json", "config.example.yaml", "README.md"):
+        src = slave_src / name
+        if src.is_file():
+            shutil.copy2(src, slave_out / name)
+
+    fixtures = slave_src / "fixtures"
+    if fixtures.is_dir():
+        shutil.copytree(fixtures, slave_out / "fixtures")
+
+    # 不拷贝本机 node_modules：目标机用 npm ci（原生依赖按目标平台解析）
+    readme = slave_out / "DEPLOY.txt"
+    readme.write_text(
+        "\n".join(
+            [
+                "Slave 为 Node.js 包（不分 GOOS/GOARCH）。",
+                "在目标机（Node >= 22.13）:",
+                "  cd slave",
+                "  npm ci --omit=dev",
+                "  cp config.example.yaml config.yaml   # 编辑 projects[].cwd",
+                "  export GATEWAY_TOKEN=...",
+                "  export CURSOR_API_KEY=...",
+                "  node dist/index.js --config config.yaml",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    info(f"slave  → {slave_out.relative_to(ROOT) if slave_out.is_relative_to(ROOT) else slave_out} (Node/JS)")
+    return slave_out
+
+
+def _rel(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def build_ios(
+    outdir: Path,
+    *,
+    ipa: bool,
+    export_method: str,
+    no_codesign: bool,
+) -> Path:
+    """Build Flutter iOS app (and optional IPA); stage under outdir/ios/."""
+    if sys.platform != "darwin":
+        die("iOS 构建仅支持 macOS（需要 Xcode）")
+
+    app_dir = ROOT / "app"
+    if not (app_dir / "pubspec.yaml").is_file():
+        die(f"missing Flutter app: {app_dir}")
+    if not (app_dir / "ios" / "Runner.xcworkspace").exists():
+        die("missing app/ios/Runner.xcworkspace")
+
+    flutter = _flutter()
+    info(f"flutter: {flutter}")
+
+    ios_out = outdir / "ios"
+    if ios_out.exists():
+        shutil.rmtree(ios_out)
+    ios_out.mkdir(parents=True, exist_ok=True)
+
+    _run_checked([flutter, "pub", "get"], cwd=app_dir)
+
+    staged: list[str] = []
+
+    if ipa:
+        if no_codesign:
+            die("--ipa 需要代码签名，不能与 --no-codesign 同用")
+        cmd = [
+            flutter,
+            "build",
+            "ipa",
+            "--release",
+            f"--export-method={export_method}",
+        ]
+        _run_checked(cmd, cwd=app_dir)
+        ipa_dir = app_dir / "build" / "ios" / "ipa"
+        ipas = sorted(ipa_dir.glob("*.ipa")) if ipa_dir.is_dir() else []
+        if not ipas:
+            die(f"IPA 未生成（检查 Xcode Signing / Team）。期望目录: {ipa_dir}")
+        for src in ipas:
+            dst = ios_out / src.name
+            shutil.copy2(src, dst)
+            staged.append(_rel(dst))
+            info(f"ipa    → {_rel(dst)}")
+    else:
+        cmd = [flutter, "build", "ios", "--release"]
+        if no_codesign:
+            cmd.append("--no-codesign")
+        _run_checked(cmd, cwd=app_dir)
+        # Prefer device build product; fall back to archive app path.
+        candidates = [
+            app_dir / "build" / "ios" / "iphoneos" / "Runner.app",
+            app_dir / "build" / "ios" / "Release-iphoneos" / "Runner.app",
+        ]
+        app_bundle = next((p for p in candidates if p.is_dir()), None)
+        if app_bundle is None:
+            die(
+                "未找到 Runner.app。"
+                "可先在 Xcode 配置 Signing（Team），或加 --no-codesign 仅出未签名产物。"
+            )
+        dst_app = ios_out / "Runner.app"
+        shutil.copytree(app_bundle, dst_app)
+        staged.append(_rel(dst_app))
+        info(f"app    → {_rel(dst_app)}")
+
+    install = ios_out / "INSTALL.txt"
+    lines = [
+        "cloud-agent Flutter iOS 产物",
+        "",
+        "配对 Gateway（真机）:",
+        "  https://nexusx.dev/gateway",
+        "  或同网段 http://192.168.2.2/gateway",
+        "  Pair code: ABCD-EFGH（以 Gateway 启动日志为准）",
+        "",
+    ]
+    if ipa:
+        lines += [
+            "IPA 安装:",
+            "  - Apple Configurator / Xcode Devices 拖入 IPA",
+            "  - 或 Transporter / 内测分发（视 export-method）",
+            f"  - 本次 export-method={export_method}",
+            "",
+            "development：需设备已在开发者账号注册，且本机有对应证书。",
+            "",
+        ]
+    else:
+        lines += [
+            "Runner.app:",
+            "  未签名包（--no-codesign）不能直接装真机。",
+            "  有签名时可用:",
+            "    ios-deploy --bundle build/ios/Runner.app",
+            "  或打开 Xcode 装到手机:",
+            "    open app/ios/Runner.xcworkspace",
+            "  开发期更简单:",
+            "    cd app && flutter devices && flutter run -d <iphone>",
+            "",
+        ]
+    lines += [
+        "首次签名: Xcode → Runner → Signing & Capabilities → 选 Team。",
+        "Bundle ID: com.cloudagent.cloudAgentApp（冲突则改成唯一 id）。",
+        "",
+    ]
+    install.write_text("\n".join(lines), encoding="utf-8")
+    info(f"ios    → {_rel(ios_out)} ({', '.join(staged) or 'see INSTALL.txt'})")
+    return ios_out
+
+
+def cmd_build(args: argparse.Namespace) -> None:
+    want_ios = bool(args.ios or args.ipa)
+    if not args.server and not want_ios:
+        die(
+            "指定要构建的组件，例如:\n"
+            "  python run.py build --server --target linux-amd64 ./build\n"
+            "  python run.py build --ios ./build\n"
+            "  python run.py build --ios --ipa --export-method development ./build"
+        )
+
+    outdir = resolve_outdir(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    info(f"build outdir: {outdir}")
+    if args.server:
+        goos, goarch = parse_build_target(args.target)
+        info(f"server target: {args.target} (Gateway {goos}/{goarch}; Slave=Node 不分平台)")
+    if want_ios:
+        mode = "ipa" if args.ipa else "ios app"
+        sign = "no-codesign" if args.no_codesign else "codesign"
+        info(f"ios: {mode} ({sign}" + (f", export={args.export_method}" if args.ipa else "") + ")")
+    info("")
+
+    if args.server:
+        goos, goarch = parse_build_target(args.target)
+        build_gateway(outdir, goos=goos, goarch=goarch)
+        build_slave(outdir)
+
+    if want_ios:
+        build_ios(
+            outdir,
+            ipa=bool(args.ipa),
+            export_method=args.export_method,
+            no_codesign=bool(args.no_codesign),
+        )
+
+    info("")
+    info("=== build 完成 ===")
+    info(f"  {outdir}")
+    if args.server:
+        info("  Gateway: 直接运行 ./gateway（或 gateway.exe）")
+        info("  Slave  : 见 slave/DEPLOY.txt（目标机 npm ci --omit=dev）")
+    if want_ios:
+        info("  iOS    : 见 ios/INSTALL.txt")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="cloud-agent 本机联调与部署",
@@ -663,6 +970,49 @@ def build_parser() -> argparse.ArgumentParser:
 
     ap = sub.add_parser("app", help="打印 Flutter App 联调说明")
     ap.set_defaults(func=cmd_app)
+
+    bd = sub.add_parser(
+        "build",
+        help="构建产物到输出目录（--server / --ios）",
+    )
+    bd.add_argument(
+        "--server",
+        action="store_true",
+        help="构建 Gateway + Slave",
+    )
+    bd.add_argument(
+        "--ios",
+        action="store_true",
+        help="构建 Flutter iOS（Runner.app；需 macOS + Xcode）",
+    )
+    bd.add_argument(
+        "--ipa",
+        action="store_true",
+        help="打 IPA（隐含 --ios；需有效 Signing / Team）",
+    )
+    bd.add_argument(
+        "--export-method",
+        default="development",
+        choices=["development", "ad-hoc", "app-store"],
+        help="IPA 导出方式（默认 development，适合本机已注册真机）",
+    )
+    bd.add_argument(
+        "--no-codesign",
+        action="store_true",
+        help="iOS 不签名（仅 Runner.app 产物，不能直接装真机；不可与 --ipa 同用）",
+    )
+    bd.add_argument(
+        "--target",
+        default="linux-amd64",
+        help="Gateway 目标平台（默认 linux-amd64）；Slave / iOS 不分此参数",
+    )
+    bd.add_argument(
+        "outdir",
+        nargs="?",
+        default="build",
+        help="输出目录（默认 ./build）",
+    )
+    bd.set_defaults(func=cmd_build)
 
     return p
 

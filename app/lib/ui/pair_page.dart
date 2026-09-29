@@ -10,6 +10,9 @@ String defaultGatewayBaseUrl() {
     case TargetPlatform.android:
       // AVD special alias to the host loopback. Real device: use LAN IP.
       return 'http://10.0.2.2:8080';
+    case TargetPlatform.iOS:
+      // Real device / sim: public reverse-proxy path (see nginx /gateway/).
+      return 'https://nexusx.dev/gateway';
     default:
       return 'http://127.0.0.1:8080';
   }

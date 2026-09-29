@@ -37,15 +37,22 @@ class AppWsClient {
 
   bool get isDisposed => _disposed;
 
-  /// Build `ws(s)://host/v1/ws` from HTTP base.
+  /// Build `ws(s)://{host}{basePath}/v1/ws` from HTTP base (keeps `/gateway` etc.).
   static Uri wsUri(String gatewayBaseUrl) {
     final http = Uri.parse(gatewayBaseUrl);
     final scheme = http.scheme == 'https' ? 'wss' : 'ws';
+    var basePath = http.path;
+    while (basePath.endsWith('/')) {
+      basePath = basePath.substring(0, basePath.length - 1);
+    }
+    if (basePath == '/') {
+      basePath = '';
+    }
     return Uri(
       scheme: scheme,
       host: http.host,
       port: http.hasPort ? http.port : null,
-      path: '/v1/ws',
+      path: '$basePath/v1/ws',
     );
   }
 

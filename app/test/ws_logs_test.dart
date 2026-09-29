@@ -50,6 +50,10 @@ void main() {
       'ws://127.0.0.1:8080/v1/ws',
     );
     expect(
+      AppWsClient.wsUri('https://nexusx.dev/gateway').toString(),
+      'wss://nexusx.dev/gateway/v1/ws',
+    );
+    expect(
       AppWsClient.wsUri('https://gw.example.com').toString(),
       'wss://gw.example.com/v1/ws',
     );

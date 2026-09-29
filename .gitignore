@@ -53,6 +53,8 @@ coverage/
 
 # Local deploy / 联调 runtime (run.py)
 .local/
+# run.py build 输出
+/build/
 
 #python
 __pycache__/

@@ -14,7 +14,8 @@ class PairException implements Exception {
   String toString() => message;
 }
 
-/// Normalize user-entered Gateway base URL to origin without trailing slash.
+/// Normalize user-entered Gateway base URL.
+/// Keeps path prefix (e.g. `/gateway` behind nginx); strips trailing slashes.
 String normalizeGatewayBaseUrl(String raw) {
   var s = raw.trim();
   if (s.isEmpty) {
@@ -30,8 +31,15 @@ String normalizeGatewayBaseUrl(String raw) {
   if (uri.scheme != 'http' && uri.scheme != 'https') {
     throw PairException('Gateway URL must be http or https');
   }
+  var path = uri.path;
+  while (path.endsWith('/')) {
+    path = path.substring(0, path.length - 1);
+  }
+  if (path == '/') {
+    path = '';
+  }
   final port = uri.hasPort ? ':${uri.port}' : '';
-  return '${uri.scheme}://${uri.host}$port';
+  return '${uri.scheme}://${uri.host}$port$path';
 }
 
 typedef HttpPost = Future<http.Response> Function(

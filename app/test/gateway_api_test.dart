@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 
 void main() {
-  test('normalizeGatewayBaseUrl strips path and trailing slash', () {
+  test('normalizeGatewayBaseUrl keeps path prefix, strips trailing slash', () {
     expect(
       normalizeGatewayBaseUrl('http://127.0.0.1:8080/'),
       'http://127.0.0.1:8080',
@@ -14,6 +14,36 @@ void main() {
       normalizeGatewayBaseUrl('10.0.2.2:8080'),
       'http://10.0.2.2:8080',
     );
+    expect(
+      normalizeGatewayBaseUrl('https://nexusx.dev/gateway/'),
+      'https://nexusx.dev/gateway',
+    );
+    expect(
+      normalizeGatewayBaseUrl('https://nexusx.dev/gateway'),
+      'https://nexusx.dev/gateway',
+    );
+  });
+
+  test('pair uses path-prefixed base for nginx reverse proxy', () async {
+    final api = GatewayApi(
+      post: (uri, {headers, body}) async {
+        expect(uri.toString(), 'https://nexusx.dev/gateway/v1/auth/pair');
+        return http.Response(
+          jsonEncode({
+            'token': 'tok_proxy_pair_abcdef',
+            'expiresAt': '2026-10-28T00:00:00.000Z',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      },
+    );
+
+    final session = await api.pair(
+      gatewayBaseUrl: 'https://nexusx.dev/gateway/',
+      pairCode: 'ABCD-EFGH',
+    );
+    expect(session.gatewayBaseUrl, 'https://nexusx.dev/gateway');
   });
 
   test('pair stores token from response without throwing', () async {

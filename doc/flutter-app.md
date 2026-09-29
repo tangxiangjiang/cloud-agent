@@ -26,7 +26,7 @@
 | 设置 | 网关 URL、通知、凭证 |
 
 主路径：配对 → Slave → 工程 → Milestone → 执行 plan → **审核**。  
-工程与 Gateway 对账：**同步**（工程页 AppBar；见 [project-sync.md](./project-sync.md)）。实现见 `app/`；联调：[deploy.md](./deploy.md)。
+工程与 Gateway 对账：**同步**（工程页 AppBar；见 [project-sync.md](./project-sync.md)）。工程 **对话**：Agent · Auto（见 [project-chat.md](./project-chat.md)）。实现见 `app/`；联调：[deploy.md](./deploy.md)。
 
 工作流与审核闸门见 [workflow.md](./workflow.md)。
 

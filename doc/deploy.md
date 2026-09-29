@@ -43,7 +43,7 @@ curl -s -X POST http://127.0.0.1:8080/v1/auth/pair \
 
 ### 3. Slave
 
-编辑 `slave/config.yaml`（从 `config.example.yaml` 复制）：`repos[].cwd` 必须是**本仓库绝对路径**，`slaveId` 与创建工作流时一致。
+编辑 `slave/config.yaml`（从 `config.example.yaml` 复制）：`projects[].cwd` 必须是**本仓库绝对路径**，`index` 指向工程内 `ai/milestones.json`；`slaveId` 与创建工作流时一致。
 
 ```bash
 cd slave

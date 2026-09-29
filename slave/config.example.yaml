@@ -3,17 +3,14 @@
 
 gatewayUrl: ws://127.0.0.1:8080/v1/slave/ws
 slaveId: slave_devpc
-name: dev-pc
+name: 台式机
 
-# Whitelist only. Each cwd must be an absolute path on this machine.
-# Multiple repos: pick via workflow.repoId / `python run.py --plan <id>`.
-repos:
+# Whitelist projects. cwd = absolute path; index = milestone JSON relative to cwd.
+projects:
   - id: r_cloud_agent
     name: cloud-agent
     cwd: E:/workspace/cloud-agent
-  - id: r_flutter_chat
-    name: flutter-chat-local
-    cwd: E:/workspace/flutter-chat-local
+    index: ai/milestones.json
 
 # Name of the env var that holds the Cursor API key (not the key itself).
 apiKeyEnv: CURSOR_API_KEY

@@ -37,7 +37,7 @@ void main() {
     expect(find.byType(HomeShell), findsOneWidget);
     expect(find.byType(PairPage), findsNothing);
     expect(find.textContaining('tok_restored'), findsNothing);
-    expect(find.textContaining('***'), findsOneWidget);
+    expect(find.text('Slaves'), findsOneWidget);
   });
 
   testWidgets('successful pair navigates to home', (tester) async {

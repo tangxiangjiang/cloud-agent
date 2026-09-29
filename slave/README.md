@@ -27,7 +27,7 @@ curl -s -X POST http://127.0.0.1:8080/v1/auth/pair \
 cd slave
 npm install
 cp config.example.yaml config.yaml
-# 编辑 repos[].cwd 为绝对路径白名单
+# 编辑 projects[].cwd 为绝对路径；index 指向工程内 milestones.json
 
 # PowerShell 示例（勿把真实值提交进 git）
 $env:GATEWAY_TOKEN = "<pair-token>"
@@ -53,14 +53,15 @@ npm run smoke-local
 
 ## 行为
 
-1. 校验配置与 `repos[].cwd` 绝对路径白名单；拒绝配置中的 `cloud` / 明文 `apiKey`
-2. 出站 WS：`auth` → `register` → `heartbeat`；断线重连
-3. `task.assign` → 仅用 `repoId` 查白名单 cwd → Local Agent → stream 映射 → **必** `wait` → dispose
-4. `workflow.assign`（`POST /workflows/{id}/start`）→ **串行**取 `ready` 节点 → 创建 task → 执行 → 节点进 `awaiting_review`（**绝不**直接 approved）；下游须依赖节点 `approved` 后才 `ready`
-5. `workflow.revise` → follow-up / 再跑 → 刷新 diff → 再 `awaiting_review`（不写 progress）
-6. `workflow.review` approve → **仅此时**更新 `progressDoc`（须为相对路径且 basename=`progress.md`）；reject 不写；approve 后 Gateway 再 `workflow.assign` 续跑下游
-7. `task.cancel` → `run.cancel()`（若 `supports`）；否则记原因并停止转发后续 stream（含 tool）
-8. 错误：`phase: policy|startup|run`；日志脱敏
+1. 校验配置与 `projects[].cwd` 绝对路径白名单；拒绝配置中的 `cloud` / 明文 `apiKey`
+2. 启动时检查各工程是否为 git 仓库；若无（或无 HEAD）则自动 `git init` + 初始 commit（Diff 基线需要）
+3. 出站 WS：`auth` → `register`（含 `projects` + milestones）→ `heartbeat`；断线重连
+4. `task.assign` → 仅用 `repoId` 查白名单 cwd → Local Agent → stream 映射 → **必** `wait` → dispose
+5. `workflow.assign`（`POST /workflows/{id}/start`）→ **串行**取 `ready` 节点 → 创建 task → 执行 → 节点进 `awaiting_review`（**绝不**直接 approved）；下游须依赖节点 `approved` 后才 `ready`
+6. `workflow.revise` → follow-up / 再跑 → 刷新 diff → 再 `awaiting_review`（不写 progress）
+7. `workflow.review` approve → **仅此时**更新 `progressDoc`（须为相对路径且 basename=`progress.md`）；reject 不写；approve 后 Gateway 再 `workflow.assign` 续跑下游
+8. `task.cancel` → `run.cancel()`（若 `supports`）；否则记原因并停止转发后续 stream（含 tool）
+9. 错误：`phase: policy|startup|run`；日志脱敏
 
 样例两节点 DAG：`fixtures/dag-two-node.json`（亦见 `ai/bundles/m05-p02-two-node.json`）。
 
@@ -69,7 +70,7 @@ Diff：[docs/diff-baseline.md](./docs/diff-baseline.md) · Approve 写进度：[
 ## 安全注意事项
 
 - **API Key / Bearer 只放环境变量**（`apiKeyEnv` / `tokenEnv` 只写变量名）。配置文件禁止出现 `apiKey` 字面量；日志会对 `apiKey`/`token` 等字段与长 opaque 串脱敏。
-- **cwd 白名单**：执行目录只来自本机 `repos[].cwd`，通过任务的 `repoId` 查找。**忽略/拒绝**任务里携带的任意 `cwd` 字符串，防止 App 指到白名单外路径。
+- **cwd 白名单**：执行目录只来自本机 `projects[].cwd`，通过任务的 `repoId` 查找。**忽略/拒绝**任务里携带的任意 `cwd` 字符串，防止 App 指到白名单外路径。
 - **仅 Local runtime**：`Agent.create` 只传 `local: { cwd, settingSources: [] }`，禁止 `cloud`，默认不加载 `settingSources: "all"`。
 - **不对公网开 Slave HTTP**；Slave 只出站连 Gateway。
 - 取消尽力而为：SDK 支持则 `run.cancel()`；不支持则停止向 Gateway 转发新的 tool/assistant 事件，仍 `wait()` 收尾。
@@ -81,10 +82,13 @@ Diff：[docs/diff-baseline.md](./docs/diff-baseline.md) · Approve 写进度：[
 |------|------|
 | `gatewayUrl` | Slave 出站 WS |
 | `slaveId` | 与创建任务一致 |
-| `repos[]` | `id` / `name` / `cwd`（绝对路径） |
+| `projects[]` | `id` / `name` / `cwd`（绝对路径）/ `index?`（相对 cwd 的 milestone JSON） |
+| `repos[]` | 兼容旧字段；等同无 `index` 的 `projects` |
 | `apiKeyEnv` | Cursor API Key 环境变量名（默认 `CURSOR_API_KEY`） |
 | `tokenEnv` | Gateway Bearer 环境变量名（默认 `GATEWAY_TOKEN`） |
 | `defaultModel` | task 未带 model 时使用（默认 `composer-2.5`） |
+
+工程 milestone 索引约定见仓库根 [`ai/milestones.md`](../ai/milestones.md)。
 
 ## Roadmap
 

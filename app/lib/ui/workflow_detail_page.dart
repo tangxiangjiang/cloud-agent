@@ -157,7 +157,13 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
                         )
                       : const Icon(Icons.play_arrow),
                   label: Text(
-                    run.canStart ? 'Start' : 'Terminal (${run.status})',
+                    _starting
+                        ? 'Starting…'
+                        : run.canStart
+                            ? 'Start'
+                            : run.isTerminal
+                                ? 'Terminal (${run.status})'
+                                : '已下发 (${run.status})',
                   ),
                 ),
               ),

@@ -54,7 +54,7 @@ cd app && flutter test
 | **M06-P03** | WS 节点日志（`/v1/ws` + HTTP afterSeq 兜底）（当前） |
 | M06-P04+ | diff / revise·approve |
 
-配对后主页进入 **Workflows**：列表展示 id 与状态；详情展示节点（`awaiting_review` 高亮）；可 **Start**。节点有 `taskId` 时可打开 **Logs**（WS 订阅 `assistant.delta`；进页先 HTTP snapshot；离开页 unsubscribe）。App **不**编辑 DAG JSON。
+配对后主页即 **Slaves**：Slave → 工程 → Milestone → 执行 plan（phases）→ 开始后进入运行详情（Diff / Review）。App **不**编辑 DAG JSON。
 
 ## 安全注意
 

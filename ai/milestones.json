@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "milestones": [
+    {
+      "id": "M07",
+      "title": "硬化与收尾",
+      "progressDoc": "ai/progress.md",
+      "phases": [
+        {
+          "id": "M07-P01",
+          "title": "审计与限流",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M07-P01-audit-ratelimit.md",
+          "dependsOn": [],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required."
+          }
+        },
+        {
+          "id": "M07-P02",
+          "title": "样例 DAG 与部署文档",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M07-P02-sample-dag-deploy.md",
+          "dependsOn": ["M07-P01"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required."
+          }
+        },
+        {
+          "id": "M07-P03",
+          "title": "文档对齐与收尾检查清单",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M07-P03-docs-align.md",
+          "dependsOn": ["M07-P02"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required."
+          }
+        }
+      ]
+    }
+  ]
+}

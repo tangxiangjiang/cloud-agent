@@ -61,8 +61,13 @@ class WorkflowRun {
   final String createdAt;
   final String? updatedAt;
 
-  bool get canStart =>
-      status != 'completed' && status != 'failed' && status != 'cancelled';
+  bool get canStart => status == 'pending';
+
+  bool get isActive =>
+      status == 'pending' || status == 'running';
+
+  bool get isTerminal =>
+      status == 'completed' || status == 'failed' || status == 'cancelled';
 
   factory WorkflowRun.fromJson(Map<String, dynamic> json) {
     final rawNodes = json['nodes'];

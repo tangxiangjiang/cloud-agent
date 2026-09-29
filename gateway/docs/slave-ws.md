@@ -21,7 +21,7 @@ wss://{gateway}/v1/slave/ws
 | type | 字段 | 说明 |
 |------|------|------|
 | `auth` | `token` | 鉴权 |
-| `register` | `slaveId`, `name?`, `repos[{id,name,cwd}]` | 登记；`online=true`；并领取该 slave 的 queued tasks |
+| `register` | `slaveId`, `name?`, `repos[{id,name,cwd}]`, `projects?[{id,name,cwd,index,milestones}]` | 登记；`online=true`；`projects` 含工程 milestone 索引；`repos` 为扁平白名单；并领取 queued tasks |
 | `heartbeat` | — | 保活 |
 | `ping` | — | 应用层 ping |
 | `task.event` | `taskId`, `event.kind`, `event.payload` | 上报事件；Gateway 赋 `seq` 并 fan-out 到 App WS |

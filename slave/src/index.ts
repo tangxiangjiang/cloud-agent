@@ -12,6 +12,8 @@ import {
 import { GatewayClient } from "./gateway/client.js";
 import type { TaskHandlers } from "./gateway/types.js";
 import { log, setLogLevel } from "./log.js";
+import { buildProjectCatalog } from "./project/catalog.js";
+import { ensureAllProjectGitRepos } from "./project/ensureGit.js";
 import { StubTaskHandler } from "./tasks/stubHandler.js";
 import { GatewayHttpApi, gatewayHttpBase } from "./workflow/http.js";
 import { SerialDagScheduler } from "./workflow/scheduler.js";
@@ -87,6 +89,18 @@ async function main(): Promise<void> {
   const handlers = buildHandlers(cfg, Boolean(values.stub));
   const http = new GatewayHttpApi(gatewayHttpBase(cfg.gatewayUrl), token);
 
+  // Diff needs a local git HEAD; auto-init whitelist projects that lack a repo.
+  await ensureAllProjectGitRepos(cfg.projects);
+
+  const projects = buildProjectCatalog(cfg);
+  log.info("project catalog loaded", {
+    projects: projects.map((p) => ({
+      id: p.id,
+      index: p.index,
+      milestones: p.milestones.length,
+    })),
+  });
+
   // Client is created first so scheduler can emit via it; scheduler wired after.
   let scheduler!: SerialDagScheduler;
 
@@ -95,6 +109,7 @@ async function main(): Promise<void> {
     token,
     slaveId: cfg.slaveId,
     repos: cfg.repos,
+    projects,
     handlers,
     onWorkflowAssign: (run) => scheduler.enqueue(run),
     onWorkflowRevise: (msg) => scheduler.enqueueRevise(msg),

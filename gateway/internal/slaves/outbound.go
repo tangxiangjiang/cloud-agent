@@ -22,13 +22,14 @@ var slaveUpgrader = websocket.Upgrader{
 }
 
 type slaveClientMsg struct {
-	Type    string        `json:"type"`
-	Token   string        `json:"token"`
-	SlaveID string        `json:"slaveId"`
-	Name    string        `json:"name"`
-	Repos   []Repo        `json:"repos"`
-	TaskID  string        `json:"taskId"`
-	Event   *slaveEventIn `json:"event"`
+	Type     string    `json:"type"`
+	Token    string    `json:"token"`
+	SlaveID  string    `json:"slaveId"`
+	Name     string    `json:"name"`
+	Repos    []Repo    `json:"repos"`
+	Projects []Project `json:"projects"`
+	TaskID   string    `json:"taskId"`
+	Event    *slaveEventIn `json:"event"`
 }
 
 type slaveEventIn struct {
@@ -238,7 +239,7 @@ func (c *slaveConn) readPump() {
 				c.sendJSON(map[string]string{"type": "error", "error": "slaveId required"})
 				continue
 			}
-			c.hub.reg.UpsertOnline(msg.SlaveID, msg.Name, msg.Repos)
+			c.hub.reg.UpsertOnline(msg.SlaveID, msg.Name, msg.Repos, msg.Projects)
 			c.id = msg.SlaveID
 			c.hub.mu.Lock()
 			c.hub.conns[msg.SlaveID] = c

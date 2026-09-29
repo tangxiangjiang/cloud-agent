@@ -26,7 +26,7 @@ func main() {
 	pairCodeFlag := flag.String("pair-code", envOr("GATEWAY_PAIR_CODE", ""), "pairing code (env GATEWAY_PAIR_CODE); generated if empty")
 	configPath := flag.String("config", envOr("GATEWAY_CONFIG", ""), "optional YAML config path (env GATEWAY_CONFIG); see config.example.yaml")
 	auditPath := flag.String("audit-log", envOr("GATEWAY_AUDIT_LOG", ""), "audit JSONL path (env GATEWAY_AUDIT_LOG); default stderr")
-	stateFile := flag.String("state-file", envOr("GATEWAY_STATE_FILE", ""), "persist workflows/diffs/tokens JSON (env GATEWAY_STATE_FILE); empty = memory only")
+	stateFile := flag.String("state-file", envOr("GATEWAY_STATE_FILE", ""), "persist path: .db/.sqlite (SQLite, preferred) or .json (legacy); env GATEWAY_STATE_FILE; empty = memory only")
 	debug := flag.Bool("debug", envOr("GATEWAY_DEBUG", "") == "1", "enable debug event inject endpoint")
 	flag.Parse()
 
@@ -51,9 +51,13 @@ func main() {
 	taskStore := task.NewStore()
 	wfStore := workflow.NewStore()
 
-	var stateStore *persist.FileStore
+	var stateStore persist.Backend
 	if strings.TrimSpace(*stateFile) != "" {
-		stateStore = persist.NewFileStore(*stateFile)
+		var err error
+		stateStore, err = persist.Open(*stateFile)
+		if err != nil {
+			log.Fatalf("open state %s: %v", *stateFile, err)
+		}
 		if snap, err := stateStore.Load(); err != nil {
 			log.Fatalf("load state %s: %v", *stateFile, err)
 		} else if snap != nil {
@@ -63,7 +67,7 @@ func main() {
 			}
 			log.Printf("restored state from %s", *stateFile)
 		} else {
-			log.Printf("state file empty/missing; starting fresh (%s)", *stateFile)
+			log.Printf("state empty/missing; starting fresh (%s)", *stateFile)
 		}
 		save := func() {
 			wfJSON, diffJSON, err := wfStore.MarshalSnapshotJSON()

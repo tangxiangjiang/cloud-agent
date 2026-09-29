@@ -284,7 +284,7 @@ def start_gateway(base: str, pair_code: str, audit_log: Path | None) -> int:
         else:
             addr = ":8080"
     ensure_local()
-    state_file = LOCAL / "gateway" / "state.json"
+    state_file = LOCAL / "gateway" / "state.db"
     state_file.parent.mkdir(parents=True, exist_ok=True)
     args = [
         "go",

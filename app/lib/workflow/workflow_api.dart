@@ -73,6 +73,35 @@ class WorkflowApi {
     return WorkflowRun.fromJson(_decodeMap(res.body));
   }
 
+  /// `POST /v1/workflows` — create DAG snapshot from milestone phases.
+  Future<WorkflowRun> createWorkflow({
+    required String bundleId,
+    required String repoId,
+    required List<Map<String, dynamic>> nodes,
+    String? slaveId,
+    String? progressDoc,
+    String? bundleRef,
+  }) async {
+    final res = await _post(
+      _uri('/v1/workflows'),
+      headers: {
+        ..._headers,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: jsonEncode({
+        'bundleId': bundleId,
+        'repoId': repoId,
+        'nodes': nodes,
+        if (slaveId != null && slaveId.isNotEmpty) 'slaveId': slaveId,
+        if (progressDoc != null && progressDoc.isNotEmpty)
+          'progressDoc': progressDoc,
+        if (bundleRef != null && bundleRef.isNotEmpty) 'bundleRef': bundleRef,
+      }),
+    );
+    _throwIfBad(res, 'Create workflow');
+    return WorkflowRun.fromJson(_decodeMap(res.body));
+  }
+
   Future<StartWorkflowResult> startWorkflow(String id) async {
     final res = await _post(
       _uri('/v1/workflows/${Uri.encodeComponent(id)}/start'),

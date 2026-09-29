@@ -13,17 +13,47 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Repo is the flat whitelist entry (legacy field name; same as a project without milestones).
 type Repo struct {
 	ID   string `json:"id" yaml:"id"`
 	Name string `json:"name" yaml:"name"`
 	Cwd  string `json:"cwd" yaml:"cwd"`
 }
 
+// MilestonePhase is one DAG node under a milestone.
+type MilestonePhase struct {
+	ID        string         `json:"id"`
+	Title     string         `json:"title"`
+	PhaseRef  string         `json:"phaseRef"`
+	DependsOn []string       `json:"dependsOn"`
+	Model     string         `json:"model,omitempty"`
+	OnFailure string         `json:"onFailure,omitempty"`
+	Prompt    map[string]any `json:"prompt,omitempty"`
+}
+
+// Milestone groups phases for App navigation.
+type Milestone struct {
+	ID          string           `json:"id"`
+	Title       string           `json:"title"`
+	ProgressDoc string           `json:"progressDoc,omitempty"`
+	Phases      []MilestonePhase `json:"phases"`
+}
+
+// Project is a whitelist cwd plus optional milestone index payload.
+type Project struct {
+	ID         string      `json:"id" yaml:"id"`
+	Name       string      `json:"name" yaml:"name"`
+	Cwd        string      `json:"cwd" yaml:"cwd"`
+	Index      *string     `json:"index" yaml:"index"`
+	Milestones []Milestone `json:"milestones,omitempty"`
+}
+
 type Slave struct {
-	ID     string `json:"id" yaml:"id"`
-	Name   string `json:"name" yaml:"name"`
-	Online bool   `json:"online" yaml:"online"`
-	Repos  []Repo `json:"repos" yaml:"repos"`
+	ID       string    `json:"id" yaml:"id"`
+	Name     string    `json:"name" yaml:"name"`
+	Online   bool      `json:"online" yaml:"online"`
+	Repos    []Repo    `json:"repos" yaml:"repos"`
+	Projects []Project `json:"projects,omitempty" yaml:"projects,omitempty"`
 }
 
 type Config struct {
@@ -51,9 +81,34 @@ func NewRegistry(initial []Slave) *Registry {
 		if cp.Repos == nil {
 			cp.Repos = []Repo{}
 		}
+		if cp.Projects == nil {
+			cp.Projects = projectsFromRepos(cp.Repos)
+		}
 		r.slaves[cp.ID] = &cp
 	}
 	return r
+}
+
+func projectsFromRepos(repos []Repo) []Project {
+	out := make([]Project, 0, len(repos))
+	for _, r := range repos {
+		out = append(out, Project{
+			ID:         r.ID,
+			Name:       r.Name,
+			Cwd:        r.Cwd,
+			Index:      nil,
+			Milestones: []Milestone{},
+		})
+	}
+	return out
+}
+
+func reposFromProjects(projects []Project) []Repo {
+	out := make([]Repo, 0, len(projects))
+	for _, p := range projects {
+		out = append(out, Repo{ID: p.ID, Name: p.Name, Cwd: p.Cwd})
+	}
+	return out
 }
 
 func (r *Registry) SetGrace(d time.Duration) {
@@ -92,21 +147,36 @@ func (r *Registry) List() []Slave {
 		if cp.Repos == nil {
 			cp.Repos = []Repo{}
 		}
+		if cp.Projects == nil {
+			cp.Projects = []Project{}
+		}
+		// deep-ish copy slices
+		cp.Repos = append([]Repo(nil), cp.Repos...)
+		cp.Projects = append([]Project(nil), cp.Projects...)
 		out = append(out, cp)
 	}
 	return out
 }
 
 // UpsertOnline records a registered slave and marks it online.
-func (r *Registry) UpsertOnline(id, name string, repos []Repo) {
+// Prefer projects when non-empty; otherwise derive projects from repos.
+func (r *Registry) UpsertOnline(id, name string, repos []Repo, projects []Project) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if t, ok := r.offlineTimers[id]; ok {
 		t.Stop()
 		delete(r.offlineTimers, id)
 	}
+	if projects == nil {
+		projects = []Project{}
+	}
 	if repos == nil {
 		repos = []Repo{}
+	}
+	if len(projects) > 0 {
+		repos = reposFromProjects(projects)
+	} else if len(repos) > 0 {
+		projects = projectsFromRepos(repos)
 	}
 	if existing, ok := r.slaves[id]; ok {
 		existing.Online = true
@@ -114,16 +184,18 @@ func (r *Registry) UpsertOnline(id, name string, repos []Repo) {
 			existing.Name = name
 		}
 		existing.Repos = append([]Repo(nil), repos...)
+		existing.Projects = append([]Project(nil), projects...)
 		return
 	}
 	if name == "" {
 		name = id
 	}
 	r.slaves[id] = &Slave{
-		ID:     id,
-		Name:   name,
-		Online: true,
-		Repos:  append([]Repo(nil), repos...),
+		ID:       id,
+		Name:     name,
+		Online:   true,
+		Repos:    append([]Repo(nil), repos...),
+		Projects: append([]Project(nil), projects...),
 	}
 }
 

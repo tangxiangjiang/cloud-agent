@@ -4,6 +4,7 @@
 import WebSocket from "ws";
 import type { RepoConfig } from "../config.js";
 import { log } from "../log.js";
+import type { ProjectCatalog } from "../project/catalog.js";
 import type {
   WorkflowReviewMessage,
   WorkflowReviseMessage,
@@ -17,7 +18,10 @@ export interface GatewayClientOptions {
   token: string;
   slaveId: string;
   name?: string;
+  /** Legacy flat whitelist (always sent; derived from projects when catalog present). */
   repos: RepoConfig[];
+  /** Project catalog with milestone index (preferred register payload). */
+  projects?: ProjectCatalog[];
   handlers: TaskHandlers;
   /** Optional DAG scheduler hook for workflow.assign */
   onWorkflowAssign?: (run: WorkflowRun) => void | Promise<void>;
@@ -313,15 +317,29 @@ export class GatewayClient {
   };
 
   private sendRegister(): void {
+    const projects = this.opts.projects;
+    const repos =
+      projects && projects.length > 0
+        ? projects.map((p) => ({ id: p.id, name: p.name, cwd: p.cwd }))
+        : this.opts.repos.map((r) => ({
+            id: r.id,
+            name: r.name,
+            cwd: r.cwd,
+          }));
     const body: Record<string, unknown> = {
       type: "register",
       slaveId: this.opts.slaveId,
-      repos: this.opts.repos.map((r) => ({
-        id: r.id,
-        name: r.name,
-        cwd: r.cwd,
-      })),
+      repos,
     };
+    if (projects && projects.length > 0) {
+      body.projects = projects.map((p) => ({
+        id: p.id,
+        name: p.name,
+        cwd: p.cwd,
+        index: p.index,
+        milestones: p.milestones,
+      }));
+    }
     if (this.opts.name) {
       body.name = this.opts.name;
     }

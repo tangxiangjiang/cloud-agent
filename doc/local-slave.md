@@ -50,13 +50,15 @@ Flutter ──HTTPS/WSS──► Go Gateway ◄──出站 WS/HTTP── Node S
 ```yaml
 gatewayUrl: wss://gateway.example.com/v1/slave
 slaveId: slave_devpc
-repos:
+projects:
   - id: r_cloud_agent
     name: cloud-agent
     cwd: E:/workspace/cloud-agent
+    index: ai/milestones.json
 apiKeyEnv: CURSOR_API_KEY
 ```
 
+（旧字段 `repos` 仍可用，等同无 `index` 的 `projects`。）
 ## 安全要点
 
 - `cwd` 白名单：拒绝任意路径任务  

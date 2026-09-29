@@ -24,8 +24,7 @@ Base path：`/v1`
 
 ### Slaves（本机 Node 执行端）
 
-`GET /slaves` → 在线 slave 与仓库列表  
-（实现期若暂用 `/workers` 亦可，语义等同 Local Slave）
+`GET /v1/slaves` → 在线 slave、工程白名单与 milestone 索引（Slave `register` 时上报）
 
 ```json
 {
@@ -36,11 +35,37 @@ Base path：`/v1`
       "online": true,
       "repos": [
         { "id": "r_cloud_agent", "name": "cloud-agent", "cwd": "E:/workspace/cloud-agent" }
+      ],
+      "projects": [
+        {
+          "id": "r_cloud_agent",
+          "name": "cloud-agent",
+          "cwd": "E:/workspace/cloud-agent",
+          "index": "ai/milestones.json",
+          "milestones": [
+            {
+              "id": "M07",
+              "title": "硬化与收尾",
+              "progressDoc": "ai/progress.md",
+              "phases": [
+                {
+                  "id": "M07-P01",
+                  "title": "审计与限流",
+                  "phaseRef": "doc/roadmaps/cloud-agent/phases/M07-P01-audit-ratelimit.md",
+                  "dependsOn": [],
+                  "model": "composer-2.5"
+                }
+              ]
+            }
+          ]
+        }
       ]
     }
   ]
 }
 ```
+
+`repos` 为 `projects` 的扁平映射（兼容旧客户端 / 任务白名单）。App 主路径：展开 Slave → 选 Milestone → `POST /v1/workflows`（nodes=phases，`bundleId=milestone:{id}`）并 Start。工程索引见 [`ai/milestones.md`](../ai/milestones.md)。
 
 ### 创建任务
 

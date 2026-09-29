@@ -127,6 +127,28 @@ func TestOutboundRegisterHeartbeatAndOffline(t *testing.T) {
 		"repos": []map[string]string{
 			{"id": "r1", "name": "repo", "cwd": "/tmp/repo"},
 		},
+		"projects": []map[string]any{
+			{
+				"id":    "r1",
+				"name":  "repo",
+				"cwd":   "/tmp/repo",
+				"index": "ai/milestones.json",
+				"milestones": []map[string]any{
+					{
+						"id":    "M01",
+						"title": "Demo",
+						"phases": []map[string]any{
+							{
+								"id":        "M01-P01",
+								"title":     "First",
+								"phaseRef":  "doc/p.md",
+								"dependsOn": []string{},
+							},
+						},
+					},
+				},
+			},
+		},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -135,6 +157,19 @@ func TestOutboundRegisterHeartbeatAndOffline(t *testing.T) {
 	}
 	if !reg.IsOnline("slave_devpc") {
 		t.Fatal("expected online after register")
+	}
+	list := reg.List()
+	if len(list) != 1 || len(list[0].Projects) != 1 {
+		t.Fatalf("projects missing: %+v", list)
+	}
+	if list[0].Projects[0].Index == nil || *list[0].Projects[0].Index != "ai/milestones.json" {
+		t.Fatalf("index: %+v", list[0].Projects[0])
+	}
+	if len(list[0].Projects[0].Milestones) != 1 || list[0].Projects[0].Milestones[0].ID != "M01" {
+		t.Fatalf("milestones: %+v", list[0].Projects[0].Milestones)
+	}
+	if len(list[0].Repos) != 1 || list[0].Repos[0].ID != "r1" {
+		t.Fatalf("repos mirror: %+v", list[0].Repos)
 	}
 
 	if err := conn.WriteJSON(map[string]string{"type": "heartbeat"}); err != nil {

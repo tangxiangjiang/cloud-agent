@@ -71,4 +71,35 @@ describe("validateConfig", () => {
       (e: unknown) => e instanceof ConfigError && /apiKey must not appear/.test(e.message),
     );
   });
+
+  it("accepts projects with relative index", () => {
+    const cfg = validateConfig({
+      gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
+      slaveId: "slave_devpc",
+      projects: [
+        {
+          id: "r1",
+          name: "cloud-agent",
+          cwd: absA,
+          index: "ai/milestones.json",
+        },
+      ],
+    });
+    assert.equal(cfg.projects[0]?.index, "ai/milestones.json");
+    assert.equal(cfg.repos[0]?.id, "r1");
+  });
+
+  it("rejects absolute or parent index path", () => {
+    assert.throws(
+      () =>
+        validateConfig({
+          gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
+          slaveId: "slave_devpc",
+          projects: [
+            { id: "r1", name: "a", cwd: absA, index: "../escape.json" },
+          ],
+        }),
+      (e: unknown) => e instanceof ConfigError && /relative path/.test(e.message),
+    );
+  });
 });

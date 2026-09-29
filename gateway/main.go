@@ -109,6 +109,7 @@ func main() {
 
 	syncStore := persist.AsProjectSyncStore(stateStore)
 	syncSvc := projectsync.NewService(slaveReg, slaveHub, syncStore, auditLog)
+	syncSvc.SetWorkflowSource(wfStore)
 	slaveHub.SetProjectSyncResultHandler(func(slaveID, requestID, repoID string, payload json.RawMessage) error {
 		return syncSvc.StoreReport(slaveID, requestID, repoID, payload)
 	})

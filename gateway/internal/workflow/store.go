@@ -294,6 +294,58 @@ func (s *Store) handleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"workflows": list})
 }
 
+// IsActiveRun reports whether a workflow is still in progress (App isActive).
+func IsActiveRun(status string) bool {
+	return status == StatusPending || status == StatusRunning
+}
+
+// IsMilestoneBundle reports bundleId like "milestone:M01".
+func IsMilestoneBundle(bundleID string) bool {
+	return strings.HasPrefix(strings.TrimSpace(bundleID), "milestone:")
+}
+
+// ListMilestoneRuns returns milestone:* workflows for slave+repo, newest first.
+func (s *Store) ListMilestoneRuns(slaveID, repoID string) []*Run {
+	slaveID = strings.TrimSpace(slaveID)
+	repoID = strings.TrimSpace(repoID)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]*Run, 0)
+	for _, run := range s.runs {
+		if !IsMilestoneBundle(run.BundleID) {
+			continue
+		}
+		if repoID != "" && run.RepoID != repoID {
+			continue
+		}
+		if slaveID != "" {
+			if run.SlaveID == nil || *run.SlaveID != slaveID {
+				continue
+			}
+		}
+		out = append(out, cloneRun(run))
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt > out[j].CreatedAt
+	})
+	return out
+}
+
+// FindLatestMilestoneRun prefers newest active milestone:* run; else newest matching.
+// active is true when the returned run is pending/running.
+func (s *Store) FindLatestMilestoneRun(slaveID, repoID string) (run *Run, active bool) {
+	list := s.ListMilestoneRuns(slaveID, repoID)
+	if len(list) == 0 {
+		return nil, false
+	}
+	for _, r := range list {
+		if IsActiveRun(r.Status) {
+			return r, true
+		}
+	}
+	return list[0], false
+}
+
 func (s *Store) handleGet(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	s.mu.RLock()

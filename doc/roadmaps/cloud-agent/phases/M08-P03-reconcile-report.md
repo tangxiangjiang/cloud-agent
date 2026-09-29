@@ -17,11 +17,11 @@ Gateway 将 `project_sync` 与同 `(slaveId, repoId)` 下最新 active Workflow�
 
 ## 完成定义（DoD）
 
-- [ ] 规则：progress approved vs node 仍 ready/pending → 警告
-- [ ] 规则：node approved vs progress pending → 警告
-- [ ] 规则：dirty / 无 active workflow 等（文档所列核心项）
-- [ ] GET sync（或 `/sync/report`）返回 `warnings` + 并排 phase 摘要
-- [ ] 单测覆盖至少 2 类漂移
+- [x] 规则：progress approved vs node 仍 ready/pending → 警告
+- [x] 规则：node approved vs progress pending → 警告
+- [x] 规则：dirty / 无 active workflow 等（文档所列核心项）
+- [x] GET sync（或 `/sync/report`）返回 `warnings` + 并排 phase 摘要
+- [x] 单测覆盖至少 2 类漂移
 
 ## 禁止事项
 

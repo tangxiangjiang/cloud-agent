@@ -10,12 +10,14 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/audit"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/persist"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/slaves"
+	"github.com/tangxiangjiang/cloud-agent/gateway/internal/workflow"
 )
 
 const maxPayloadBytes = 256 * 1024
@@ -25,11 +27,18 @@ type SyncDispatcher interface {
 	AssignProjectSync(slaveID, requestID, repoID string) bool
 }
 
+// WorkflowSource looks up milestone workflows for reconcile (M08-P03).
+type WorkflowSource interface {
+	ListMilestoneRuns(slaveID, repoID string) []*workflow.Run
+	FindLatestMilestoneRun(slaveID, repoID string) (run *workflow.Run, active bool)
+}
+
 // Service wires HTTP handlers for project sync.
 type Service struct {
 	reg   *slaves.Registry
 	hub   SyncDispatcher
 	store persist.ProjectSyncStore
+	wfs   WorkflowSource
 	audit *audit.Logger
 	now   func() time.Time
 }
@@ -52,12 +61,18 @@ func NewService(
 	}
 }
 
+// SetWorkflowSource enables progress ↔ workflow reconcile on GET.
+func (s *Service) SetWorkflowSource(wfs WorkflowSource) {
+	s.wfs = wfs
+}
+
 func (s *Service) Mount(mux *http.ServeMux, wrap func(http.Handler) http.Handler) {
 	if wrap == nil {
 		wrap = func(h http.Handler) http.Handler { return h }
 	}
 	mux.Handle("POST /v1/slaves/{slaveId}/projects/{repoId}/sync", wrap(http.HandlerFunc(s.handleTrigger)))
 	mux.Handle("GET /v1/slaves/{slaveId}/projects/{repoId}/sync", wrap(http.HandlerFunc(s.handleGet)))
+	mux.Handle("GET /v1/slaves/{slaveId}/projects/{repoId}/sync/report", wrap(http.HandlerFunc(s.handleGet)))
 	mux.Handle("POST /v1/project-sync", wrap(http.HandlerFunc(s.handleReport)))
 }
 
@@ -291,11 +306,27 @@ func (s *Service) handleGet(w http.ResponseWriter, r *http.Request) {
 	if err := json.Unmarshal(row.SummaryJSON, &payload); err != nil {
 		payload = json.RawMessage(row.SummaryJSON)
 	}
+
+	var runs []*workflow.Run
+	var primary *workflow.Run
+	active := false
+	if s.wfs != nil {
+		runs = s.wfs.ListMilestoneRuns(slaveID, repoID)
+		primary, active = s.wfs.FindLatestMilestoneRun(slaveID, repoID)
+	}
+	warnings, report := Reconcile(row.SummaryJSON, runs, primary, active)
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"slaveId":  row.SlaveID,
 		"repoId":   row.RepoID,
 		"syncedAt": row.SyncedAt,
 		"payload":  payload,
-		"warnings": []any{}, // M08-P03 fills reconcile warnings
+		"warnings": warnings,
+		"report":   report,
+	})
+	s.record("project.sync.get", r.Method, r.URL.Path, ip, http.StatusOK, map[string]string{
+		"slaveId":  slaveID,
+		"repoId":   repoID,
+		"warnings": strconv.Itoa(len(warnings)),
 	})
 }

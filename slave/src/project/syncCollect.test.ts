@@ -42,6 +42,7 @@ describe("collectProjectSync", () => {
       apiKeyEnv: "CURSOR_API_KEY",
       tokenEnv: "GATEWAY_TOKEN",
       defaultModel: "composer-2.5",
+      syncAiSummary: true,
     };
   }
 
@@ -142,5 +143,65 @@ describe("collectProjectSync", () => {
     });
     assert.ok(bad.error);
     assert.match(bad.summary, /whitelist/i);
+  });
+
+  it("uses AI summary when generateSummary succeeds; keeps rule on failure", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "ca-sync-ai-"));
+    mkdirSync(path.join(root, "ai"), { recursive: true });
+    writeFileSync(
+      path.join(root, "ai", "milestones.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        milestones: [
+          {
+            id: "M01",
+            title: "Demo",
+            progressDoc: "ai/progress.md",
+            phases: [
+              {
+                id: "M01-P01",
+                title: "First",
+                phaseRef: "doc/p.md",
+                dependsOn: [],
+              },
+            ],
+          },
+        ],
+      }),
+      "utf8",
+    );
+    writeFileSync(
+      path.join(root, "ai", "progress.md"),
+      "# P\n\n- [x] M01-P01 @approved 2026-09-29T00:00:00.000Z\n",
+      "utf8",
+    );
+
+    const withAi = await collectProjectSync({
+      cfg: cfgFor(root),
+      slaveId: "slave_test",
+      requestId: "req_ai",
+      repoId: "r_test",
+      generateSummary: async () => ({
+        summary: "AI: M01-P01 looks done; tree is quiet.",
+        inferredPhaseStatus: [
+          { id: "M01-P01", status: "approved", note: "checkbox" },
+        ],
+      }),
+    });
+    assert.equal(withAi.summarySource, "ai");
+    assert.match(withAi.summary, /AI:/);
+    assert.equal(withAi.inferredPhaseStatus?.[0]?.id, "M01-P01");
+    assert.ok(withAi.phases.length >= 1);
+
+    const fallback = await collectProjectSync({
+      cfg: cfgFor(root),
+      slaveId: "slave_test",
+      requestId: "req_fail",
+      repoId: "r_test",
+      generateSummary: async () => null,
+      aiTimeoutMs: 50,
+    });
+    assert.equal(fallback.summarySource, "rule");
+    assert.match(fallback.summary, /progress:/);
   });
 });

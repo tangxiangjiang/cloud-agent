@@ -4,7 +4,12 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { ConfigError, isAllowedCwd, validateConfig } from "./config.js";
+import {
+  ConfigError,
+  isAllowedCwd,
+  isSyncAiSummaryEnabled,
+  validateConfig,
+} from "./config.js";
 
 const absA = path.resolve("/tmp/repo-a");
 const absB = path.resolve("/tmp/repo-b");
@@ -87,6 +92,41 @@ describe("validateConfig", () => {
     });
     assert.equal(cfg.projects[0]?.index, "ai/milestones.json");
     assert.equal(cfg.repos[0]?.id, "r1");
+    assert.equal(cfg.syncAiSummary, true);
+  });
+
+  it("honors syncAiSummary false and SYNC_AI_SUMMARY env", () => {
+    const cfg = validateConfig({
+      gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
+      slaveId: "slave_devpc",
+      syncAiSummary: false,
+      projects: [{ id: "r1", name: "a", cwd: absA }],
+    });
+    assert.equal(cfg.syncAiSummary, false);
+    assert.equal(isSyncAiSummaryEnabled(cfg), false);
+
+    const prev = process.env.SYNC_AI_SUMMARY;
+    try {
+      process.env.SYNC_AI_SUMMARY = "0";
+      const on = validateConfig({
+        gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
+        slaveId: "slave_devpc",
+        syncAiSummary: true,
+        projects: [{ id: "r1", name: "a", cwd: absA }],
+      });
+      assert.equal(isSyncAiSummaryEnabled(on), false);
+      process.env.SYNC_AI_SUMMARY = "1";
+      const forced = validateConfig({
+        gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
+        slaveId: "slave_devpc",
+        syncAiSummary: false,
+        projects: [{ id: "r1", name: "a", cwd: absA }],
+      });
+      assert.equal(isSyncAiSummaryEnabled(forced), true);
+    } finally {
+      if (prev === undefined) delete process.env.SYNC_AI_SUMMARY;
+      else process.env.SYNC_AI_SUMMARY = prev;
+    }
   });
 
   it("rejects absolute or parent index path", () => {

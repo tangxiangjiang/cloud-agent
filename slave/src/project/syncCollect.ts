@@ -9,6 +9,12 @@ import { findRepo, type SlaveConfig } from "../config.js";
 import { log } from "../log.js";
 import { loadProjectMilestones, type Milestone } from "./milestones.js";
 import { parseProgressPhases, type ProgressStatus } from "./parseProgress.js";
+import type {
+  InferredPhaseStatus,
+  SyncAiSummaryResult,
+  SyncSummaryContext,
+} from "./syncSummaryAi.js";
+import { sanitizeSyncSummary } from "./syncSummaryAi.js";
 import { resolveProgressPath } from "../workflow/progress.js";
 
 const execFileAsync = promisify(execFile);
@@ -43,10 +49,18 @@ export interface ProjectSyncPayload {
   phases: ProjectSyncPhase[];
   recentCommits: string[];
   summary: string;
+  /** How summary was produced. */
+  summarySource: "rule" | "ai";
+  /** Optional AI hints only — Gateway must not auto-apply. */
+  inferredPhaseStatus?: InferredPhaseStatus[];
   activeWorkflows: unknown[];
   warnings: string[];
   error?: string;
 }
+
+export type SyncSummaryGenerator = (
+  ctx: SyncSummaryContext,
+) => Promise<SyncAiSummaryResult | null>;
 
 export interface CollectProjectSyncInput {
   cfg: SlaveConfig;
@@ -54,6 +68,10 @@ export interface CollectProjectSyncInput {
   requestId: string;
   repoId: string;
   now?: () => Date;
+  /** Optional AI enricher; failures keep rule summary (M08-P05). */
+  generateSummary?: SyncSummaryGenerator;
+  /** AI call timeout (default 20s). */
+  aiTimeoutMs?: number;
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {
@@ -70,6 +88,7 @@ async function collectGit(cwd: string): Promise<{
   head: string | null;
   dirty: boolean | null;
   recentCommits: string[];
+  dirtyNames: string[];
   error?: string;
 }> {
   try {
@@ -80,6 +99,7 @@ async function collectGit(cwd: string): Promise<{
         head: null,
         dirty: null,
         recentCommits: [],
+        dirtyNames: [],
         error: "not a git work tree",
       };
     }
@@ -89,6 +109,7 @@ async function collectGit(cwd: string): Promise<{
       head: null,
       dirty: null,
       recentCommits: [],
+      dirtyNames: [],
       error: "git unavailable or not a repository",
     };
   }
@@ -97,6 +118,7 @@ async function collectGit(cwd: string): Promise<{
   let head: string | null = null;
   let dirty: boolean | null = null;
   const recentCommits: string[] = [];
+  const dirtyNames: string[] = [];
   const errs: string[] = [];
 
   try {
@@ -111,7 +133,19 @@ async function collectGit(cwd: string): Promise<{
     errs.push("head");
   }
   try {
-    dirty = (await git(cwd, ["status", "--porcelain"])).trim().length > 0;
+    const porcelain = await git(cwd, ["status", "--porcelain"]);
+    dirty = porcelain.trim().length > 0;
+    for (const line of porcelain.split(/\r?\n/)) {
+      const t = line.trimEnd();
+      if (!t) continue;
+      // status XY + space + path (or rename "a -> b")
+      const pathPart = t.length > 3 ? t.slice(3).trim() : t;
+      const name = pathPart.includes(" -> ")
+        ? pathPart.split(" -> ").pop()!.trim()
+        : pathPart;
+      if (name) dirtyNames.push(name.slice(0, 200));
+      if (dirtyNames.length >= 40) break;
+    }
   } catch {
     errs.push("dirty");
   }
@@ -130,6 +164,7 @@ async function collectGit(cwd: string): Promise<{
     head,
     dirty,
     recentCommits,
+    dirtyNames,
     ...(errs.length ? { error: `git partial failure: ${errs.join(",")}` } : {}),
   };
 }
@@ -225,6 +260,8 @@ function buildRuleSummary(opts: {
   return parts.join("; ") + ".";
 }
 
+export { buildRuleSummary };
+
 /**
  * Structured read-only collect for project.sync.
  * Never writes workspace files; never runs git commit.
@@ -252,6 +289,7 @@ export async function collectProjectSync(
     phases: [],
     recentCommits: [],
     summary: "",
+    summarySource: "rule",
     activeWorkflows: [],
     warnings: [],
     ...extra,
@@ -343,8 +381,48 @@ export async function collectProjectSync(
     phases,
     recentCommits: gitState.recentCommits,
     summary,
+    summarySource: "rule",
     ...(errors.length ? { error: errors.join("; ") } : {}),
   });
+
+  if (input.generateSummary) {
+    const ctx: SyncSummaryContext = {
+      cwd,
+      branch: gitState.branch,
+      head: gitState.head,
+      dirty: gitState.dirty,
+      dirtyNames: gitState.dirtyNames,
+      recentCommits: gitState.recentCommits,
+      phases,
+      ruleSummary: summary,
+    };
+    const timeoutMs = input.aiTimeoutMs ?? 20_000;
+    try {
+      const ai = await Promise.race([
+        input.generateSummary(ctx),
+        new Promise<null>((resolve) => {
+          setTimeout(() => resolve(null), timeoutMs);
+        }),
+      ]);
+      if (ai?.summary?.trim()) {
+        payload.summary = sanitizeSyncSummary(ai.summary, summary);
+        payload.summarySource = "ai";
+        if (ai.inferredPhaseStatus?.length) {
+          payload.inferredPhaseStatus = ai.inferredPhaseStatus;
+        }
+      } else {
+        log.info("project.sync AI summary empty/timeout; keeping rule summary", {
+          repoId,
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn("project.sync AI enrich failed; keeping rule summary", {
+        repoId,
+        error: message,
+      });
+    }
+  }
 
   // Guard: never include huge blobs (diff / secrets). Cap JSON-ish size soft.
   const approx = JSON.stringify(payload).length;

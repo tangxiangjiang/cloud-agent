@@ -60,7 +60,7 @@ npm run smoke-local
 5. `workflow.assign`（`POST /workflows/{id}/start`）→ **串行**取 `ready` 节点 → 创建 task → 执行 → 节点进 `awaiting_review`（**绝不**直接 approved）；下游须依赖节点 `approved` 后才 `ready`
 6. `workflow.revise` → follow-up / 再跑 → 刷新 diff → 再 `awaiting_review`（不写 progress）
 7. `workflow.review` approve → **仅此时**更新 `progressDoc`（须为相对路径且 basename=`progress.md`）；reject 不写；approve 后 Gateway 再 `workflow.assign` 续跑下游
-8. `project.sync` → 白名单 cwd 内**只读**采集 git / milestones / progress → `POST /v1/project-sync`（失败则 WS `project.sync.result`）；无 API Key 时用规则摘要；不写工作区、不 `git commit`
+8. `project.sync` → 白名单 cwd 内**只读**采集 git / milestones / progress → 可选 Local Agent 短摘要（失败回退规则摘要；可用 `syncAiSummary: false` 或 `SYNC_AI_SUMMARY=0` 关闭）→ `POST /v1/project-sync`（失败则 WS `project.sync.result`）；不写工作区、不 `git commit`
 9. `task.cancel` → `run.cancel()`（若 `supports`）；否则记原因并停止转发后续 stream（含 tool）
 10. 错误：`phase: policy|startup|run`；日志脱敏
 

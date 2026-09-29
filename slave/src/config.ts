@@ -32,6 +32,11 @@ export interface SlaveConfig {
   tokenEnv: string;
   /** Default Local Agent model id when task.model is omitted. */
   defaultModel: string;
+  /**
+   * When true (default), project.sync may call Local Agent for a short summary
+   * if API key is present. Disable via config or env SYNC_AI_SUMMARY=0.
+   */
+  syncAiSummary: boolean;
 }
 
 export class ConfigError extends Error {
@@ -57,6 +62,7 @@ type RawConfig = {
   apiKeyEnv?: unknown;
   tokenEnv?: unknown;
   defaultModel?: unknown;
+  syncAiSummary?: unknown;
   /** Forbidden: secrets must come from env named by apiKeyEnv. */
   apiKey?: unknown;
   cursorApiKey?: unknown;
@@ -184,6 +190,14 @@ export function validateConfig(raw: unknown): SlaveConfig {
       ? "composer-2.5"
       : requireString(obj.defaultModel, "defaultModel");
 
+  let syncAiSummary = true;
+  if (obj.syncAiSummary !== undefined && obj.syncAiSummary !== null) {
+    if (typeof obj.syncAiSummary !== "boolean") {
+      throw new ConfigError("syncAiSummary must be a boolean when set");
+    }
+    syncAiSummary = obj.syncAiSummary;
+  }
+
   let projects: ProjectConfig[];
   if (obj.projects !== undefined && obj.projects !== null) {
     projects = parseProjectList(obj.projects, "projects");
@@ -201,6 +215,7 @@ export function validateConfig(raw: unknown): SlaveConfig {
     apiKeyEnv,
     tokenEnv,
     defaultModel,
+    syncAiSummary,
   };
   if (name !== undefined) {
     cfg.name = name;
@@ -212,6 +227,21 @@ export function validateConfig(raw: unknown): SlaveConfig {
 export function findRepo(cfg: SlaveConfig, repoId: string): ProjectConfig | undefined {
   const list = cfg.projects?.length ? cfg.projects : cfg.repos;
   return list?.find((r) => r.id === repoId);
+}
+
+/**
+ * Whether project.sync may call Local Agent for a summary.
+ * Env SYNC_AI_SUMMARY=0|false|off wins over config; =1|true forces on.
+ */
+export function isSyncAiSummaryEnabled(cfg: SlaveConfig): boolean {
+  const env = process.env.SYNC_AI_SUMMARY?.trim().toLowerCase();
+  if (env === "0" || env === "false" || env === "off" || env === "no") {
+    return false;
+  }
+  if (env === "1" || env === "true" || env === "on" || env === "yes") {
+    return true;
+  }
+  return cfg.syncAiSummary !== false;
 }
 
 /** Whether cwd is exactly one of the whitelist entries (normalized). */
@@ -230,6 +260,7 @@ export function configSummary(cfg: SlaveConfig): Record<string, unknown> {
     apiKeyEnv: cfg.apiKeyEnv,
     tokenEnv: cfg.tokenEnv,
     defaultModel: cfg.defaultModel,
+    syncAiSummary: cfg.syncAiSummary,
     apiKeyPresent: Boolean(process.env[cfg.apiKeyEnv]),
     tokenPresent: Boolean(process.env[cfg.tokenEnv]),
     projects: cfg.projects.map((r) => ({

@@ -6,6 +6,7 @@ import { LocalAgentTaskHandler } from "./agent/localHandler.js";
 import {
   ConfigError,
   configSummary,
+  isSyncAiSummaryEnabled,
   loadConfigFile,
   resolveConfigPath,
 } from "./config.js";
@@ -15,6 +16,7 @@ import { log, setLogLevel } from "./log.js";
 import { buildProjectCatalog } from "./project/catalog.js";
 import { ensureAllProjectGitRepos } from "./project/ensureGit.js";
 import { collectProjectSync } from "./project/syncCollect.js";
+import { generateSyncSummaryWithAi } from "./project/syncSummaryAi.js";
 import { StubTaskHandler } from "./tasks/stubHandler.js";
 import { GatewayHttpApi, gatewayHttpBase } from "./workflow/http.js";
 import { SerialDagScheduler } from "./workflow/scheduler.js";
@@ -27,6 +29,7 @@ Outbound Local Slave: Gateway WS + Cursor SDK Local Agent + serial DAG scheduler
 Env:
   GATEWAY_TOKEN (or tokenEnv)  — Bearer from POST /v1/auth/pair
   CURSOR_API_KEY (or apiKeyEnv) — required unless --stub
+  SYNC_AI_SUMMARY=0            — disable optional AI summary on project.sync
 
 --stub  use fake status/delta/done (no SDK; for Gateway-only联调)
 `);
@@ -89,6 +92,9 @@ async function main(): Promise<void> {
 
   const handlers = buildHandlers(cfg, Boolean(values.stub));
   const http = new GatewayHttpApi(gatewayHttpBase(cfg.gatewayUrl), token);
+  const apiKey = process.env[cfg.apiKeyEnv]?.trim();
+  const syncAiEnabled =
+    !values.stub && Boolean(apiKey) && isSyncAiSummaryEnabled(cfg);
 
   // Diff needs a local git HEAD; auto-init whitelist projects that lack a repo.
   await ensureAllProjectGitRepos(cfg.projects);
@@ -100,6 +106,7 @@ async function main(): Promise<void> {
       index: p.index,
       milestones: p.milestones.length,
     })),
+    syncAiSummary: syncAiEnabled,
   });
 
   // Client is created first so scheduler can emit via it; scheduler wired after.
@@ -122,6 +129,16 @@ async function main(): Promise<void> {
         slaveId: cfg.slaveId,
         requestId,
         repoId,
+        ...(syncAiEnabled && apiKey
+          ? {
+              generateSummary: (ctx) =>
+                generateSyncSummaryWithAi({
+                  apiKey,
+                  model: cfg.defaultModel,
+                  ctx,
+                }),
+            }
+          : {}),
       });
       try {
         await http.postProjectSync({
@@ -135,6 +152,7 @@ async function main(): Promise<void> {
           requestId,
           branch: payload.branch,
           dirty: payload.dirty,
+          summarySource: payload.summarySource,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -155,7 +173,6 @@ async function main(): Promise<void> {
   }
   client = new GatewayClient(clientOpts);
 
-  const apiKey = process.env[cfg.apiKeyEnv]?.trim();
   const commitAi =
     !values.stub && apiKey
       ? { apiKey, model: cfg.defaultModel }

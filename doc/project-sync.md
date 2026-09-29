@@ -1,6 +1,6 @@
 # 工程状态同步（Project Sync）
 
-**状态：Gateway API + 对账 + App 同步 UI 已落地（M08-P01～P04）；可选 AI 摘要见 M08-P05**  
+**状态：M08 完成（采集 / Gateway / 对账 / App UI / 可选 AI 摘要）**  
 目的：让 Gateway 侧工作流状态与各 Slave 工作区（git / progress / milestone）可对账，避免「本机已推进、Gateway 仍停在旧节点」或反之。
 
 相关：
@@ -94,7 +94,7 @@ sequenceDiagram
 - 输出：`summary` + 可选 `inferredPhaseStatus[]`（AI 猜测，**仅提示**）  
 - 禁止：写盘、push、改 progress、改 Gateway 节点  
 
-无 API Key / `--stub`：仅结构化字段 + 规则摘要（如「progress 中 N 项 checked」）。
+无 API Key / `--stub` / `syncAiSummary: false` / `SYNC_AI_SUMMARY=0`：仅结构化字段 + 规则摘要（如「progress 中 N 项 checked」）。有 Key 时可短跑 Local Agent 生成 `summary` + 可选 `inferredPhaseStatus`（超时回退规则摘要；**禁止写盘 / 改节点**）。
 
 ---
 

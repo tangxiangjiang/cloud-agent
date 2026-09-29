@@ -20,3 +20,8 @@ defaultModel: composer-2.5
 
 # Env var name for Gateway Bearer (from POST /v1/auth/pair). Required to run.
 tokenEnv: GATEWAY_TOKEN
+
+# Optional AI summary on project.sync (Local Agent, read-only, short timeout).
+# Default true when CURSOR_API_KEY is set and not --stub.
+# Disable: syncAiSummary: false  OR  env SYNC_AI_SUMMARY=0
+# syncAiSummary: true

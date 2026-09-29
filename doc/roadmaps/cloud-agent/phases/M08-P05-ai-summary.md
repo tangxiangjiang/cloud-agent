@@ -17,10 +17,10 @@
 
 ## 完成定义（DoD）
 
-- [ ] 有 API Key 且非 stub 时可生成 summary；超时/失败回退规则摘要
-- [ ] prompt 明确禁止写文件与批准节点
-- [ ] payload 仍含完整结构化字段；AI 仅附加文案
-- [ ] 文档注明可关闭（env / config）
+- [x] 有 API Key 且非 stub 时可生成 summary；超时/失败回退规则摘要
+- [x] prompt 明确禁止写文件与批准节点
+- [x] payload 仍含完整结构化字段；AI 仅附加文案
+- [x] 文档注明可关闭（env / config）
 
 ## 禁止事项
 

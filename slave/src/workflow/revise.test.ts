@@ -52,6 +52,7 @@ describe("SerialDagScheduler.enqueueRevise", () => {
       tokenEnv: "GATEWAY_TOKEN",
       apiKeyEnv: "CURSOR_API_KEY",
       defaultModel: "composer-2.5",
+      syncAiSummary: true,
       projects: [{ id: "r1", name: "t", cwd }],
       repos: [{ id: "r1", name: "t", cwd }],
     };

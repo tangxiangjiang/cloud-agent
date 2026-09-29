@@ -208,6 +208,8 @@ Header 可选：`Idempotency-Key: <uuid>`
   "slaveId": "slave_devpc",
   "repoId": "r_cloud_agent",
   "progressDoc": "ai/progress.md",
+  "defaultModel": "auto",
+  "defaultPolicy": { "autoApprove": false, "autoStartNext": false },
   "nodes": [
     {
       "id": "M01-P01",
@@ -227,6 +229,7 @@ Header 可选：`Idempotency-Key: <uuid>`
 
 → `201` WorkflowRun：`status=pending`；无依赖节点为 `ready`，其余 `pending`。  
 节点默认可带 `model`（默认 `auto`）与 `policy`（`autoApprove`/`autoStartNext`，**默认均为 false**）。  
+未写的节点字段继承请求级 `defaultModel` / `defaultPolicy`（App「执行 plan」批量默认）。  
 **环检测：** Gateway 拒绝含环或未知 `dependsOn` 的图（HTTP 400）。客户端应只提交已校验的 DAG。
 
 `GET /workflows?status=&limit=` → `{ "workflows": [ … ] }`  

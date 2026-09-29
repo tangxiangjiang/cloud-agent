@@ -104,12 +104,14 @@ type createNodeRequest struct {
 }
 
 type createRequest struct {
-	BundleID    string              `json:"bundleId"`
-	BundleRef   string              `json:"bundleRef"`
-	SlaveID     string              `json:"slaveId"`
-	RepoID      string              `json:"repoId"`
-	ProgressDoc string              `json:"progressDoc"`
-	Nodes       []createNodeRequest `json:"nodes"`
+	BundleID      string              `json:"bundleId"`
+	BundleRef     string              `json:"bundleRef"`
+	SlaveID       string              `json:"slaveId"`
+	RepoID        string              `json:"repoId"`
+	ProgressDoc   string              `json:"progressDoc"`
+	DefaultModel  string              `json:"defaultModel"`
+	DefaultPolicy *NodePolicy         `json:"defaultPolicy"`
+	Nodes         []createNodeRequest `json:"nodes"`
 }
 
 // Starter delivers workflow / revise / review messages to an online Slave.
@@ -203,6 +205,15 @@ func (s *Store) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nodes := make([]Node, 0, len(req.Nodes))
+	defModel := "auto"
+	if m := strings.TrimSpace(req.DefaultModel); m != "" {
+		defModel = m
+	}
+	defPol := DefaultNodePolicy()
+	if req.DefaultPolicy != nil {
+		defPol.AutoApprove = req.DefaultPolicy.AutoApprove
+		defPol.AutoStartNext = req.DefaultPolicy.AutoStartNext
+	}
 	for _, n := range req.Nodes {
 		id := strings.TrimSpace(n.ID)
 		if id == "" {
@@ -231,12 +242,14 @@ func (s *Store) handleCreate(w http.ResponseWriter, r *http.Request) {
 		if m := strings.TrimSpace(n.Model); m != "" {
 			node.Model = strPtr(m)
 		} else {
-			node.Model = strPtr("auto")
+			node.Model = strPtr(defModel)
 		}
-		pol := DefaultNodePolicy()
+		pol := defPol
 		if n.Policy != nil {
-			pol.AutoApprove = n.Policy.AutoApprove
-			pol.AutoStartNext = n.Policy.AutoStartNext
+			pol = NodePolicy{
+				AutoApprove:   n.Policy.AutoApprove,
+				AutoStartNext: n.Policy.AutoStartNext,
+			}
 		}
 		node.Policy = &pol
 		if len(n.DodChecks) > 0 {

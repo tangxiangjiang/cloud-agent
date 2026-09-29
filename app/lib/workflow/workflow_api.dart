@@ -90,6 +90,8 @@ class WorkflowApi {
     String? slaveId,
     String? progressDoc,
     String? bundleRef,
+    String? defaultModel,
+    NodePolicy? defaultPolicy,
   }) async {
     final res = await _post(
       _uri('/v1/workflows'),
@@ -105,6 +107,9 @@ class WorkflowApi {
         if (progressDoc != null && progressDoc.isNotEmpty)
           'progressDoc': progressDoc,
         if (bundleRef != null && bundleRef.isNotEmpty) 'bundleRef': bundleRef,
+        if (defaultModel != null && defaultModel.isNotEmpty)
+          'defaultModel': defaultModel,
+        if (defaultPolicy != null) 'defaultPolicy': defaultPolicy.toJson(),
       }),
     );
     _throwIfBad(res, 'Create workflow');

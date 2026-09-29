@@ -1,6 +1,6 @@
 # 节点执行策略（模型 / 自动通过 / 自动续跑）
 
-**状态：Gateway 续跑门闩 + App 策略控件 + 自动通过已落地（M10-P01～P03）；批量默认见 M10-P04**  
+**状态：节点策略（续跑门闩 / App 控件 / 自动通过 / 创建默认）已落地（M10-P01～P04）**  
 入口：App **工作流详情**里每个任务（节点）行上的控件，形态对齐设置页的 **下拉 + Switch**（默认关）。
 
 解决：当前 Approve 后 Gateway 会再次 `workflow.assign`，**自动开跑下一 ready 节点**；部分场景希望人审完停住，手动点下一个再跑。同时支持每节点选模型、可选自动通过。
@@ -78,7 +78,8 @@ M01-P02  气泡 …         [Auto ▾]  自动通过 ○──  自动下个 ●
 }
 ```
 
-节点未写的字段继承 default。
+节点未写的 `model` / `policy` 继承上述默认；节点显式字段优先生效。  
+App「执行 plan」页可批量设「本 Milestone 默认」（两开关默认关，可关闭）。
 
 ---
 
@@ -132,7 +133,7 @@ M01-P02  气泡 …         [Auto ▾]  自动通过 ○──  自动下个 ●
 }
 ```
 
-创建 Milestone Workflow 时：phases 可带默认 `model`；`policy` 全 false，除非用户在「执行 plan」页批量设置（P2）。
+创建 Milestone Workflow 时：App「执行 plan」页可设 `defaultModel` / `defaultPolicy`（默认 Auto + 两开关关）；Gateway 写入各未显式指定的节点。
 
 ---
 
@@ -144,7 +145,9 @@ M01-P02  气泡 …         [Auto ▾]  自动通过 ○──  自动下个 ●
 | POST | `/v1/workflows/{id}/nodes/{nodeId}/start` | 仅 start 该 ready 节点（下发 assign 聚焦或全量由 Slave 只跑 ready） |
 | POST | `/v1/workflows/{id}/continue` | 按当前策略续跑（至少启动所有 ready） |
 
-创建节点请求体增加 `policy`（见上）。
+创建：`POST /v1/workflows` 可带 `defaultModel`、`defaultPolicy`；节点未写字段继承之。  
+
+创建节点请求体亦可直接带 `model` / `policy`（见上）。
 
 ---
 

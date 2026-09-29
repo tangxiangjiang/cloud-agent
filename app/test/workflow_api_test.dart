@@ -222,29 +222,46 @@ void main() {
     expect(run.nodes.first.model, 'composer-2.5');
   });
 
-  test('continueWorkflow hits continue path', () async {
+  test('createWorkflow posts defaultModel and defaultPolicy', () async {
     final api = WorkflowApi(
       session: session,
       post: (uri, {headers, body}) async {
-        expect(uri.path, '/v1/workflows/wf_1/continue');
+        expect(uri.path, '/v1/workflows');
+        final map = jsonDecode(body as String) as Map<String, dynamic>;
+        expect(map['defaultModel'], 'composer-2.5');
+        expect(map['defaultPolicy']['autoApprove'], isFalse);
+        expect(map['defaultPolicy']['autoStartNext'], isTrue);
         return http.Response(
           jsonEncode({
-            'delivered': true,
-            'workflow': {
-              'id': 'wf_1',
-              'bundleId': 'b',
-              'status': 'running',
-              'nodes': [
-                {'id': 'B', 'status': 'running', 'dependsOn': ['A']},
-              ],
-              'createdAt': '2026-09-28T00:00:00Z',
-            },
+            'id': 'wf_def',
+            'bundleId': 'milestone:M10',
+            'status': 'pending',
+            'repoId': 'r1',
+            'nodes': [
+              {
+                'id': 'P1',
+                'status': 'ready',
+                'model': 'composer-2.5',
+                'policy': {'autoApprove': false, 'autoStartNext': true},
+                'dependsOn': <String>[],
+              },
+            ],
+            'createdAt': '2026-09-28T00:00:00Z',
           }),
-          200,
+          201,
         );
       },
     );
-    final r = await api.continueWorkflow('wf_1');
-    expect(r.delivered, isTrue);
+    final wf = await api.createWorkflow(
+      bundleId: 'milestone:M10',
+      repoId: 'r1',
+      defaultModel: 'composer-2.5',
+      defaultPolicy: const NodePolicy(autoStartNext: true),
+      nodes: [
+        {'id': 'P1', 'dependsOn': <String>[], 'prompt': {'mode': 'phase_file'}},
+      ],
+    );
+    expect(wf.id, 'wf_def');
+    expect(wf.nodes.first.policy.autoStartNext, isTrue);
   });
 }

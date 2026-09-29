@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../auth/session.dart';
+import '../chat/chat_api.dart';
+import '../chat/models.dart';
 import '../slaves/models.dart';
 import '../workflow/models.dart';
 import '../workflow/workflow_api.dart';
@@ -8,6 +12,7 @@ import 'node_status_chip.dart';
 import 'workflow_detail_page.dart';
 
 /// Shows milestone phases; resume existing run or create+start once.
+/// Defaults (model + policy switches) apply to all nodes on create (M10-P04).
 class MilestonePhasesPage extends StatefulWidget {
   const MilestonePhasesPage({
     super.key,
@@ -16,6 +21,7 @@ class MilestonePhasesPage extends StatefulWidget {
     required this.project,
     required this.milestone,
     this.api,
+    this.chatApi,
   });
 
   final Session session;
@@ -23,6 +29,7 @@ class MilestonePhasesPage extends StatefulWidget {
   final ProjectInfo project;
   final MilestoneInfo milestone;
   final WorkflowApi? api;
+  final ChatApi? chatApi;
 
   @override
   State<MilestonePhasesPage> createState() => _MilestonePhasesPageState();
@@ -31,18 +38,41 @@ class MilestonePhasesPage extends StatefulWidget {
 class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
   late final WorkflowApi _api =
       widget.api ?? WorkflowApi(session: widget.session);
+  late final ChatApi _chatApi =
+      widget.chatApi ?? ChatApi(session: widget.session);
 
   bool _loading = true;
   bool _busy = false;
   String? _error;
   WorkflowRun? _existing;
 
+  ModelCatalog _catalog = ModelCatalog.fallback;
+  String _defaultModel = 'auto';
+  bool _defaultAutoApprove = false;
+  bool _defaultAutoStartNext = false;
+
   String get _bundleId => 'milestone:${widget.milestone.id}';
 
   @override
   void initState() {
     super.initState();
+    unawaited(_loadModels());
     _refreshExisting();
+  }
+
+  Future<void> _loadModels() async {
+    try {
+      final c = await _chatApi.listModels();
+      if (!mounted) return;
+      setState(() {
+        _catalog = c;
+        if (!_catalog.models.any((m) => m.id == _defaultModel)) {
+          _defaultModel = c.defaultId;
+        }
+      });
+    } catch (_) {
+      // Keep Auto fallback.
+    }
   }
 
   Future<void> _refreshExisting() async {
@@ -105,6 +135,11 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
         slaveId: widget.slave.id,
         repoId: widget.project.id,
         progressDoc: ms.progressDoc ?? 'ai/progress.md',
+        defaultModel: _defaultModel,
+        defaultPolicy: NodePolicy(
+          autoApprove: _defaultAutoApprove,
+          autoStartNext: _defaultAutoStartNext,
+        ),
         nodes: ms.phases.map((p) => p.toWorkflowNodeJson()).toList(),
       );
       final started = await _api.startWorkflow(created.id);
@@ -147,10 +182,101 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
     if (ok == true) await _createAndStart(forceNew: true);
   }
 
+  String _labelFor(String id) {
+    for (final m in _catalog.models) {
+      if (m.id == id) return m.label;
+    }
+    return id;
+  }
+
+  Widget _defaultsCard(ThemeData theme) {
+    final modelIds = _catalog.models.map((m) => m.id).toList();
+    if (!modelIds.contains(_defaultModel)) {
+      modelIds.insert(0, _defaultModel);
+    }
+    final canEdit = !_busy &&
+        (_existing == null || !_existing!.isActive);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('本 Milestone 默认策略', style: theme.textTheme.titleSmall),
+            Text(
+              '创建时写入各节点（可关）。默认均为关 / Auto。',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    key: const ValueKey('milestone-default-model'),
+                    value: modelIds.contains(_defaultModel)
+                        ? _defaultModel
+                        : modelIds.first,
+                    isDense: true,
+                    items: [
+                      for (final id in modelIds)
+                        DropdownMenuItem(
+                          value: id,
+                          child: Text(_labelFor(id)),
+                        ),
+                    ],
+                    onChanged: canEdit
+                        ? (v) {
+                            if (v == null) return;
+                            setState(() => _defaultModel = v);
+                          }
+                        : null,
+                  ),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('自动通过', style: theme.textTheme.bodySmall),
+                    Switch(
+                      key: const ValueKey('milestone-default-autoApprove'),
+                      value: _defaultAutoApprove,
+                      onChanged: canEdit
+                          ? (v) => setState(() => _defaultAutoApprove = v)
+                          : null,
+                    ),
+                  ],
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('自动下个', style: theme.textTheme.bodySmall),
+                    Switch(
+                      key: const ValueKey('milestone-default-autoStartNext'),
+                      value: _defaultAutoStartNext,
+                      onChanged: canEdit
+                          ? (v) => setState(() => _defaultAutoStartNext = v)
+                          : null,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ms = widget.milestone;
     final existing = _existing;
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text('${ms.id} · 执行 plan'),
@@ -167,17 +293,17 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Text(ms.title, style: Theme.of(context).textTheme.titleMedium),
+                Text(ms.title, style: theme.textTheme.titleMedium),
                 Text(
                   '${widget.project.name} · '
                   '${widget.slave.name.isNotEmpty ? widget.slave.name : widget.slave.id}',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: theme.textTheme.bodySmall,
                 ),
                 if (ms.progressDoc != null) ...[
                   const SizedBox(height: 4),
                   Text(
                     'progress: ${ms.progressDoc}',
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: theme.textTheme.bodySmall,
                   ),
                 ],
                 if (existing != null) ...[
@@ -193,8 +319,10 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
                     ),
                   ),
                 ],
+                const SizedBox(height: 12),
+                _defaultsCard(theme),
                 const SizedBox(height: 16),
-                Text('Phases', style: Theme.of(context).textTheme.titleSmall),
+                Text('Phases', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 8),
                 ...ms.phases.map((p) {
                   WorkflowNode? node;
@@ -225,7 +353,7 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
                   const SizedBox(height: 12),
                   Text(
                     _error!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    style: TextStyle(color: theme.colorScheme.error),
                   ),
                 ],
                 const SizedBox(height: 24),

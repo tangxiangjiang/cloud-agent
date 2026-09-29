@@ -10,9 +10,9 @@
 
 ## 完成定义（DoD）
 
-- [ ] 创建请求支持 `defaultPolicy` / `defaultModel` 或节点级显式字段
-- [ ] UI 可批量设「本 Milestone 默认」
-- [ ] 文档示例更新
+- [x] 创建请求支持 `defaultPolicy` / `defaultModel` 或节点级显式字段
+- [x] UI 可批量设「本 Milestone 默认」
+- [x] 文档示例更新
 
 ## 禁止事项
 

@@ -779,3 +779,36 @@ func TestHumanApproveAuditNotAuto(t *testing.T) {
 	}
 }
 
+func TestCreateInheritsDefaultModelAndPolicy(t *testing.T) {
+	store := workflow.NewStore()
+	h := store.Handler()
+	body := `{
+		"bundleId":"b","repoId":"r",
+		"defaultModel":"composer-2.5",
+		"defaultPolicy":{"autoApprove":false,"autoStartNext":true},
+		"nodes":[
+			{"id":"A","dependsOn":[]},
+			{"id":"B","dependsOn":["A"],"model":"gpt-5.6-sol-medium","policy":{"autoApprove":true,"autoStartNext":false}}
+		]
+	}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	var run workflow.Run
+	_ = json.NewDecoder(rec.Body).Decode(&run)
+	if run.Nodes[0].Model == nil || *run.Nodes[0].Model != "composer-2.5" {
+		t.Fatalf("A inherits model: %+v", run.Nodes[0].Model)
+	}
+	if run.Nodes[0].Policy == nil || !run.Nodes[0].Policy.AutoStartNext || run.Nodes[0].Policy.AutoApprove {
+		t.Fatalf("A inherits policy: %+v", run.Nodes[0].Policy)
+	}
+	if run.Nodes[1].Model == nil || *run.Nodes[1].Model != "gpt-5.6-sol-medium" {
+		t.Fatalf("B explicit model: %+v", run.Nodes[1].Model)
+	}
+	if run.Nodes[1].Policy == nil || !run.Nodes[1].Policy.AutoApprove || run.Nodes[1].Policy.AutoStartNext {
+		t.Fatalf("B explicit policy: %+v", run.Nodes[1].Policy)
+	}
+}
+

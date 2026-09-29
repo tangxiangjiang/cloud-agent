@@ -22,14 +22,17 @@ var slaveUpgrader = websocket.Upgrader{
 }
 
 type slaveClientMsg struct {
-	Type     string    `json:"type"`
-	Token    string    `json:"token"`
-	SlaveID  string    `json:"slaveId"`
-	Name     string    `json:"name"`
-	Repos    []Repo    `json:"repos"`
-	Projects []Project `json:"projects"`
-	TaskID   string    `json:"taskId"`
-	Event    *slaveEventIn `json:"event"`
+	Type      string          `json:"type"`
+	Token     string          `json:"token"`
+	SlaveID   string          `json:"slaveId"`
+	Name      string          `json:"name"`
+	Repos     []Repo          `json:"repos"`
+	Projects  []Project       `json:"projects"`
+	TaskID    string          `json:"taskId"`
+	Event     *slaveEventIn   `json:"event"`
+	RequestID string          `json:"requestId"`
+	RepoID    string          `json:"repoId"`
+	Payload   json.RawMessage `json:"payload"`
 }
 
 type slaveEventIn struct {
@@ -44,6 +47,8 @@ type OutboundHub struct {
 	tasks  *task.Store
 	appHub *ws.Hub
 
+	onProjectSyncResult func(slaveID, requestID, repoID string, payload json.RawMessage) error
+
 	mu    sync.Mutex
 	conns map[string]*slaveConn // slaveId -> connection
 }
@@ -56,6 +61,11 @@ func NewOutboundHub(store *auth.Store, reg *Registry, tasks *task.Store, appHub 
 		appHub: appHub,
 		conns:  make(map[string]*slaveConn),
 	}
+}
+
+// SetProjectSyncResultHandler receives Slave WS project.sync.result (optional).
+func (h *OutboundHub) SetProjectSyncResultHandler(fn func(slaveID, requestID, repoID string, payload json.RawMessage) error) {
+	h.onProjectSyncResult = fn
 }
 
 func (h *OutboundHub) HandleWS(w http.ResponseWriter, r *http.Request) {
@@ -128,6 +138,25 @@ func (h *OutboundHub) AssignWorkflow(run *workflow.Run) bool {
 	c.sendJSON(map[string]any{
 		"type":     "workflow.assign",
 		"workflow": run,
+	})
+	return true
+}
+
+// AssignProjectSync asks an online Slave to collect project state (M08).
+func (h *OutboundHub) AssignProjectSync(slaveID, requestID, repoID string) bool {
+	if slaveID == "" || repoID == "" {
+		return false
+	}
+	h.mu.Lock()
+	c := h.conns[slaveID]
+	h.mu.Unlock()
+	if c == nil {
+		return false
+	}
+	c.sendJSON(map[string]any{
+		"type":      "project.sync",
+		"requestId": requestID,
+		"repoId":    repoID,
 	})
 	return true
 }
@@ -277,6 +306,25 @@ func (c *slaveConn) readPump() {
 			if c.hub.appHub != nil {
 				c.hub.appHub.Publish(msg.TaskID, msg.Event.Kind, payload)
 			}
+		case "project.sync.result":
+			if !c.requireAuth() {
+				continue
+			}
+			slaveID := msg.SlaveID
+			if slaveID == "" {
+				slaveID = c.id
+			}
+			if slaveID == "" || msg.RepoID == "" || len(msg.Payload) == 0 {
+				c.sendJSON(map[string]string{"type": "error", "error": "slaveId, repoId, payload required"})
+				continue
+			}
+			if c.hub.onProjectSyncResult != nil {
+				if err := c.hub.onProjectSyncResult(slaveID, msg.RequestID, msg.RepoID, msg.Payload); err != nil {
+					c.sendJSON(map[string]string{"type": "error", "error": "project sync persist failed"})
+					continue
+				}
+			}
+			c.sendJSON(map[string]any{"type": "project.sync.ok", "requestId": msg.RequestID})
 		case "ping":
 			c.sendJSON(map[string]string{"type": "pong"})
 		default:

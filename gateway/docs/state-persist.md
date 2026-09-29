@@ -4,7 +4,7 @@
 
 | 组件 | 文件 | 内容 |
 |------|------|------|
-| Gateway | `.local/gateway/state.db` | SQLite：workflows / diffs / tokens；预留 `project_sync`（工程状态同步） |
+| Gateway | `.local/gateway/state.db` | SQLite：workflows / diffs / tokens；`project_sync`（工程状态同步，M08-P01） |
 | Gateway（旧） | `.local/gateway/state.json` | 首次打开 `state.db` 且库为空时自动导入，并改名为 `state.json.migrated` |
 | Slave | `.local/slave-runtime.json` | revise baselines、agentId（便于 resume） |
 
@@ -28,4 +28,4 @@ go run . -pair-code ABCD-EFGH -state-file ../.local/gateway/state.db
 
 完整设计见 **[doc/project-sync.md](../../doc/project-sync.md)**。
 
-摘要：App 在 Slave→工程上触发同步 → Slave 采集 milestone/progress/git（可选 AI 摘要）→ Gateway 写入 `project_sync`，并与 active Workflow 对账告警。表已预留；API / UI 按该文档分期实现。
+摘要：App 在 Slave→工程上触发同步 → Slave 采集 milestone/progress/git（可选 AI 摘要）→ Gateway 写入 `project_sync`，并与 active Workflow 对账告警。**Gateway 触发/落库/查询 API 已实现（M08-P01）**；Slave 采集与 App UI / 对账见后续 phase。

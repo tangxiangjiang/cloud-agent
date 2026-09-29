@@ -67,15 +67,17 @@ Base path：`/v1`
 
 `repos` 为 `projects` 的扁平映射（兼容旧客户端 / 任务白名单）。App 主路径：Slave → 工程 → Milestone → `POST /v1/workflows`（或续跑已有实例）。工程索引见 [`ai/milestones.md`](../ai/milestones.md)。
 
-### 工程状态同步（草案）
+### 工程状态同步（M08-P01 Gateway）
 
-见 **[project-sync.md](./project-sync.md)**。要点：
+见 **[project-sync.md](./project-sync.md)**。Bearer 鉴权；**不**改写 Workflow 节点 status。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/v1/slaves/{slaveId}/projects/{repoId}/sync` | App 触发；Gateway → Slave `project.sync` |
-| POST | `/v1/project-sync` | Slave 上报采集结果 → SQLite `project_sync` |
-| GET | `/v1/slaves/{slaveId}/projects/{repoId}/sync` | 最近一次快照 + 对账 `warnings` |
+| POST | `/v1/slaves/{slaveId}/projects/{repoId}/sync` | App 触发 → `202`；offline → `409`；无 WS 连接 → `503`；Gateway → Slave WS `project.sync` |
+| POST | `/v1/project-sync` | Slave 上报 `{requestId,slaveId,repoId,payload}` → UPSERT `project_sync` |
+| GET | `/v1/slaves/{slaveId}/projects/{repoId}/sync` | 最近快照 `{slaveId,repoId,syncedAt,payload,warnings}`（对账告警见 M08-P03） |
+
+等价 WS：Slave → Gateway `project.sync.result`（同 payload）→ `project.sync.ok`。审计：`project.sync` / `project.sync.result`（无 token / API Key）。
 
 ### 创建任务
 

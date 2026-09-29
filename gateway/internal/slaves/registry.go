@@ -236,3 +236,44 @@ func (r *Registry) IsOnline(id string) bool {
 	s, ok := r.slaves[id]
 	return ok && s.Online
 }
+
+// Get returns a copy of the slave record, or false if unknown.
+func (r *Registry) Get(id string) (Slave, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	s, ok := r.slaves[id]
+	if !ok {
+		return Slave{}, false
+	}
+	cp := *s
+	if cp.Repos == nil {
+		cp.Repos = []Repo{}
+	} else {
+		cp.Repos = append([]Repo(nil), cp.Repos...)
+	}
+	if cp.Projects == nil {
+		cp.Projects = []Project{}
+	} else {
+		cp.Projects = append([]Project(nil), cp.Projects...)
+	}
+	return cp, true
+}
+
+// HasProject reports whether the slave registered repoId (projects or repos).
+func (r *Registry) HasProject(slaveID, repoID string) bool {
+	s, ok := r.Get(slaveID)
+	if !ok {
+		return false
+	}
+	for _, p := range s.Projects {
+		if p.ID == repoID {
+			return true
+		}
+	}
+	for _, p := range s.Repos {
+		if p.ID == repoID {
+			return true
+		}
+	}
+	return false
+}

@@ -14,6 +14,7 @@ import (
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/audit"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/auth"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/persist"
+	"github.com/tangxiangjiang/cloud-agent/gateway/internal/projectsync"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/ratelimit"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/slaves"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/task"
@@ -106,6 +107,12 @@ func main() {
 	taskStore.SetDispatcher(slaveHub)
 	wfStore.SetStarter(slaveHub)
 
+	syncStore := persist.AsProjectSyncStore(stateStore)
+	syncSvc := projectsync.NewService(slaveReg, slaveHub, syncStore, auditLog)
+	slaveHub.SetProjectSyncResultHandler(func(slaveID, requestID, repoID string, payload json.RawMessage) error {
+		return syncSvc.StoreReport(slaveID, requestID, repoID, payload)
+	})
+
 	log.Printf("pair code: %s (use POST /v1/auth/pair)", authStore.PairCode())
 
 	mux := http.NewServeMux()
@@ -131,6 +138,8 @@ func main() {
 	wfHandler := authStore.Middleware(wfInner)
 	mux.Handle("/v1/workflows", wfHandler)
 	mux.Handle("/v1/workflows/", wfHandler)
+
+	syncSvc.Mount(mux, authStore.Middleware)
 
 	mux.HandleFunc("GET /v1/ws", hub.HandleWS)
 	mux.HandleFunc("GET /v1/slave/ws", slaveHub.HandleWS)

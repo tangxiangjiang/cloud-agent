@@ -17,12 +17,12 @@
 
 ## 完成定义（DoD）
 
-- [ ] `POST /v1/slaves/{slaveId}/projects/{repoId}/sync`（Bearer）；Slave offline → 明确错误
-- [ ] Gateway → Slave WS：`project.sync`（`requestId`, `repoId`）
-- [ ] `POST /v1/project-sync`（或等价 WS `project.sync.result`）校验 `slaveId`/`repoId`，写入 SQLite
-- [ ] `GET /v1/slaves/{slaveId}/projects/{repoId}/sync` 返回最近快照
-- [ ] 审计事件：`project.sync` accept / result（无 token / API Key）
-- [ ] 单测覆盖落库与 offline
+- [x] `POST /v1/slaves/{slaveId}/projects/{repoId}/sync`（Bearer）；Slave offline → 明确错误
+- [x] Gateway → Slave WS：`project.sync`（`requestId`, `repoId`）
+- [x] `POST /v1/project-sync`（或等价 WS `project.sync.result`）校验 `slaveId`/`repoId`，写入 SQLite
+- [x] `GET /v1/slaves/{slaveId}/projects/{repoId}/sync` 返回最近快照
+- [x] 审计事件：`project.sync` accept / result（无 token / API Key）
+- [x] 单测覆盖落库与 offline
 
 ## 禁止事项
 

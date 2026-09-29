@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-09-29T06:50:00.000Z",
+  "default": "stub-two-node",
+  "plans": [
+    {
+      "id": "stub-two-node",
+      "title": "M05-P02 two-node stub fixture (protocol smoke)",
+      "bundle": "ai/bundles/m05-p02-two-node.json",
+      "bundleId": "bundle_m05_p02_two_node",
+      "repoId": "r_cloud_agent",
+      "roadmapRef": null,
+      "progressDoc": "ai/progress.md",
+      "tags": ["stub", "smoke"],
+      "notes": "短 fixture；适合 --stub 联调"
+    },
+    {
+      "id": "sample-dag",
+      "title": "cloud-agent sample DAG (M07-P02/P03)",
+      "bundle": "examples/sample-dag.json",
+      "bundleId": "bundle_cloud_agent_sample",
+      "repoId": "r_cloud_agent",
+      "roadmapRef": "doc/roadmaps/cloud-agent/README.md",
+      "progressDoc": "doc/roadmaps/cloud-agent/progress.md",
+      "tags": ["cloud-agent", "sample"],
+      "notes": "指向本仓 roadmaps phases"
+    }
+  ]
+}

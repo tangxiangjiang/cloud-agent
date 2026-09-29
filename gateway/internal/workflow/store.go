@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -121,11 +122,12 @@ type reviewRequest struct {
 }
 
 type Store struct {
-	mu      sync.RWMutex
-	runs    map[string]*Run
-	diffs   map[string]*NodeDiff // workflowId\0nodeId
-	now     func() time.Time
-	starter Starter
+	mu       sync.RWMutex
+	runs     map[string]*Run
+	diffs    map[string]*NodeDiff // workflowId\0nodeId
+	now      func() time.Time
+	starter  Starter
+	onChange OnChange
 }
 
 func NewStore() *Store {
@@ -255,6 +257,7 @@ func (s *Store) handleCreate(w http.ResponseWriter, r *http.Request) {
 	s.runs[id] = run
 	out := cloneRun(run)
 	s.mu.Unlock()
+	s.notifyChange()
 
 	writeJSON(w, http.StatusCreated, out)
 }
@@ -339,6 +342,7 @@ func (s *Store) handleStart(w http.ResponseWriter, r *http.Request) {
 	run.Status = StatusRunning
 	out := cloneRun(run)
 	s.mu.Unlock()
+	s.notifyChange()
 
 	delivered := false
 	if s.starter != nil {
@@ -363,8 +367,14 @@ func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	saved := false
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer func() {
+		s.mu.Unlock()
+		if saved {
+			s.notifyChange()
+		}
+	}()
 	run, ok := s.runs[id]
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
@@ -426,6 +436,7 @@ func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 	}
 	u := s.now().Format(time.RFC3339Nano)
 	run.UpdatedAt = &u
+	saved = true
 	writeJSON(w, http.StatusOK, cloneRun(run))
 }
 
@@ -515,6 +526,7 @@ func (s *Store) handleRevise(w http.ResponseWriter, r *http.Request) {
 	}
 	out := cloneRun(run)
 	s.mu.Unlock()
+	s.notifyChange()
 
 	delivered := false
 	if s.starter != nil && slaveID != "" {
@@ -591,14 +603,20 @@ func (s *Store) handleReview(w http.ResponseWriter, r *http.Request) {
 	}
 	out := cloneRun(run)
 	s.mu.Unlock()
+	s.notifyChange()
 
 	delivered := false
 	if s.starter != nil && slaveID != "" {
 		delivered = s.starter.AssignReview(slaveID, id, nodeID, decision, comment)
+		if !delivered {
+			log.Printf("workflow.review not delivered to slave %q (offline?); progress/commit may be skipped", slaveID)
+		}
 		// After approve, push workflow again so Slave can schedule newly ready nodes.
 		if decision == "approve" {
 			_ = s.starter.AssignWorkflow(out)
 		}
+	} else if slaveID == "" {
+		log.Printf("workflow.review: workflow %s has empty slaveId; progress/commit skipped", id)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"workflow":  out,
@@ -634,8 +652,14 @@ func (s *Store) handlePutDiff(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
+	saved := false
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer func() {
+		s.mu.Unlock()
+		if saved {
+			s.notifyChange()
+		}
+	}()
 	run, ok := s.runs[id]
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "workflow not found"})
@@ -670,6 +694,7 @@ func (s *Store) handlePutDiff(w http.ResponseWriter, r *http.Request) {
 	body.NodeID = nodeID
 	stored := cloneDiff(&body)
 	s.diffs[diffKey(id, nodeID)] = stored
+	saved = true
 	writeJSON(w, http.StatusOK, stored)
 }
 

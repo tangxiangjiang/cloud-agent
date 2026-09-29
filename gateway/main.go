@@ -13,6 +13,7 @@ import (
 
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/audit"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/auth"
+	"github.com/tangxiangjiang/cloud-agent/gateway/internal/persist"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/ratelimit"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/slaves"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/task"
@@ -25,6 +26,7 @@ func main() {
 	pairCodeFlag := flag.String("pair-code", envOr("GATEWAY_PAIR_CODE", ""), "pairing code (env GATEWAY_PAIR_CODE); generated if empty")
 	configPath := flag.String("config", envOr("GATEWAY_CONFIG", ""), "optional YAML config path (env GATEWAY_CONFIG); see config.example.yaml")
 	auditPath := flag.String("audit-log", envOr("GATEWAY_AUDIT_LOG", ""), "audit JSONL path (env GATEWAY_AUDIT_LOG); default stderr")
+	stateFile := flag.String("state-file", envOr("GATEWAY_STATE_FILE", ""), "persist workflows/diffs/tokens JSON (env GATEWAY_STATE_FILE); empty = memory only")
 	debug := flag.Bool("debug", envOr("GATEWAY_DEBUG", "") == "1", "enable debug event inject endpoint")
 	flag.Parse()
 
@@ -48,6 +50,39 @@ func main() {
 	authStore := auth.NewStore(pairCode)
 	taskStore := task.NewStore()
 	wfStore := workflow.NewStore()
+
+	var stateStore *persist.FileStore
+	if strings.TrimSpace(*stateFile) != "" {
+		stateStore = persist.NewFileStore(*stateFile)
+		if snap, err := stateStore.Load(); err != nil {
+			log.Fatalf("load state %s: %v", *stateFile, err)
+		} else if snap != nil {
+			authStore.ImportTokens(snap.Tokens)
+			if err := wfStore.UnmarshalSnapshotJSON(snap.Workflows, snap.Diffs); err != nil {
+				log.Fatalf("restore workflows: %v", err)
+			}
+			log.Printf("restored state from %s", *stateFile)
+		} else {
+			log.Printf("state file empty/missing; starting fresh (%s)", *stateFile)
+		}
+		save := func() {
+			wfJSON, diffJSON, err := wfStore.MarshalSnapshotJSON()
+			if err != nil {
+				log.Printf("state marshal: %v", err)
+				return
+			}
+			stateStore.ScheduleSave(&persist.Snapshot{
+				Tokens:    authStore.ExportTokens(),
+				Workflows: wfJSON,
+				Diffs:     diffJSON,
+			})
+		}
+		authStore.SetOnChange(save)
+		wfStore.SetOnChange(save)
+	} else {
+		log.Printf("no -state-file; workflow/auth state is memory-only (restart loses review progress)")
+	}
+
 	hub := ws.NewHub(authStore)
 	taskStore.SetEventSource(hub)
 
@@ -70,6 +105,7 @@ func main() {
 	log.Printf("pair code: %s (use POST /v1/auth/pair)", authStore.PairCode())
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", handleRoot)
 	mux.HandleFunc("GET /v1/health", handleHealth)
 
 	pairHandler := pairLimit.MiddlewareFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -183,6 +219,29 @@ func auditSinkLabel(path string) string {
 		return "stderr"
 	}
 	return path
+}
+
+func handleRoot(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(`<!doctype html>
+<html><head><meta charset="utf-8"><title>cloud-agent Gateway</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;line-height:1.5}
+code{background:#f2f2f2;padding:.1em .35em;border-radius:4px}
+.ok{color:#0a7}
+.warn{color:#a60}
+</style></head><body>
+<h1>cloud-agent Gateway</h1>
+<p class="ok">Listening. Health: <a href="/v1/health"><code>/v1/health</code></a></p>
+<h2>Which URL?</h2>
+<ul>
+<li><b>This PC browser</b>: <code>http://127.0.0.1:8080/</code> — <span class="warn">not</span> <code>10.0.2.2</code></li>
+<li><b>Android emulator App</b>: Gateway URL = <code>http://10.0.2.2:8080</code> (emulator→host alias)</li>
+<li><b>If emulator still fails</b>: run <code>adb reverse tcp:8080 tcp:8080</code>, then use <code>http://127.0.0.1:8080</code> in the App</li>
+<li><b>Physical phone</b>: use your PC LAN IP, e.g. <code>http://192.168.x.x:8080</code></li>
+</ul>
+<p>Pair in the Flutter App with the pair code printed in the Gateway log (<code>pair code: …</code>). Do not put <code>CURSOR_API_KEY</code> in the App.</p>
+</body></html>`))
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {

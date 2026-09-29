@@ -1,4 +1,4 @@
-# Approve 写 progress（M05-P05）
+# Approve 写 progress + 本地 git commit（M05-P05 扩展）
 
 ## 流程
 
@@ -7,11 +7,23 @@ awaiting_review
   → App POST /v1/workflows/{id}/nodes/{nodeId}/review { "decision": "approve" }
   → Gateway: 节点 → approved；RecomputeReady（下游 pending→ready）
   → WS workflow.review (approve) + workflow.assign
-  → Slave: 仅此时更新 Bundle.progressDoc（basename 必须为 progress.md）
+  → Slave:
+      1) 更新 Bundle.progressDoc（basename 必须为 progress.md）
+      2) 本地 git：AI 写 commit message → git add -A → git commit（不 push）
   → Slave: 继续调度新 ready 节点
 ```
 
-`decision: reject` → 节点 `rejected`，**不**写 progress，下游不解锁。
+`decision: reject` → 节点 `rejected`，**不**写 progress，**不** commit，下游不解锁。
+
+## 本地 commit
+
+| 项 | 说明 |
+|----|------|
+| 时机 | 仅 approve，且在写完 progress.md 之后 |
+| 范围 | 白名单 `repos[].cwd` 工作区全部变更（含 progress 勾选） |
+| 消息 | 有 `CURSOR_API_KEY` 时用 Local Agent 根据 `git status` / `diff --stat` 生成；失败或 `--stub` 时用 `approve(Mxx-Pxx): <title>` |
+| 推送 | **不** `git push` |
+| 干净树 | 无变更则跳过 commit（打日志） |
 
 ## 路径约束
 

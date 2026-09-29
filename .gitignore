@@ -50,3 +50,9 @@ app/**/flutter_export_environment.sh
 *.log
 coverage/
 .coverage
+
+# Local deploy / 联调 runtime (run.py)
+.local/
+
+#python
+__pycache__/

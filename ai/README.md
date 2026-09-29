@@ -7,7 +7,8 @@
 
 | 路径 | 用途 |
 |------|------|
-| [README.md](./README.md) | 本索引 |
+| [README.md](./README.md) | 本说明 |
+| [INDEX.md](./INDEX.md) / [index.json](./index.json) | **可启动计划索引**（`run.py --plan`） |
 | [SCHEMA.md](./SCHEMA.md) | Bundle / TaskUnit 字段约定 |
 | [bundles/](./bundles/) | 执行计划（DAG），Skill 或人生成 |
 | [units/](./units/) | **任务单元**：Slave 结构化产出，供手机展示与审核 |
@@ -49,7 +50,8 @@ Slave 更新 ai/progress.md（及约定的 roadmap progress）
 
 ## 快速入口
 
-1. 写计划：在 Cursor 使用 [skills/plan-from-roadmap](./skills/plan-from-roadmap/SKILL.md)  
-2. 看计划：[`bundles/`](./bundles/)  
-3. 看下发单元：[`units/`](./units/)  
-4. 看字段：[`SCHEMA.md`](./SCHEMA.md)  
+1. 写计划：在 Cursor 使用 [skills/plan-from-roadmap](./skills/plan-from-roadmap/SKILL.md)（生成 Bundle **并更新** `index.json`）  
+2. 看可启动计划：[`INDEX.md`](./INDEX.md) / `python run.py plans`  
+3. 启动：`python run.py up --plan <id>`  
+4. 看 Bundle 文件：[`bundles/`](./bundles/)  
+5. 看字段：[`SCHEMA.md`](./SCHEMA.md)  

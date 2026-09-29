@@ -29,9 +29,19 @@ description: >-
    - `progressDoc`: `ai/progress.md`  
    - `prompt.mode`: `phase_file`  
 4. 校验：每个 `phaseRef` 文件存在；`SCHEMA.md` 必填字段齐全。  
-5. 更新 `ai/bundles/README.md` 或本索引中「当前计划」一句说明（若有）。  
-6. **不要**自动 start 工作流、不要跳过 App 审核、不要写 `ai/units/`（那是 Slave 的事）。  
-7. 向用户展示 bundle 路径与节点列表，等人确认。
+5. **更新计划索引** `ai/index.json`（及可读摘要 `ai/INDEX.md`）：  
+   - 新增/更新一条 `plans[]`：`id`（短名）、`title`、`bundle`（相对仓库根或外仓相对路径）、`bundleId`、`repoId`、`roadmapRef`、`progressDoc`、`tags`  
+   - 外仓工程可加 `cwdHint`（Slave `repos[].cwd`）  
+   - 若用户指定，可改 `default`  
+6. 可选：更新 `ai/bundles/README.md` 一句「当前计划」。  
+7. **不要**自动 start 工作流、不要跳过 App 审核、不要写 `ai/units/`（那是 Slave 的事）。  
+8. 向用户展示：`plan id`、bundle 路径、节点列表，以及启动命令：  
+   `python run.py up --plan <id>`（或 `--agent --plan <id>`）。
+
+## 索引约定
+
+权威文件：`ai/index.json`。人读：`ai/INDEX.md`。  
+`run.py plans` 列出；启动只认 **plan id**，不必手写 JSON 路径。
 
 ## 禁止
 

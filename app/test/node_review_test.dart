@@ -61,7 +61,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('通过 (approve)'));
+    await tester.tap(find.textContaining('通过 (approve'));
     await tester.pumpAndSettle();
     expect(reviewed, isTrue);
   });
@@ -141,7 +141,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('仅 awaiting_review 可审核'), findsOneWidget);
     // Tap approve should no-op (button disabled).
-    await tester.tap(find.text('通过 (approve)'));
+    await tester.tap(find.textContaining('通过 (approve'));
     await tester.pumpAndSettle();
   });
 }

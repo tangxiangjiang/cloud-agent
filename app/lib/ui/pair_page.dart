@@ -1,6 +1,19 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../auth/auth_controller.dart';
+
+/// Default Gateway origin for the current Flutter target.
+String defaultGatewayBaseUrl() {
+  if (kIsWeb) return 'http://127.0.0.1:8080';
+  switch (defaultTargetPlatform) {
+    case TargetPlatform.android:
+      // AVD special alias to the host loopback. Real device: use LAN IP.
+      return 'http://10.0.2.2:8080';
+    default:
+      return 'http://127.0.0.1:8080';
+  }
+}
 
 /// Gateway URL + pair code login. No workflow business UI (M06-P02+).
 class PairPage extends StatefulWidget {
@@ -13,7 +26,8 @@ class PairPage extends StatefulWidget {
 }
 
 class _PairPageState extends State<PairPage> {
-  final _urlCtrl = TextEditingController(text: 'http://10.0.2.2:8080');
+  late final TextEditingController _urlCtrl =
+      TextEditingController(text: defaultGatewayBaseUrl());
   final _codeCtrl = TextEditingController();
   bool _busy = false;
 
@@ -71,12 +85,14 @@ class _PairPageState extends State<PairPage> {
                   enabled: !_busy,
                   keyboardType: TextInputType.url,
                   autocorrect: false,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Gateway base URL',
-                    hintText: 'http://10.0.2.2:8080',
-                    border: OutlineInputBorder(),
-                    helperText:
-                        'Android emulator → host: 10.0.2.2; iOS sim → localhost',
+                    hintText: defaultGatewayBaseUrl(),
+                    border: const OutlineInputBorder(),
+                    helperMaxLines: 3,
+                    helperText: defaultTargetPlatform == TargetPlatform.android
+                        ? 'Emulator: http://10.0.2.2:8080  (or adb reverse + http://127.0.0.1:8080). Device: PC LAN IP.'
+                        : 'Desktop / iOS sim: http://127.0.0.1:8080',
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -92,6 +108,29 @@ class _PairPageState extends State<PairPage> {
                   ),
                   onSubmitted: (_) => _submit(),
                 ),
+                if (defaultTargetPlatform == TargetPlatform.android) ...[
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () {
+                            setState(() {
+                              _urlCtrl.text = 'http://10.0.2.2:8080';
+                            });
+                          },
+                    child: const Text('Use emulator host (10.0.2.2)'),
+                  ),
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () {
+                            setState(() {
+                              _urlCtrl.text = 'http://127.0.0.1:8080';
+                            });
+                          },
+                    child: const Text('Use adb reverse (127.0.0.1)'),
+                  ),
+                ],
                 const SizedBox(height: 24),
                 FilledButton(
                   onPressed: _busy ? null : _submit,

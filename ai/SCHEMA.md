@@ -6,6 +6,10 @@
 
 路径：`ai/bundles/<id>.json`
 
+生成后须登记到 **`ai/index.json`**（人读：`ai/INDEX.md`），用短名 `plans[].id` 启动：
+
+`python run.py up --plan <id>`
+
 ```json
 {
   "schemaVersion": 1,

@@ -5,10 +5,17 @@ import type { SlaveConfig } from "../config.js";
 import { findRepo } from "../config.js";
 import type { AssignedTask, EmitEvent, TaskHandlers } from "../gateway/types.js";
 import { log } from "../log.js";
+import { generateCommitMessageWithAi } from "./commitMessageAi.js";
 import { captureBaseline, collectNodeDiff } from "./diff.js";
+import { commitOnApprove } from "./gitCommit.js";
 import { GatewayHttpApi } from "./http.js";
 import { buildNodePrompt, buildRevisePrompt } from "./prompt.js";
 import { writeProgressOnApprove } from "./progress.js";
+import {
+  defaultSlaveStatePath,
+  loadSlaveRuntimeState,
+  saveSlaveRuntimeState,
+} from "./runtimeState.js";
 import {
   schedulableNodes,
   type WorkflowReviewMessage,
@@ -30,6 +37,7 @@ export class SerialDagScheduler {
   private readonly baselines = new Map<string, string | null>();
   /** workflowId\\0nodeId → last Local Agent id (for Agent.resume on revise) */
   private readonly agentIds = new Map<string, string>();
+  private readonly stateFile: string;
 
   constructor(
     private readonly opts: {
@@ -38,8 +46,41 @@ export class SerialDagScheduler {
       /** Runs a Gateway task and emits task.event via WS. */
       handlers: TaskHandlers;
       emit: EmitEvent;
+      /** When set, approve uses Local Agent to draft the commit message. */
+      commitAi?: { apiKey: string; model: string } | null;
+      /** Persist baselines/agentIds across slave restarts. */
+      stateFile?: string;
     },
-  ) {}
+  ) {
+    this.stateFile = opts.stateFile?.trim() || defaultSlaveStatePath();
+    const loaded = loadSlaveRuntimeState(this.stateFile);
+    for (const [k, v] of Object.entries(loaded.baselines)) {
+      this.baselines.set(k, v);
+    }
+    for (const [k, v] of Object.entries(loaded.agentIds)) {
+      if (v) this.agentIds.set(k, v);
+    }
+    if (Object.keys(loaded.baselines).length || Object.keys(loaded.agentIds).length) {
+      log.info("slave runtime state restored", {
+        path: this.stateFile,
+        baselines: Object.keys(loaded.baselines).length,
+        agentIds: Object.keys(loaded.agentIds).length,
+      });
+    }
+  }
+
+  private persistRuntime(): void {
+    try {
+      const baselines: Record<string, string | null> = {};
+      for (const [k, v] of this.baselines) baselines[k] = v;
+      const agentIds: Record<string, string> = {};
+      for (const [k, v] of this.agentIds) agentIds[k] = v;
+      saveSlaveRuntimeState(this.stateFile, { baselines, agentIds });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn("slave runtime state save failed", { error: message });
+    }
+  }
 
   /** Enqueue a workflow.assign from Gateway. */
   enqueue(run: WorkflowRun): Promise<void> {
@@ -71,7 +112,8 @@ export class SerialDagScheduler {
 
   /**
    * Enqueue a workflow.review from Gateway.
-   * approve → write progressDoc only; reject → never write progress.
+   * approve → write progressDoc + local git commit (AI message when configured);
+   * reject → never write progress / never commit.
    * Downstream scheduling is driven by workflow.assign after approve.
    */
   enqueueReview(msg: WorkflowReviewMessage): Promise<void> {
@@ -134,6 +176,7 @@ export class SerialDagScheduler {
       const baselineKey = `${workflowId}\0${node.id}`;
       const baseline = await captureBaseline(repo.cwd);
       this.baselines.set(baselineKey, baseline);
+      this.persistRuntime();
       log.info("node baseline captured", {
         workflowId,
         nodeId: node.id,
@@ -157,7 +200,10 @@ export class SerialDagScheduler {
       });
 
       const { outcome, agentId } = await this.executeTask(task);
-      if (agentId) this.agentIds.set(baselineKey, agentId);
+      if (agentId) {
+        this.agentIds.set(baselineKey, agentId);
+        this.persistRuntime();
+      }
 
       if (outcome === "finished") {
         await this.uploadDiffAndAwaitReview(
@@ -251,6 +297,56 @@ export class SerialDagScheduler {
         error: message,
       });
     }
+
+    const commitAi = this.opts.commitAi;
+    try {
+      const commitResult = await commitOnApprove({
+        repoCwd: repo.cwd,
+        node,
+        comment: msg.comment,
+        generateMessage: commitAi
+          ? async (ctx) =>
+              generateCommitMessageWithAi({
+                apiKey: commitAi.apiKey,
+                model: commitAi.model,
+                cwd: repo.cwd,
+                status: ctx.status,
+                diffStat: ctx.diffStat,
+                node: ctx.node,
+                phaseKey: ctx.phaseKey,
+                fallback: ctx.fallback,
+              })
+          : null,
+      });
+      if (!commitResult.ok) {
+        log.warn("local git commit on approve failed", {
+          workflowId: msg.workflowId,
+          nodeId: msg.nodeId,
+          reason: commitResult.reason,
+        });
+      } else if (commitResult.skipped) {
+        log.info("local git commit skipped", {
+          workflowId: msg.workflowId,
+          nodeId: msg.nodeId,
+          reason: commitResult.reason,
+        });
+      } else {
+        log.info("local git commit on approve", {
+          workflowId: msg.workflowId,
+          nodeId: msg.nodeId,
+          sha: commitResult.sha,
+          ai: commitResult.ai,
+          message: commitResult.message.split("\n")[0] ?? "",
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error("local git commit on approve unexpected error", {
+        workflowId: msg.workflowId,
+        nodeId: msg.nodeId,
+        error: message,
+      });
+    }
     // Gateway already set approved + RecomputeReady and sends workflow.assign
     // for newly ready nodes; no further action here.
   }
@@ -284,6 +380,7 @@ export class SerialDagScheduler {
         const prev = await this.opts.http.getNodeDiff(workflowId, nodeId);
         baseline = prev.baseline ?? null;
         this.baselines.set(baselineKey, baseline);
+        this.persistRuntime();
         log.info("revise: restored baseline from prior diff", {
           workflowId,
           nodeId,
@@ -292,6 +389,7 @@ export class SerialDagScheduler {
       } catch {
         baseline = await captureBaseline(repo.cwd);
         this.baselines.set(baselineKey, baseline);
+        this.persistRuntime();
         log.warn("revise: no prior baseline; captured current HEAD", {
           workflowId,
           nodeId,
@@ -321,7 +419,10 @@ export class SerialDagScheduler {
     });
 
     const { outcome, agentId } = await this.executeTask(task);
-    if (agentId) this.agentIds.set(baselineKey, agentId);
+    if (agentId) {
+      this.agentIds.set(baselineKey, agentId);
+      this.persistRuntime();
+    }
 
     if (outcome === "finished") {
       await this.uploadDiffAndAwaitReview(

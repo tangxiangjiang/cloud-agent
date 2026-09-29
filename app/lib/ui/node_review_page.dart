@@ -182,13 +182,13 @@ class _NodeReviewPageState extends State<NodeReviewPage> {
           FilledButton.icon(
             onPressed: _canReview ? () => _review('approve') : null,
             icon: const Icon(Icons.check),
-            label: const Text('通过 (approve)'),
+            label: const Text('通过 (approve · 写 progress + 本地 git commit)'),
           ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: _canReview ? () => _review('reject') : null,
             icon: const Icon(Icons.close),
-            label: const Text('驳回 (reject · 不写 progress)'),
+            label: const Text('驳回 (reject · 不写 progress / 不 commit)'),
           ),
           if (!_node.isAwaitingReview)
             Padding(

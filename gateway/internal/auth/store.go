@@ -15,13 +15,14 @@ import (
 
 const defaultTokenTTL = 30 * 24 * time.Hour
 
-// Store holds pair code and issued bearer tokens (in-memory).
+// Store holds pair code and issued bearer tokens (in-memory + optional disk).
 type Store struct {
 	pairCode string
 	ttl      time.Duration
 
-	mu     sync.RWMutex
-	tokens map[string]time.Time // token -> expiresAt
+	mu       sync.RWMutex
+	tokens   map[string]time.Time // token -> expiresAt
+	onChange OnChange
 }
 
 func NewStore(pairCode string) *Store {
@@ -69,6 +70,7 @@ func (s *Store) HandlePair(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.tokens[token] = exp
 	s.mu.Unlock()
+	s.notifyChange()
 
 	writeJSON(w, http.StatusOK, pairResponse{
 		Token:     token,

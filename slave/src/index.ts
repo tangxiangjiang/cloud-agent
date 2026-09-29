@@ -105,11 +105,24 @@ async function main(): Promise<void> {
   }
   const client = new GatewayClient(clientOpts);
 
+  const apiKey = process.env[cfg.apiKeyEnv]?.trim();
+  const commitAi =
+    !values.stub && apiKey
+      ? { apiKey, model: cfg.defaultModel }
+      : null;
+
+  const stateFile =
+    process.env.SLAVE_STATE_FILE?.trim() ||
+    // When run from slave/, persist next to cloud-agent .local
+    undefined;
+
   scheduler = new SerialDagScheduler({
     cfg,
     http,
     handlers,
     emit: (taskId, kind, payload) => client.emitTaskEvent(taskId, kind, payload),
+    commitAi,
+    ...(stateFile ? { stateFile } : {}),
   });
 
   const shutdown = async (signal: string) => {

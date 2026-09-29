@@ -13,6 +13,9 @@
 | [M05](./milestones/M05-workflow-review-gate.md) | 工作流 DAG + 审核闸门 | workflow/node 状态、diff、revise、approve、进度文档 | M04 |
 | [M06](./milestones/M06-flutter-app.md) | Flutter App MVP | 配对、触发、进度、只读 diff、意见框、通过 | M05 |
 | [M07](./milestones/M07-hardening.md) | 硬化与收尾 | 审计、限流、部署说明、样例 DAG | M06 |
+| [M08](./milestones/M08-project-sync.md) | 工程状态同步 | App 触发 → Slave 采集 → Gateway `project_sync` 对账 | M07 |
+| [M09](./milestones/M09-project-chat.md) | 工程 AI 对话 | Agent/Ask/Plan + 模型（默认 Auto）类 Cursor 对话 | M06 |
+| [M10](./milestones/M10-node-policy.md) | 节点执行策略 | 每任务模型 / 自动通过 / 自动续跑（默认关） | M05+M06 |
 
 ## 进度
 

@@ -32,6 +32,15 @@
 | M07-P01 | approved | 审计 JSONL + pair/revise 限流 |
 | M07-P02 | approved | 样例 DAG + deploy 文档 |
 | M07-P03 | approved | 文档对齐 + MVP checklist |
+| M08-P01 | pending | Gateway 同步 API 与落库 |
+| M08-P02 | pending | Slave 采集与上报 |
+| M08-P03 | pending | 对账 warnings 与查询报告 |
+| M08-P04 | pending | App 工程页同步 UI |
+| M08-P05 | pending | 可选 AI 摘要 |
+| M09-P01 | pending | Chat API 与 Task 桥接 |
+| M09-P02 | pending | App 对话页（Agent + Auto） |
+| M09-P03 | pending | Ask / Plan 与模型列表 |
+| M09-P04 | pending | 会话历史与多会话 |
 
 ## 勾选
 
@@ -62,4 +71,12 @@
 - [x] M07-P01 @approved 2026-09-28（IDE）
 - [x] M07-P02 @approved 2026-09-28（IDE）
 - [x] M07-P03 @approved 2026-09-28（IDE）
-- [ ] （其余 epic：按需新增；Slave 在 App approve 后写入，格式：`- [x] Mxx-Pxx @approved <iso8601>`）
+- [ ] M08-P01
+- [ ] M08-P02
+- [ ] M08-P03
+- [ ] M08-P04
+- [ ] M08-P05
+- [ ] M09-P01
+- [ ] M09-P02
+- [ ] M09-P03
+- [ ] M09-P04

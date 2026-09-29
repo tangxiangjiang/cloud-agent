@@ -14,6 +14,9 @@
 | [../ai/README.md](../ai/README.md) | **AI 工作区索引**（bundles / units / skills） |
 | [communication.md](./communication.md) | **HTTP vs HTTP+WebSocket** 选型结论与协议约定 |
 | [flutter-app.md](./flutter-app.md) | Flutter 终端职责、页面与接口使用方式 |
+| [project-sync.md](./project-sync.md) | **工程状态同步**：App 触发 → Slave 采集 → Gateway `project_sync` 对账 |
+| [project-chat.md](./project-chat.md) | **工程 AI 对话**：Agent/Ask/Plan + 模型（默认 Auto） |
+| [node-policy.md](./node-policy.md) | **节点执行策略**：模型 / 自动通过 / 自动续跑（默认关） |
 | [api-outline.md](./api-outline.md) | 代理服务 HTTP / WebSocket 接口草案 |
 | [local-slave.md](./local-slave.md) | 本机 Node Slave 职责与部署要点 |
 | [roadmaps/cloud-agent/](./roadmaps/cloud-agent/README.md) | **开发计划**：Milestone → Phase |

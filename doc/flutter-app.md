@@ -17,15 +17,16 @@
 | 页面 | 作用 |
 |------|------|
 | 配对 / 登录 | 网关地址 + 配对码 → token |
-| Slave 列表 | 在线 Slave、仓库别名 |
-| 工作流列表 | 可执行 DAG 实例 |
-| 工作流详情 | 节点状态条/列表；触发开始；看卡在哪 |
-| **节点审核** | 变更摘要、文件列表、测试/日志要点；**通过 / 驳回** |
-| 任务/节点日志 | 流式输出（审核前也可看） |
+| Slave 列表 | 在线 Slave |
+| 工程列表 | 某 Slave 下 projects；**同步** / **对话**入口 |
+| Milestone / 执行 plan | 启动或续跑 Workflow |
+| **工程对话** | Agent/Ask/Plan + 模型（默认 Auto）；见 [project-chat.md](./project-chat.md) |
+| 工作流详情 | 节点状态；审核 Diff / Approve |
+| 任务/节点日志 | 流式输出 |
 | 设置 | 网关 URL、通知、凭证 |
 
-首版主路径：配对 → 工作流详情 →（跑完）**审核** → 通过后进度前进。  
-实现见 `app/`（M06）：配对、列表/详情/Start、WS 日志、只读 diff、revise/approve。联调：[deploy.md](./deploy.md)。
+主路径：配对 → Slave → 工程 → Milestone → 执行 plan → **审核**。  
+工程与 Gateway 对账：**同步**（设计中）。实现见 `app/`；联调：[deploy.md](./deploy.md)。
 
 工作流与审核闸门见 [workflow.md](./workflow.md)。
 

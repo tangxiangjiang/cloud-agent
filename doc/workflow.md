@@ -76,7 +76,8 @@ Phase 仍是给人看的 Markdown；**还不是** Slave 直接加载的结构。
 | 并行 | 无互相依赖的节点可并行（首版可串行化，DAG 仍保留并行信息） |
 | 状态 | `pending / ready / running / awaiting_review / approved / rejected / failed / cancelled / skipped` |
 
-> Agent 跑完 **不等于** 节点成功。须经 App **审核通过（approved）** 后，Slave 才更新进度文档，下游节点才变 `ready`。
+> Agent 跑完 **不等于** 节点成功。须经 App **审核通过（approved）** 后，Slave 才更新进度文档，下游节点才变 `ready`。  
+> 下游是否**自动开跑**、是否**自动通过**审核，由节点策略控制（默认均关）：见 [node-policy.md](./node-policy.md)。
 
 ### DAG 节点字段（草案）
 

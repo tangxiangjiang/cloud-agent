@@ -65,7 +65,17 @@ Base path：`/v1`
 }
 ```
 
-`repos` 为 `projects` 的扁平映射（兼容旧客户端 / 任务白名单）。App 主路径：展开 Slave → 选 Milestone → `POST /v1/workflows`（nodes=phases，`bundleId=milestone:{id}`）并 Start。工程索引见 [`ai/milestones.md`](../ai/milestones.md)。
+`repos` 为 `projects` 的扁平映射（兼容旧客户端 / 任务白名单）。App 主路径：Slave → 工程 → Milestone → `POST /v1/workflows`（或续跑已有实例）。工程索引见 [`ai/milestones.md`](../ai/milestones.md)。
+
+### 工程状态同步（草案）
+
+见 **[project-sync.md](./project-sync.md)**。要点：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/v1/slaves/{slaveId}/projects/{repoId}/sync` | App 触发；Gateway → Slave `project.sync` |
+| POST | `/v1/project-sync` | Slave 上报采集结果 → SQLite `project_sync` |
+| GET | `/v1/slaves/{slaveId}/projects/{repoId}/sync` | 最近一次快照 + 对账 `warnings` |
 
 ### 创建任务
 

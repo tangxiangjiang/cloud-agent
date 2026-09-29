@@ -43,6 +43,183 @@
           }
         }
       ]
+    },
+    {
+      "id": "M08",
+      "title": "工程状态同步",
+      "progressDoc": "ai/progress.md",
+      "phases": [
+        {
+          "id": "M08-P01",
+          "title": "Gateway 同步 API 与落库",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M08-P01-gateway-sync-api.md",
+          "dependsOn": [],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required. Follow doc/project-sync.md."
+          }
+        },
+        {
+          "id": "M08-P02",
+          "title": "Slave 采集与上报",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M08-P02-slave-collect.md",
+          "dependsOn": ["M08-P01"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required. Read-only collect only."
+          }
+        },
+        {
+          "id": "M08-P03",
+          "title": "对账 warnings 与查询报告",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M08-P03-reconcile-report.md",
+          "dependsOn": ["M08-P02"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required. Do not auto-fix node status."
+          }
+        },
+        {
+          "id": "M08-P04",
+          "title": "App 工程页同步 UI",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M08-P04-app-sync-ui.md",
+          "dependsOn": ["M08-P03"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required."
+          }
+        },
+        {
+          "id": "M08-P05",
+          "title": "可选 AI 摘要",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M08-P05-ai-summary.md",
+          "dependsOn": ["M08-P04"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required. Agent must not write files."
+          }
+        }
+      ]
+    },
+    {
+      "id": "M09",
+      "title": "工程 AI 对话",
+      "progressDoc": "ai/progress.md",
+      "phases": [
+        {
+          "id": "M09-P01",
+          "title": "Chat API 与 Task 桥接",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M09-P01-chat-api.md",
+          "dependsOn": [],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required. Follow doc/project-chat.md."
+          }
+        },
+        {
+          "id": "M09-P02",
+          "title": "App 对话页（Agent + Auto）",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M09-P02-app-chat-ui.md",
+          "dependsOn": ["M09-P01"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required."
+          }
+        },
+        {
+          "id": "M09-P03",
+          "title": "Ask / Plan 与模型列表",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M09-P03-modes-models.md",
+          "dependsOn": ["M09-P02"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required."
+          }
+        },
+        {
+          "id": "M09-P04",
+          "title": "会话历史与多会话",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M09-P04-chat-history.md",
+          "dependsOn": ["M09-P03"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required."
+          }
+        }
+      ]
+    },
+    {
+      "id": "M10",
+      "title": "节点执行策略",
+      "progressDoc": "ai/progress.md",
+      "phases": [
+        {
+          "id": "M10-P01",
+          "title": "Gateway 续跑门闩",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M10-P01-gateway-continue-gate.md",
+          "dependsOn": [],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required. Follow doc/node-policy.md. Default autoStartNext=false."
+          }
+        },
+        {
+          "id": "M10-P02",
+          "title": "App 节点策略控件",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M10-P02-app-node-policy-ui.md",
+          "dependsOn": ["M10-P01"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required. Switches default OFF."
+          }
+        },
+        {
+          "id": "M10-P03",
+          "title": "自动通过",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M10-P03-auto-approve.md",
+          "dependsOn": ["M10-P02"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required."
+          }
+        },
+        {
+          "id": "M10-P04",
+          "title": "创建/批量默认策略",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M10-P04-default-policy.md",
+          "dependsOn": ["M10-P03"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required."
+          }
+        }
+      ]
     }
   ]
 }

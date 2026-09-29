@@ -26,4 +26,6 @@ go run . -pair-code ABCD-EFGH -state-file ../.local/gateway/state.db
 
 ## 后续：工程「同步」按钮
 
-App 在 Slave→工程上触发同步 → Slave 用 AI 归纳本机 milestone/progress/git 概况 → Gateway 写入 `project_sync`，用于发现「仓库进度 vs 工作流状态」不一致。表已建，API 另开 phase。
+完整设计见 **[doc/project-sync.md](../../doc/project-sync.md)**。
+
+摘要：App 在 Slave→工程上触发同步 → Slave 采集 milestone/progress/git（可选 AI 摘要）→ Gateway 写入 `project_sync`，并与 active Workflow 对账告警。表已预留；API / UI 按该文档分期实现。

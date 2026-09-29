@@ -1,6 +1,6 @@
 # 工程 AI 对话（Project Chat）
 
-**状态：Gateway Chat→Task + App 对话页（Agent/Ask/Plan + 模型列表）已落地（M09-P01～P03）；会话历史见 M09-P04**  
+**状态：工程对话（含 Ask/Plan、模型列表、会话历史）已落地（M09-P01～P04）**  
 入口：App **Slave → 工程 → 对话**（与 Milestone / 同步并列）。  
 体验对齐 Cursor 对话：**Agent / Ask / Plan** + **模型选择**（默认 **Auto**）。
 
@@ -98,6 +98,20 @@ ChatSession
 这样复用：排队、取消、`GET /tasks/{id}/events`、App WS 订阅。  
 会话历史：Gateway 存 role/content 文本（截断）；不存完整 tool payload。
 
+### 消息截断策略（防爆库）
+
+落库只保留 **摘要文本**（`role` / `content` / 可选 `taskId`），**禁止**持久化 tool 原始 payload、密钥、cwd。
+
+| 限制 | 值 | 行为 |
+|------|-----|------|
+| 单条 content | ≤ **4000** 字符（rune） | 超长截断并加 `…` |
+| 每会话 messages | ≤ **80** 条 | 丢弃最旧，保留最近 |
+| 列表 API | 不含 messages 正文 | 返回 `preview`（最近 user 摘要）+ `messageCount` |
+
+Assistant 摘要由 App 在 turn 结束后 `POST /v1/chats/{id}/assistant` 上报；流式 delta 仍只走 Task events。
+
+持久化：`GATEWAY_STATE_FILE` SQLite 表 `chat_sessions`（无 state-file 时进程内 Memory，重启丢失）。
+
 ---
 
 ## API / WS 草案
@@ -134,8 +148,9 @@ Gateway 组 prompt（注入 mode 前缀）→ 现有 `task.assign`。
 
 ### 列表 / 历史
 
-- `GET /v1/chats?slaveId=&repoId=`  
-- `GET /v1/chats/{id}`（含 messages 摘要）  
+- `GET /v1/chats?slaveId=&repoId=` → `{chats:[{id,preview,messageCount,…}]}`（无 messages 正文）  
+- `GET /v1/chats/{id}` → 含截断后的 `messages[]`  
+- `POST /v1/chats/{id}/assistant` → `{taskId?,content}` 写入 assistant 摘要  
 - 实时：`GET /v1/ws` 订阅 `taskId`（与现网一致）
 
 ### 停止
@@ -166,7 +181,7 @@ Gateway 组 prompt（注入 mode 前缀）→ 现有 `task.assign`。
 | AppBar | 工程名；模式 Segmented：Agent / Ask / Plan；模型下拉（默认 Auto） |
 | 消息区 | 用户气泡 + assistant 流式；tool 可折叠一行 |
 | 底栏 | 多行输入、发送、停止（running 时） |
-| 会话 | 右上「新对话」；可选历史抽屉（P2） |
+| 会话 | 右上「历史」底栏列表 +「新对话」 |
 
 **与审核关系：** Agent 模式改代码**不强制**走 `awaiting_review`（自由对话）；若需「对话里改完也要审」，P3 再加「提交审核」生成临时单节点 Workflow（非首版）。
 

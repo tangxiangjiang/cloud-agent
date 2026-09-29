@@ -10,6 +10,8 @@ class ChatSession {
     this.messages = const [],
     this.createdAt,
     this.updatedAt,
+    this.preview,
+    this.messageCount = 0,
   });
 
   final String id;
@@ -21,6 +23,8 @@ class ChatSession {
   final List<ChatMessageSummary> messages;
   final String? createdAt;
   final String? updatedAt;
+  final String? preview;
+  final int messageCount;
 
   factory ChatSession.fromJson(Map<String, dynamic> json) {
     final raw = json['messages'];
@@ -42,6 +46,8 @@ class ChatSession {
       messages: messages,
       createdAt: json['createdAt'] as String?,
       updatedAt: json['updatedAt'] as String?,
+      preview: json['preview'] as String?,
+      messageCount: json['messageCount'] as int? ?? messages.length,
     );
   }
 }

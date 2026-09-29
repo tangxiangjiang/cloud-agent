@@ -242,4 +242,111 @@ void main() {
     expect(find.text('add loading'), findsOneWidget);
     expect(find.text('You'), findsOneWidget);
   });
+
+  testWidgets('history sheet lists chats', (tester) async {
+    final slave = _slave();
+    final project = slave.effectiveProjects.first;
+    final api = ChatApi(
+      session: _session,
+      get: (uri, {headers}) async {
+        if (uri.path == '/v1/models') {
+          return http.Response(
+            jsonEncode({
+              'default': 'auto',
+              'models': [
+                {'id': 'auto', 'label': 'Auto'},
+              ],
+            }),
+            200,
+          );
+        }
+        if (uri.path == '/v1/chats') {
+          return http.Response(
+            jsonEncode({
+              'chats': [
+                {
+                  'id': 'chat_old',
+                  'slaveId': 'slave_devpc',
+                  'repoId': 'r_cloud_agent',
+                  'mode': 'ask',
+                  'model': 'auto',
+                  'status': 'idle',
+                  'preview': 'earlier question',
+                  'messageCount': 2,
+                  'messages': <dynamic>[],
+                  'updatedAt': '2026-09-29T01:00:00Z',
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (uri.path.endsWith('/chat_old')) {
+          return http.Response(
+            jsonEncode({
+              'id': 'chat_old',
+              'slaveId': 'slave_devpc',
+              'repoId': 'r_cloud_agent',
+              'mode': 'ask',
+              'model': 'auto',
+              'status': 'idle',
+              'messages': [
+                {
+                  'id': 'm1',
+                  'role': 'user',
+                  'content': 'earlier question',
+                  'at': '2026-09-29T01:00:00Z',
+                },
+                {
+                  'id': 'm2',
+                  'role': 'assistant',
+                  'content': 'earlier answer',
+                  'at': '2026-09-29T01:00:01Z',
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        return http.Response('{}', 404);
+      },
+      post: (uri, {headers, body}) async {
+        if (uri.path == '/v1/chats') {
+          return http.Response(
+            jsonEncode({
+              'id': 'chat_new',
+              'slaveId': 'slave_devpc',
+              'repoId': 'r_cloud_agent',
+              'mode': 'agent',
+              'model': 'auto',
+              'status': 'idle',
+              'messages': <dynamic>[],
+            }),
+            201,
+          );
+        }
+        return http.Response('{}', 404);
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProjectChatPage(
+          session: _session,
+          slave: slave,
+          project: project,
+          api: api,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('History'));
+    await tester.pumpAndSettle();
+    expect(find.text('earlier question'), findsOneWidget);
+
+    await tester.tap(find.text('earlier question'));
+    await tester.pumpAndSettle();
+    expect(find.text('earlier answer'), findsOneWidget);
+  });
 }

@@ -92,6 +92,19 @@ CREATE TABLE IF NOT EXISTS project_sync (
   summary_json TEXT NOT NULL,
   PRIMARY KEY (slave_id, repo_id)
 );
+CREATE TABLE IF NOT EXISTS chat_sessions (
+  id TEXT PRIMARY KEY NOT NULL,
+  slave_id TEXT NOT NULL,
+  repo_id TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  model TEXT NOT NULL,
+  status TEXT NOT NULL,
+  messages_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_repo
+  ON chat_sessions(slave_id, repo_id, updated_at);
 `)
 	if err != nil {
 		return err

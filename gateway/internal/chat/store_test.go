@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/chat"
+	"github.com/tangxiangjiang/cloud-agent/gateway/internal/persist"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/task"
 )
 
@@ -95,5 +97,103 @@ func TestBuildPromptModes(t *testing.T) {
 	agent := chat.BuildPrompt("agent", "fix bug")
 	if agent != "fix bug" {
 		t.Fatalf("agent: %s", agent)
+	}
+}
+
+func TestTruncateContent(t *testing.T) {
+	short := chat.TruncateContent("hi")
+	if short != "hi" {
+		t.Fatalf("%q", short)
+	}
+	long := strings.Repeat("字", chat.MaxMessageChars+10)
+	got := chat.TruncateContent(long)
+	if !strings.HasSuffix(got, "…") {
+		t.Fatalf("expected ellipsis: %d runes", len([]rune(got)))
+	}
+}
+
+func TestPersistRoundTripAndList(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "state.db")
+	st, err := persist.OpenSQLite(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	tasks := task.NewStore()
+	chats := chat.NewStore(tasks)
+	chats.SetPersist(st)
+	h := chats.Handler()
+
+	createBody := `{"slaveId":"slave_a","repoId":"r1","mode":"agent","model":"auto"}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/chats", strings.NewReader(createBody)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create=%d %s", rec.Code, rec.Body.String())
+	}
+	var sess chat.Session
+	_ = json.Unmarshal(rec.Body.Bytes(), &sess)
+
+	msgBody := `{"text":"hello history"}`
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, httptest.NewRequest(
+		http.MethodPost, "/v1/chats/"+sess.ID+"/messages", strings.NewReader(msgBody),
+	))
+	if rec2.Code != http.StatusAccepted {
+		t.Fatalf("msg=%d", rec2.Code)
+	}
+	var msgOut struct {
+		TaskID string `json:"taskId"`
+	}
+	_ = json.Unmarshal(rec2.Body.Bytes(), &msgOut)
+
+	asst := `{"taskId":"` + msgOut.TaskID + `","content":"sure, done"}`
+	rec3 := httptest.NewRecorder()
+	h.ServeHTTP(rec3, httptest.NewRequest(
+		http.MethodPost, "/v1/chats/"+sess.ID+"/assistant", strings.NewReader(asst),
+	))
+	if rec3.Code != http.StatusOK {
+		t.Fatalf("assistant=%d %s", rec3.Code, rec3.Body.String())
+	}
+
+	// Simulate Gateway restart: new store loads from same DB.
+	chats2 := chat.NewStore(tasks)
+	chats2.SetPersist(st)
+	if err := chats2.LoadFromPersist(); err != nil {
+		t.Fatal(err)
+	}
+	h2 := chats2.Handler()
+
+	listRec := httptest.NewRecorder()
+	h2.ServeHTTP(listRec, httptest.NewRequest(http.MethodGet, "/v1/chats?repoId=r1", nil))
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list=%d", listRec.Code)
+	}
+	var list struct {
+		Chats []chat.Session `json:"chats"`
+	}
+	if err := json.Unmarshal(listRec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Chats) != 1 || list.Chats[0].ID != sess.ID {
+		t.Fatalf("list: %+v", list.Chats)
+	}
+	if list.Chats[0].Preview != "hello history" {
+		t.Fatalf("preview: %q", list.Chats[0].Preview)
+	}
+	if len(list.Chats[0].Messages) != 0 {
+		t.Fatalf("list should omit messages: %+v", list.Chats[0].Messages)
+	}
+
+	getRec := httptest.NewRecorder()
+	h2.ServeHTTP(getRec, httptest.NewRequest(http.MethodGet, "/v1/chats/"+sess.ID, nil))
+	var loaded chat.Session
+	_ = json.Unmarshal(getRec.Body.Bytes(), &loaded)
+	if len(loaded.Messages) < 2 {
+		t.Fatalf("expected user+assistant: %+v", loaded.Messages)
+	}
+	if loaded.Messages[0].Role != "user" || loaded.Messages[1].Role != "assistant" {
+		t.Fatalf("roles: %+v", loaded.Messages)
 	}
 }

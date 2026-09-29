@@ -90,6 +90,53 @@ class ChatApi {
     return ChatSession.fromJson(_decodeMap(res.body));
   }
 
+  /// List sessions for a project (messages omitted; use [getChat] to continue).
+  Future<List<ChatSession>> listChats({
+    required String slaveId,
+    required String repoId,
+  }) async {
+    final res = await _get(
+      _uri('/v1/chats', {
+        'slaveId': slaveId,
+        'repoId': repoId,
+      }),
+      headers: _headers,
+    );
+    _throwIfBad(res, 'List chats');
+    final map = _decodeMap(res.body);
+    final raw = map['chats'];
+    final out = <ChatSession>[];
+    if (raw is List) {
+      for (final c in raw) {
+        if (c is Map) {
+          out.add(ChatSession.fromJson(Map<String, dynamic>.from(c)));
+        }
+      }
+    }
+    return out;
+  }
+
+  /// Persist truncated assistant summary after a turn (no tool payloads).
+  Future<ChatSession> recordAssistant({
+    required String chatId,
+    required String content,
+    String? taskId,
+  }) async {
+    final res = await _post(
+      _uri('/v1/chats/${Uri.encodeComponent(chatId)}/assistant'),
+      headers: {
+        ..._headers,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: jsonEncode({
+        'content': content,
+        if (taskId != null && taskId.isNotEmpty) 'taskId': taskId,
+      }),
+    );
+    _throwIfBad(res, 'Record assistant');
+    return ChatSession.fromJson(_decodeMap(res.body));
+  }
+
   Future<ChatSendResult> sendMessage({
     required String chatId,
     required String text,

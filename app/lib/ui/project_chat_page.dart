@@ -25,7 +25,7 @@ class _Bubble {
   bool done;
 }
 
-/// Project chat: Agent / Ask / Plan + model picker (M09-P03).
+/// Project chat: modes/models + history drawer (M09-P04).
 class ProjectChatPage extends StatefulWidget {
   const ProjectChatPage({
     super.key,
@@ -55,12 +55,14 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
   final List<_Bubble> _bubbles = [];
 
   ChatSession? _session;
+  List<ChatSession> _history = [];
   ModelCatalog _catalog = ModelCatalog.fallback;
   String _mode = 'agent';
   String _model = 'auto';
   bool _starting = true;
   bool _sending = false;
   bool _running = false;
+  bool _loadingHistory = false;
   String? _error;
   String? _activeTaskId;
 
@@ -124,6 +126,24 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
     await _ensureSession();
   }
 
+  void _applySession(ChatSession sess) {
+    _session = sess;
+    _mode = sess.mode;
+    _model = sess.model;
+    _bubbles
+      ..clear()
+      ..addAll(
+        sess.messages.map(
+          (m) => _Bubble(
+            role: m.role,
+            text: m.content,
+            taskId: m.taskId,
+            done: true,
+          ),
+        ),
+      );
+  }
+
   Future<void> _ensureSession() async {
     setState(() {
       _starting = true;
@@ -138,11 +158,150 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
       );
       if (!mounted) return;
       setState(() {
-        _session = sess;
-        _mode = sess.mode;
-        _model = sess.model;
+        _applySession(sess);
         _starting = false;
       });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _starting = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  Future<void> _openHistoryDrawer() async {
+    await _refreshHistory();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            final theme = Theme.of(ctx);
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.55,
+              minChildSize: 0.35,
+              maxChildSize: 0.9,
+              builder: (ctx, scroll) {
+                return Column(
+                  children: [
+                    ListTile(
+                      title: Text('History', style: theme.textTheme.titleMedium),
+                      subtitle: Text(
+                        widget.project.name.isNotEmpty
+                            ? widget.project.name
+                            : widget.project.id,
+                      ),
+                      trailing: IconButton(
+                        tooltip: 'Refresh',
+                        onPressed: _loadingHistory
+                            ? null
+                            : () async {
+                                await _refreshHistory();
+                                setSheet(() {});
+                              },
+                        icon: const Icon(Icons.refresh),
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    if (_loadingHistory) const LinearProgressIndicator(),
+                    Expanded(
+                      child: _history.isEmpty
+                          ? Center(
+                              child: Text(
+                                _loadingHistory
+                                    ? 'Loading…'
+                                    : 'No saved chats yet',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              controller: scroll,
+                              itemCount: _history.length,
+                              itemBuilder: (context, i) {
+                                final c = _history[i];
+                                final selected = c.id == _session?.id;
+                                final title = (c.preview != null &&
+                                        c.preview!.isNotEmpty)
+                                    ? c.preview!
+                                    : c.id;
+                                return ListTile(
+                                  selected: selected,
+                                  leading: Icon(
+                                    selected
+                                        ? Icons.chat_bubble
+                                        : Icons.chat_bubble_outline,
+                                  ),
+                                  title: Text(
+                                    title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                    '${c.mode} · ${c.model}'
+                                    '${c.messageCount > 0 ? ' · ${c.messageCount} msgs' : ''}',
+                                  ),
+                                  onTap: () {
+                                    Navigator.pop(ctx);
+                                    unawaited(_continueChat(c));
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _refreshHistory() async {
+    setState(() => _loadingHistory = true);
+    try {
+      final list = await _api.listChats(
+        slaveId: widget.slave.id,
+        repoId: widget.project.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _history = list;
+        _loadingHistory = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingHistory = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  Future<void> _continueChat(ChatSession summary) async {
+    await _detachStream();
+    setState(() {
+      _starting = true;
+      _error = null;
+      _activeTaskId = null;
+      _running = false;
+      _sending = false;
+    });
+    try {
+      final sess = await _api.getChat(summary.id);
+      if (!mounted) return;
+      setState(() {
+        _applySession(sess);
+        _starting = false;
+      });
+      _scrollToEnd();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -165,9 +324,25 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
     await ws?.dispose();
   }
 
+  Future<void> _persistAssistant(String taskId, String text) async {
+    final chatId = _session?.id;
+    final content = text.trim();
+    if (chatId == null || content.isEmpty || content == '…') return;
+    try {
+      await _api.recordAssistant(
+        chatId: chatId,
+        content: content,
+        taskId: taskId,
+      );
+    } catch (_) {
+      // Best-effort; history still has user turns.
+    }
+  }
+
   Future<void> _attachStream(String taskId) async {
     await _detachStream();
     final buf = TaskLogBuffer();
+    var finalized = false;
     void onBuf() {
       if (!mounted) return;
       final text = buf.assistant.toString();
@@ -189,6 +364,10 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
                 if (e.kind == 'error' && _bubbles[i].text == '…') {
                   _bubbles[i].text =
                       e.payload['message']?.toString() ?? 'error';
+                }
+                if (!finalized) {
+                  finalized = true;
+                  unawaited(_persistAssistant(taskId, _bubbles[i].text));
                 }
                 break;
               }
@@ -343,6 +522,11 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
       appBar: AppBar(
         title: Text('Chat · $title', style: const TextStyle(fontSize: 16)),
         actions: [
+          IconButton(
+            tooltip: 'History',
+            onPressed: _starting ? null : () => unawaited(_openHistoryDrawer()),
+            icon: const Icon(Icons.history),
+          ),
           IconButton(
             tooltip: 'New chat',
             onPressed: _starting ? null : _newChat,

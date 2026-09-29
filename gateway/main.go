@@ -92,6 +92,12 @@ func main() {
 		log.Printf("no -state-file; workflow/auth state is memory-only (restart loses review progress)")
 	}
 
+	chatPersist := persist.AsChatSessionStore(stateStore)
+	chatStore.SetPersist(chatPersist)
+	if err := chatStore.LoadFromPersist(); err != nil {
+		log.Fatalf("restore chats: %v", err)
+	}
+
 	hub := ws.NewHub(authStore)
 	taskStore.SetEventSource(hub)
 
@@ -233,6 +239,8 @@ func auditChats(a *audit.Logger, next http.Handler) http.Handler {
 			action = "chat.create"
 		case strings.HasSuffix(p, "/messages"):
 			action = "chat.message"
+		case strings.HasSuffix(p, "/assistant"):
+			action = "chat.assistant"
 		case strings.HasSuffix(p, "/stop"):
 			action = "chat.stop"
 		}

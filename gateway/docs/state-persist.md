@@ -4,7 +4,7 @@
 
 | 组件 | 文件 | 内容 |
 |------|------|------|
-| Gateway | `.local/gateway/state.db` | SQLite：workflows / diffs / tokens；`project_sync`（工程状态同步，M08-P01） |
+| Gateway | `.local/gateway/state.db` | SQLite：workflows / diffs / tokens；`project_sync`；`chat_sessions`（工程对话历史，M09-P04） |
 | Gateway（旧） | `.local/gateway/state.json` | 首次打开 `state.db` 且库为空时自动导入，并改名为 `state.json.migrated` |
 | Slave | `.local/slave-runtime.json` | revise baselines、agentId（便于 resume） |
 

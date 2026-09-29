@@ -5,6 +5,7 @@ import '../slaves/models.dart';
 import '../sync/models.dart';
 import '../sync/project_sync_api.dart';
 import 'milestone_phases_page.dart';
+import 'project_chat_page.dart';
 import 'workflow_detail_page.dart';
 
 /// Step 3: 工程页 — Milestone 列表 + 同步（M08-P04）.
@@ -160,6 +161,21 @@ class _MilestoneListPageState extends State<MilestoneListPage> {
               : widget.project.id,
         ),
         actions: [
+          IconButton(
+            tooltip: 'Project chat',
+            onPressed: () {
+              Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => ProjectChatPage(
+                    session: widget.session,
+                    slave: widget.slave,
+                    project: widget.project,
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.chat_outlined),
+          ),
           if (_syncing)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
@@ -202,6 +218,24 @@ class _MilestoneListPageState extends State<MilestoneListPage> {
             syncing: _syncing,
             onRefresh: _online ? _runSync : null,
             onContinueWorkflow: _openWorkflow,
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.chat_outlined),
+            title: const Text('Chat'),
+            subtitle: const Text('Agent · Auto — Local Agent via Gateway'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => ProjectChatPage(
+                    session: widget.session,
+                    slave: widget.slave,
+                    project: widget.project,
+                  ),
+                ),
+              );
+            },
           ),
           const Divider(height: 1),
           Padding(

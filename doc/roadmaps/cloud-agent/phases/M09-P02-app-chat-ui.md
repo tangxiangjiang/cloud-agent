@@ -12,11 +12,11 @@
 
 ## 完成定义（DoD）
 
-- [ ] Slave→工程→「对话」入口
-- [ ] 发送 → 展示 user + streaming assistant
-- [ ] running 时可停止
-- [ ] 新对话清空本地视图并 `POST /chats`
-- [ ] 基础 widget/API 测试
+- [x] Slave→工程→「对话」入口
+- [x] 发送 → 展示 user + streaming assistant
+- [x] running 时可停止
+- [x] 新对话清空本地视图并 `POST /chats`
+- [x] 基础 widget/API 测试
 
 ## 禁止事项
 

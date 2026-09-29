@@ -137,7 +137,10 @@ Slave：更新进度文档（roadmap / milestone / phase 状态）
        ↓
 节点 → approved；下游依赖满足则变 ready
        ↓
-App：进度刷新；继续下一节点（可自动或再点一次触发）
+默认：**不**自动 assign 下一节点（停在 ready）
+       ↓
+仅当节点 `policy.autoStartNext==true`，或 App 调用
+`POST …/continue` / `POST …/nodes/{id}/start` 时才续跑
 ```
 
 | 角色 | 在工作流中的职责 |

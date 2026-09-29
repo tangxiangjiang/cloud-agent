@@ -430,3 +430,170 @@ func TestCreateRejectsCycle(t *testing.T) {
 		t.Fatalf("body: %s", rec.Body.String())
 	}
 }
+
+type recordingStarter struct {
+	assignN  int
+	reviewN  int
+	reviseN  int
+	lastRun  *workflow.Run
+}
+
+func (r *recordingStarter) AssignWorkflow(run *workflow.Run) bool {
+	r.assignN++
+	r.lastRun = run
+	return true
+}
+func (r *recordingStarter) AssignRevise(slaveID, workflowID, nodeID, instruction string) bool {
+	r.reviseN++
+	return true
+}
+func (r *recordingStarter) AssignReview(slaveID, workflowID, nodeID, decision, comment string) bool {
+	r.reviewN++
+	return true
+}
+
+func TestApproveDoesNotAssignWithoutAutoStartNext(t *testing.T) {
+	store := workflow.NewStore()
+	st := &recordingStarter{}
+	store.SetStarter(st)
+	h := store.Handler()
+	body := `{
+		"bundleId":"b","repoId":"r","slaveId":"s1",
+		"nodes":[
+			{"id":"A","dependsOn":[]},
+			{"id":"B","dependsOn":["A"]}
+		]
+	}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+	if run.Nodes[0].Policy == nil || run.Nodes[0].Policy.AutoStartNext {
+		t.Fatalf("default policy must be autoStartNext=false: %+v", run.Nodes[0].Policy)
+	}
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A", strings.NewReader(`{"status":"awaiting_review"}`)))
+
+	okRec := httptest.NewRecorder()
+	h.ServeHTTP(okRec, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/review", strings.NewReader(`{"decision":"approve"}`)))
+	if okRec.Code != http.StatusOK {
+		t.Fatalf("approve: %d %s", okRec.Code, okRec.Body.String())
+	}
+	var resp struct {
+		Workflow      workflow.Run `json:"workflow"`
+		AutoStartNext bool         `json:"autoStartNext"`
+	}
+	_ = json.NewDecoder(okRec.Body).Decode(&resp)
+	if resp.AutoStartNext {
+		t.Fatal("autoStartNext should be false")
+	}
+	if resp.Workflow.Nodes[1].Status != workflow.NodeReady {
+		t.Fatalf("B want ready, got %s", resp.Workflow.Nodes[1].Status)
+	}
+	if st.reviewN != 1 {
+		t.Fatalf("review delivered want 1, got %d", st.reviewN)
+	}
+	if st.assignN != 0 {
+		t.Fatalf("approve must not AssignWorkflow by default, got %d", st.assignN)
+	}
+
+	cont := httptest.NewRecorder()
+	h.ServeHTTP(cont, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/continue", nil))
+	if cont.Code != http.StatusOK {
+		t.Fatalf("continue: %d %s", cont.Code, cont.Body.String())
+	}
+	if st.assignN != 1 {
+		t.Fatalf("continue should AssignWorkflow once, got %d", st.assignN)
+	}
+}
+
+func TestApproveAssignsWhenAutoStartNext(t *testing.T) {
+	store := workflow.NewStore()
+	st := &recordingStarter{}
+	store.SetStarter(st)
+	h := store.Handler()
+	body := `{
+		"bundleId":"b","repoId":"r","slaveId":"s1",
+		"nodes":[
+			{"id":"A","dependsOn":[],"policy":{"autoApprove":false,"autoStartNext":true}},
+			{"id":"B","dependsOn":["A"]}
+		]
+	}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+	if run.Nodes[0].Policy == nil || !run.Nodes[0].Policy.AutoStartNext {
+		t.Fatalf("want autoStartNext true: %+v", run.Nodes[0].Policy)
+	}
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A", strings.NewReader(`{"status":"awaiting_review"}`)))
+
+	okRec := httptest.NewRecorder()
+	h.ServeHTTP(okRec, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/review", strings.NewReader(`{"decision":"approve"}`)))
+	if okRec.Code != http.StatusOK {
+		t.Fatalf("approve: %d %s", okRec.Code, okRec.Body.String())
+	}
+	var resp struct {
+		AutoStartNext bool `json:"autoStartNext"`
+	}
+	_ = json.NewDecoder(okRec.Body).Decode(&resp)
+	if !resp.AutoStartNext {
+		t.Fatal("autoStartNext flag in response")
+	}
+	if st.assignN != 1 {
+		t.Fatalf("approve with autoStartNext must AssignWorkflow once, got %d", st.assignN)
+	}
+}
+
+func TestStartReadyNode(t *testing.T) {
+	store := workflow.NewStore()
+	st := &recordingStarter{}
+	store.SetStarter(st)
+	h := store.Handler()
+	body := `{
+		"bundleId":"b","repoId":"r","slaveId":"s1",
+		"nodes":[
+			{"id":"A","dependsOn":[]},
+			{"id":"B","dependsOn":["A"]}
+		]
+	}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	// A is ready at create; start node A
+	startA := httptest.NewRecorder()
+	h.ServeHTTP(startA, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/start", nil))
+	if startA.Code != http.StatusOK {
+		t.Fatalf("start A: %d %s", startA.Code, startA.Body.String())
+	}
+	if st.assignN != 1 {
+		t.Fatalf("start node assign=%d", st.assignN)
+	}
+
+	// B still pending — must conflict
+	badB := httptest.NewRecorder()
+	h.ServeHTTP(badB, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/B/start", nil))
+	if badB.Code != http.StatusConflict {
+		t.Fatalf("start B want 409, got %d", badB.Code)
+	}
+
+	// PATCH policy on B while pending
+	pol := httptest.NewRecorder()
+	h.ServeHTTP(pol, httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/B",
+		strings.NewReader(`{"policy":{"autoApprove":false,"autoStartNext":true},"model":"composer-2.5"}`)))
+	if pol.Code != http.StatusOK {
+		t.Fatalf("patch policy: %d %s", pol.Code, pol.Body.String())
+	}
+	var after workflow.Run
+	_ = json.NewDecoder(pol.Body).Decode(&after)
+	if after.Nodes[1].Policy == nil || !after.Nodes[1].Policy.AutoStartNext {
+		t.Fatalf("B policy: %+v", after.Nodes[1].Policy)
+	}
+	if after.Nodes[1].Model == nil || *after.Nodes[1].Model != "composer-2.5" {
+		t.Fatalf("B model: %+v", after.Nodes[1].Model)
+	}
+}
+

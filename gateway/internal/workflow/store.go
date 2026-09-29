@@ -41,6 +41,17 @@ type PromptSpec struct {
 	Inline string `json:"inline,omitempty"`
 }
 
+// NodePolicy controls per-node execution behaviour (M10). Defaults are all false.
+type NodePolicy struct {
+	AutoApprove   bool `json:"autoApprove"`
+	AutoStartNext bool `json:"autoStartNext"`
+}
+
+// DefaultNodePolicy is the safe default: manual review + manual continue.
+func DefaultNodePolicy() NodePolicy {
+	return NodePolicy{AutoApprove: false, AutoStartNext: false}
+}
+
 // Node is a DAG node snapshot inside a WorkflowRun.
 type Node struct {
 	ID        string      `json:"id"`
@@ -51,6 +62,7 @@ type Node struct {
 	TaskID    *string     `json:"taskId"`
 	UnitID    *string     `json:"unitId"`
 	Model     *string     `json:"model,omitempty"`
+	Policy    *NodePolicy `json:"policy,omitempty"`
 	DodChecks []string    `json:"dodChecks,omitempty"`
 	OnFailure *string     `json:"onFailure,omitempty"`
 	Prompt    *PromptSpec `json:"prompt,omitempty"`
@@ -85,6 +97,7 @@ type createNodeRequest struct {
 	Title     string      `json:"title"`
 	DependsOn []string    `json:"dependsOn"`
 	Model     string      `json:"model"`
+	Policy    *NodePolicy `json:"policy"`
 	DodChecks []string    `json:"dodChecks"`
 	OnFailure string      `json:"onFailure"`
 	Prompt    *PromptSpec `json:"prompt"`
@@ -107,9 +120,11 @@ type Starter interface {
 }
 
 type nodePatchRequest struct {
-	Status *string `json:"status"`
-	TaskID *string `json:"taskId"`
-	UnitID *string `json:"unitId"`
+	Status *string     `json:"status"`
+	TaskID *string     `json:"taskId"`
+	UnitID *string     `json:"unitId"`
+	Model  *string     `json:"model"`
+	Policy *NodePolicy `json:"policy"`
 }
 
 type reviseRequest struct {
@@ -147,7 +162,9 @@ func (s *Store) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/workflows/{id}", s.handleGet)
 	mux.HandleFunc("GET /v1/workflows/{id}/nodes", s.handleListNodes)
 	mux.HandleFunc("POST /v1/workflows/{id}/start", s.handleStart)
+	mux.HandleFunc("POST /v1/workflows/{id}/continue", s.handleContinue)
 	mux.HandleFunc("PATCH /v1/workflows/{id}/nodes/{nodeId}", s.handlePatchNode)
+	mux.HandleFunc("POST /v1/workflows/{id}/nodes/{nodeId}/start", s.handleStartNode)
 	mux.HandleFunc("GET /v1/workflows/{id}/nodes/{nodeId}/diff", s.handleGetDiff)
 	mux.HandleFunc("PUT /v1/workflows/{id}/nodes/{nodeId}/diff", s.handlePutDiff)
 	mux.HandleFunc("POST /v1/workflows/{id}/nodes/{nodeId}/revise", s.handleRevise)
@@ -204,7 +221,15 @@ func (s *Store) handleCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		if m := strings.TrimSpace(n.Model); m != "" {
 			node.Model = strPtr(m)
+		} else {
+			node.Model = strPtr("auto")
 		}
+		pol := DefaultNodePolicy()
+		if n.Policy != nil {
+			pol.AutoApprove = n.Policy.AutoApprove
+			pol.AutoStartNext = n.Policy.AutoStartNext
+		}
+		node.Policy = &pol
 		if len(n.DodChecks) > 0 {
 			node.DodChecks = append([]string(nil), n.DodChecks...)
 		}
@@ -406,6 +431,100 @@ func (s *Store) handleStart(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleContinue re-assigns the run so Slave can pick up ready nodes (manual continue gate).
+func (s *Store) handleContinue(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	s.mu.Lock()
+	run, ok := s.runs[id]
+	if !ok {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	switch run.Status {
+	case StatusCompleted, StatusFailed, StatusCancelled:
+		s.mu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "workflow already terminal"})
+		return
+	}
+	if !anyNode(run.Nodes, NodeReady) {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "no ready nodes to continue"})
+		return
+	}
+	u := s.now().Format(time.RFC3339Nano)
+	run.UpdatedAt = &u
+	if run.Status == StatusPending {
+		run.Status = StatusRunning
+	}
+	out := cloneRun(run)
+	s.mu.Unlock()
+	s.notifyChange()
+
+	delivered := false
+	if s.starter != nil {
+		delivered = s.starter.AssignWorkflow(out)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"workflow":  out,
+		"delivered": delivered,
+	})
+}
+
+// handleStartNode assigns the workflow when the named node is ready (explicit start).
+func (s *Store) handleStartNode(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	nodeID := r.PathValue("nodeId")
+	s.mu.Lock()
+	run, ok := s.runs[id]
+	if !ok {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "workflow not found"})
+		return
+	}
+	switch run.Status {
+	case StatusCompleted, StatusFailed, StatusCancelled:
+		s.mu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "workflow already terminal"})
+		return
+	}
+	idx := -1
+	for i := range run.Nodes {
+		if run.Nodes[i].ID == nodeID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
+		return
+	}
+	if run.Nodes[idx].Status != NodeReady {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "node must be ready"})
+		return
+	}
+	u := s.now().Format(time.RFC3339Nano)
+	run.UpdatedAt = &u
+	if run.Status == StatusPending {
+		run.Status = StatusRunning
+	}
+	out := cloneRun(run)
+	s.mu.Unlock()
+	s.notifyChange()
+
+	delivered := false
+	if s.starter != nil {
+		delivered = s.starter.AssignWorkflow(out)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"workflow":  out,
+		"delivered": delivered,
+		"nodeId":    nodeID,
+	})
+}
+
 func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	nodeID := r.PathValue("nodeId")
@@ -414,7 +533,7 @@ func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
-	if req.Status == nil && req.TaskID == nil && req.UnitID == nil {
+	if req.Status == nil && req.TaskID == nil && req.UnitID == nil && req.Model == nil && req.Policy == nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no fields to patch"})
 		return
 	}
@@ -475,6 +594,22 @@ func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 		} else {
 			run.Nodes[idx].UnitID = &v
 		}
+	}
+	if req.Model != nil {
+		v := strings.TrimSpace(*req.Model)
+		if v == "" {
+			v = "auto"
+		}
+		run.Nodes[idx].Model = &v
+	}
+	if req.Policy != nil {
+		pol := DefaultNodePolicy()
+		if run.Nodes[idx].Policy != nil {
+			pol = *run.Nodes[idx].Policy
+		}
+		pol.AutoApprove = req.Policy.AutoApprove
+		pol.AutoStartNext = req.Policy.AutoStartNext
+		run.Nodes[idx].Policy = &pol
 	}
 	RecomputeReady(run.Nodes)
 
@@ -632,8 +767,10 @@ func (s *Store) handleReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	u := s.now().Format(time.RFC3339Nano)
+	autoStartNext := false
 	if decision == "approve" {
 		run.Nodes[idx].Status = NodeApproved
+		autoStartNext = nodeWantsAutoStartNext(run.Nodes[idx])
 	} else {
 		run.Nodes[idx].Status = NodeRejected
 	}
@@ -663,18 +800,19 @@ func (s *Store) handleReview(w http.ResponseWriter, r *http.Request) {
 		if !delivered {
 			log.Printf("workflow.review not delivered to slave %q (offline?); progress/commit may be skipped", slaveID)
 		}
-		// After approve, push workflow again so Slave can schedule newly ready nodes.
-		if decision == "approve" {
+		// After approve: only auto-assign when policy.autoStartNext is explicitly true (M10-P01).
+		if decision == "approve" && autoStartNext {
 			_ = s.starter.AssignWorkflow(out)
 		}
 	} else if slaveID == "" {
 		log.Printf("workflow.review: workflow %s has empty slaveId; progress/commit skipped", id)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"workflow":  out,
-		"delivered": delivered,
-		"decision":  decision,
-		"comment":   comment,
+		"workflow":      out,
+		"delivered":     delivered,
+		"decision":      decision,
+		"comment":       comment,
+		"autoStartNext": autoStartNext,
 	})
 }
 
@@ -852,8 +990,16 @@ func cloneNodes(in []Node) []Node {
 			p := *n.Prompt
 			out[i].Prompt = &p
 		}
+		if n.Policy != nil {
+			p := *n.Policy
+			out[i].Policy = &p
+		}
 	}
 	return out
+}
+
+func nodeWantsAutoStartNext(n Node) bool {
+	return n.Policy != nil && n.Policy.AutoStartNext
 }
 
 func strPtr(s string) *string { return &s }

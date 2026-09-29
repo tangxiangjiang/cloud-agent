@@ -87,7 +87,8 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8080/v1/workflows/$($wf.id
   -Headers @{ Authorization = "Bearer $TOKEN" }
 ```
 
-App：**Workflows** → 详情 → **Start** → 节点 `awaiting_review` → Diff / Review（revise 或 approve）。
+App：**Workflows** → 详情 → **Start** → 节点 `awaiting_review` → Diff / Review（revise 或 approve）。  
+Approve 后下游变为 `ready`，**默认不会自动开跑**；需再点 Continue / 节点 Start，或创建时给节点设 `policy.autoStartNext: true`（见 [node-policy.md](./node-policy.md)）。
 
 ## 常见失败
 

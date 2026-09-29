@@ -10,11 +10,11 @@ Approve 后仅当节点 `policy.autoStartNext==true`（或显式 continue/start 
 
 ## 完成定义（DoD）
 
-- [ ] 节点 schema / 创建请求支持 `policy.autoStartNext`（默认 false）
-- [ ] Approve 路径：无 autoStartNext 时不自动 assign
-- [ ] `POST .../continue` 或 `.../nodes/{id}/start` 可续跑
-- [ ] 单测：approve 后不 assign；flag true 时 assign
-- [ ] 更新 [workflow.md](../../../workflow.md) / 部署说明中的行为描述
+- [x] 节点 schema / 创建请求支持 `policy.autoStartNext`（默认 false）
+- [x] Approve 路径：无 autoStartNext 时不自动 assign
+- [x] `POST .../continue` 或 `.../nodes/{id}/start` 可续跑
+- [x] 单测：approve 后不 assign；flag true 时 assign
+- [x] 更新 [workflow.md](../../../workflow.md) / 部署说明中的行为描述
 
 ## 禁止事项
 

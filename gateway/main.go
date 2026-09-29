@@ -219,6 +219,8 @@ func auditWorkflows(a *audit.Logger, next http.Handler) http.Handler {
 			action = "workflow.create"
 		case strings.HasSuffix(p, "/start"):
 			action = "workflow.start"
+		case strings.HasSuffix(p, "/continue"):
+			action = "workflow.continue"
 		case strings.HasSuffix(p, "/revise"):
 			action = "workflow.revise"
 		case strings.HasSuffix(p, "/review"):

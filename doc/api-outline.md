@@ -226,26 +226,32 @@ Header 可选：`Idempotency-Key: <uuid>`
 ```
 
 → `201` WorkflowRun：`status=pending`；无依赖节点为 `ready`，其余 `pending`。  
+节点默认可带 `model`（默认 `auto`）与 `policy`（`autoApprove`/`autoStartNext`，**默认均为 false**）。  
 **环检测：** Gateway 拒绝含环或未知 `dependsOn` 的图（HTTP 400）。客户端应只提交已校验的 DAG。
 
 `GET /workflows?status=&limit=` → `{ "workflows": [ … ] }`  
 `GET /workflows/{workflowId}` → 完整 Run（含 `nodes`、`dependsOn`、节点状态）  
 `GET /workflows/{workflowId}/nodes` → `{ "nodes": [ … ] }`
 
-**启动调度**（Bearer）
+**启动 / 续跑调度**（Bearer）
 
 `POST /workflows/{workflowId}/start` → `{ "workflow", "delivered" }`  
-Gateway 将 Run 标为 `running`，并向 `slaveId` 出站推送 `workflow.assign`（Slave 串行调度）。
+首次将 Run 标为 `running`，并向 `slaveId` 出站推送 `workflow.assign`。
 
-**节点状态同步**（Bearer；Slave 在跑节点时调用）
+`POST /workflows/{workflowId}/continue` → 有 `ready` 节点时再次 `AssignWorkflow`（Approve 后默认**不会**自动续跑，须显式 continue 或节点 `policy.autoStartNext`）。
+
+`POST /workflows/{workflowId}/nodes/{nodeId}/start` → 仅当该节点为 `ready` 时 assign。
+
+**节点状态 / 策略同步**（Bearer；Slave 在跑节点时调用）
 
 `PATCH /workflows/{workflowId}/nodes/{nodeId}`
 
 ```json
-{ "status": "awaiting_review", "taskId": "tsk_…" }
+{ "status": "awaiting_review", "taskId": "tsk_…", "model": "auto", "policy": { "autoApprove": false, "autoStartNext": false } }
 ```
 
 Agent 成功只许进入 `awaiting_review`，**不得**直接 `approved`。仅当依赖节点均为 `approved` 时，下游才变为 `ready`（审核闸门）。  
+**Approve 后续跑：** 默认停在下游 `ready`；仅当被批节点 `policy.autoStartNext==true` 才自动 `AssignWorkflow`（见 [node-policy.md](./node-policy.md)）。  
 样例 DAG：`examples/sample-dag.json`、`slave/fixtures/dag-two-node.json`、`ai/bundles/m05-p02-two-node.json`。联调：[deploy.md](./deploy.md)。
 
 节点状态枚举：`pending / ready / running / awaiting_review / approved / rejected / failed / cancelled / skipped`。  
@@ -264,7 +270,8 @@ Agent 成功只许进入 `awaiting_review`，**不得**直接 `approved`。仅�
 { "decision": "approve", "comment": "可选" }
 ```
 
-→ Slave 更新进度文档 → `approved` → 解锁下游。
+→ Slave 更新进度文档 → `approved` → 解锁下游为 `ready`。  
+**默认不**再次 `workflow.assign`；若该节点 `policy.autoStartNext==true` 则自动续跑，否则用 `POST …/continue` 或 `POST …/nodes/{id}/start`。
 
 **按意见修改（输入框）**
 

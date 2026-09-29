@@ -38,6 +38,23 @@
           "taskId": { "type": ["string", "null"] },
           "unitId": { "type": ["string", "null"] },
           "model": { "type": "string" },
+          "policy": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Per-node execution policy (M10). Defaults false/false when omitted.",
+            "properties": {
+              "autoApprove": {
+                "type": "boolean",
+                "default": false,
+                "description": "When true, awaiting_review auto-approves (M10-P03)."
+              },
+              "autoStartNext": {
+                "type": "boolean",
+                "default": false,
+                "description": "When true, approve triggers AssignWorkflow for ready downstream; otherwise wait for continue/start."
+              }
+            }
+          },
           "dodChecks": {
             "type": "array",
             "items": { "type": "string" }

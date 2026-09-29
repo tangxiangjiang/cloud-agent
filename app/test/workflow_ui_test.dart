@@ -89,31 +89,48 @@ void main() {
     final initial = _sample(nodeStatus: 'awaiting_review');
     final api = WorkflowApi(
       session: _session,
-      get: (uri, {headers}) async => http.Response(
-        jsonEncode({
-          'id': initial.id,
-          'bundleId': initial.bundleId,
-          'status': initial.status,
-          'repoId': 'r1',
-          'slaveId': 's1',
-          'nodes': [
-            {
-              'id': 'A',
-              'title': 'First',
-              'status': 'awaiting_review',
-              'dependsOn': <String>[],
-            },
-            {
-              'id': 'B',
-              'title': 'Second',
-              'status': 'pending',
-              'dependsOn': ['A'],
-            },
-          ],
-          'createdAt': initial.createdAt,
-        }),
-        200,
-      ),
+      get: (uri, {headers}) async {
+        if (uri.path == '/v1/models') {
+          return http.Response(
+            jsonEncode({
+              'default': 'auto',
+              'models': [
+                {'id': 'auto', 'label': 'Auto'},
+              ],
+            }),
+            200,
+          );
+        }
+        return http.Response(
+          jsonEncode({
+            'id': initial.id,
+            'bundleId': initial.bundleId,
+            'status': initial.status,
+            'repoId': 'r1',
+            'slaveId': 's1',
+            'nodes': [
+              {
+                'id': 'A',
+                'title': 'First',
+                'status': 'awaiting_review',
+                'dependsOn': <String>[],
+                'model': 'auto',
+                'policy': {'autoApprove': false, 'autoStartNext': false},
+              },
+              {
+                'id': 'B',
+                'title': 'Second',
+                'status': 'pending',
+                'dependsOn': ['A'],
+                'model': 'auto',
+                'policy': {'autoApprove': false, 'autoStartNext': false},
+              },
+            ],
+            'createdAt': initial.createdAt,
+          }),
+          200,
+        );
+      },
       post: (uri, {headers, body}) async {
         started = true;
         expect(uri.path, endsWith('/start'));
@@ -130,6 +147,8 @@ void main() {
                   'title': 'First',
                   'status': 'awaiting_review',
                   'dependsOn': <String>[],
+                  'model': 'auto',
+                  'policy': {'autoApprove': false, 'autoStartNext': false},
                 },
               ],
               'createdAt': '2026-09-28T00:00:00Z',
@@ -155,11 +174,197 @@ void main() {
 
     expect(find.text('待审核'), findsWidgets);
     expect(find.text('Start'), findsOneWidget);
+    // Policy switches default off.
+    final autoApprove = tester.widget<Switch>(
+      find.byKey(const ValueKey('autoApprove-A')),
+    );
+    final autoNext = tester.widget<Switch>(
+      find.byKey(const ValueKey('autoStartNext-A')),
+    );
+    expect(autoApprove.value, isFalse);
+    expect(autoNext.value, isFalse);
+    expect(find.text('Auto'), findsWidgets);
 
     await tester.tap(find.text('Start'));
     await tester.pumpAndSettle();
     expect(started, isTrue);
     expect(find.textContaining('Started'), findsOneWidget);
+  });
+
+  testWidgets('ready node shows Start and Continue after approve path', (tester) async {
+    var patched = false;
+    var nodeStarted = false;
+    final initial = WorkflowRun.fromJson({
+      'id': 'wf_ready',
+      'bundleId': 'b',
+      'status': 'running',
+      'nodes': [
+        {
+          'id': 'A',
+          'title': 'Done',
+          'status': 'approved',
+          'dependsOn': <String>[],
+          'model': 'auto',
+          'policy': {'autoApprove': false, 'autoStartNext': false},
+        },
+        {
+          'id': 'B',
+          'title': 'Next',
+          'status': 'ready',
+          'dependsOn': ['A'],
+          'model': 'auto',
+          'policy': {'autoApprove': false, 'autoStartNext': false},
+        },
+      ],
+      'createdAt': '2026-09-28T00:00:00Z',
+    });
+
+    final api = WorkflowApi(
+      session: _session,
+      get: (uri, {headers}) async {
+        if (uri.path == '/v1/models') {
+          return http.Response(
+            jsonEncode({
+              'default': 'auto',
+              'models': [
+                {'id': 'auto', 'label': 'Auto'},
+                {'id': 'composer-2.5', 'label': 'Composer 2.5'},
+              ],
+            }),
+            200,
+          );
+        }
+        return http.Response(jsonEncode({
+          'id': initial.id,
+          'bundleId': initial.bundleId,
+          'status': initial.status,
+          'nodes': initial.nodes
+              .map((n) => {
+                    'id': n.id,
+                    'title': n.title,
+                    'status': n.status,
+                    'dependsOn': n.dependsOn,
+                    'model': n.model,
+                    'policy': n.policy.toJson(),
+                  })
+              .toList(),
+          'createdAt': initial.createdAt,
+        }), 200);
+      },
+      post: (uri, {headers, body}) async {
+        if (uri.path.endsWith('/continue')) {
+          return http.Response(
+            jsonEncode({
+              'delivered': true,
+              'workflow': {
+                'id': 'wf_ready',
+                'bundleId': 'b',
+                'status': 'running',
+                'nodes': [
+                  {
+                    'id': 'B',
+                    'title': 'Next',
+                    'status': 'running',
+                    'dependsOn': ['A'],
+                    'model': 'auto',
+                    'policy': {'autoApprove': false, 'autoStartNext': false},
+                  },
+                ],
+                'createdAt': '2026-09-28T00:00:00Z',
+              },
+            }),
+            200,
+          );
+        }
+        if (uri.path.endsWith('/nodes/B/start')) {
+          nodeStarted = true;
+          return http.Response(
+            jsonEncode({
+              'delivered': true,
+              'workflow': {
+                'id': 'wf_ready',
+                'bundleId': 'b',
+                'status': 'running',
+                'nodes': [
+                  {
+                    'id': 'B',
+                    'title': 'Next',
+                    'status': 'running',
+                    'dependsOn': ['A'],
+                    'model': 'auto',
+                    'policy': {'autoApprove': false, 'autoStartNext': false},
+                  },
+                ],
+                'createdAt': '2026-09-28T00:00:00Z',
+              },
+            }),
+            200,
+          );
+        }
+        return http.Response('{}', 404);
+      },
+      patch: (uri, {headers, body}) async {
+        patched = true;
+        final map = jsonDecode(body as String) as Map;
+        expect(map['policy']['autoStartNext'], isTrue);
+        return http.Response(
+          jsonEncode({
+            'id': 'wf_ready',
+            'bundleId': 'b',
+            'status': 'running',
+            'nodes': [
+              {
+                'id': 'A',
+                'title': 'Done',
+                'status': 'approved',
+                'dependsOn': <String>[],
+                'model': 'auto',
+                'policy': {'autoApprove': false, 'autoStartNext': false},
+              },
+              {
+                'id': 'B',
+                'title': 'Next',
+                'status': 'ready',
+                'dependsOn': ['A'],
+                'model': 'auto',
+                'policy': {'autoApprove': false, 'autoStartNext': true},
+              },
+            ],
+            'createdAt': '2026-09-28T00:00:00Z',
+          }),
+          200,
+        );
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WorkflowDetailPage(
+          session: _session,
+          workflowId: 'wf_ready',
+          api: api,
+          initial: initial,
+          pollInterval: const Duration(days: 1),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Continue'), findsOneWidget);
+    expect(find.byKey(const ValueKey('startNode-B')), findsOneWidget);
+
+    // Toggle autoStartNext on B → PATCH
+    await tester.tap(find.byKey(const ValueKey('autoStartNext-B')));
+    await tester.pumpAndSettle();
+    expect(patched, isTrue);
+    final sw = tester.widget<Switch>(
+      find.byKey(const ValueKey('autoStartNext-B')),
+    );
+    expect(sw.value, isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('startNode-B')));
+    await tester.pumpAndSettle();
+    expect(nodeStarted, isTrue);
   });
 
   testWidgets('detail shows error snackbar path via failed load', (tester) async {

@@ -10,10 +10,10 @@
 
 ## 完成定义（DoD）
 
-- [ ] UI 形态为下拉 + Switch（默认关）
-- [ ] 修改即 PATCH 到 Gateway
-- [ ] ready + 未自动开跑时显示开始
-- [ ] widget 测试覆盖默认关与开关展示
+- [x] UI 形态为下拉 + Switch（默认关）
+- [x] 修改即 PATCH 到 Gateway
+- [x] ready + 未自动开跑时显示开始
+- [x] widget 测试覆盖默认关与开关展示
 
 ## 禁止事项
 

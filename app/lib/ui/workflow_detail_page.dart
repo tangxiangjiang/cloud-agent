@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../auth/session.dart';
+import '../chat/chat_api.dart';
+import '../chat/models.dart';
 import '../workflow/models.dart';
 import '../workflow/workflow_api.dart';
 import 'node_diff_page.dart';
@@ -10,13 +12,14 @@ import 'node_logs_page.dart';
 import 'node_review_page.dart';
 import 'node_status_chip.dart';
 
-/// Workflow detail: node statuses + Start. Polls Gateway; no diff/revise here.
+/// Workflow detail: nodes, policy controls, Start / Continue (M10-P02).
 class WorkflowDetailPage extends StatefulWidget {
   const WorkflowDetailPage({
     super.key,
     required this.session,
     required this.workflowId,
     this.api,
+    this.chatApi,
     this.initial,
     this.pollInterval = const Duration(seconds: 3),
   });
@@ -24,6 +27,7 @@ class WorkflowDetailPage extends StatefulWidget {
   final Session session;
   final String workflowId;
   final WorkflowApi? api;
+  final ChatApi? chatApi;
   final WorkflowRun? initial;
   final Duration pollInterval;
 
@@ -34,11 +38,15 @@ class WorkflowDetailPage extends StatefulWidget {
 class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
   late final WorkflowApi _api =
       widget.api ?? WorkflowApi(session: widget.session);
+  late final ChatApi _chatApi =
+      widget.chatApi ?? ChatApi(session: widget.session);
 
   WorkflowRun? _run;
+  ModelCatalog _catalog = ModelCatalog.fallback;
   String? _error;
   bool _loading = true;
-  bool _starting = false;
+  bool _busy = false;
+  String? _patchingNodeId;
   Timer? _poll;
 
   @override
@@ -46,9 +54,10 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
     super.initState();
     _run = widget.initial;
     _loading = widget.initial == null;
+    unawaited(_loadModels());
     _refresh();
     _poll = Timer.periodic(widget.pollInterval, (_) {
-      if (!mounted || _starting) return;
+      if (!mounted || _busy) return;
       _refresh(silent: true);
     });
   }
@@ -57,6 +66,16 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
   void dispose() {
     _poll?.cancel();
     super.dispose();
+  }
+
+  Future<void> _loadModels() async {
+    try {
+      final c = await _chatApi.listModels();
+      if (!mounted) return;
+      setState(() => _catalog = c);
+    } catch (_) {
+      // Keep fallback Auto list.
+    }
   }
 
   Future<void> _refresh({bool silent = false}) async {
@@ -95,14 +114,14 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
   }
 
   Future<void> _start() async {
-    if (_starting) return;
-    setState(() => _starting = true);
+    if (_busy) return;
+    setState(() => _busy = true);
     try {
       final result = await _api.startWorkflow(widget.workflowId);
       if (!mounted) return;
       setState(() {
         _run = result.workflow;
-        _starting = false;
+        _busy = false;
       });
       final msg = result.delivered
           ? 'Started — delivered to Slave'
@@ -110,16 +129,105 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } on WorkflowApiException catch (e) {
       if (!mounted) return;
-      setState(() => _starting = false);
+      setState(() => _busy = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
     } catch (_) {
       if (!mounted) return;
-      setState(() => _starting = false);
+      setState(() => _busy = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Start failed')),
       );
+    }
+  }
+
+  Future<void> _continue() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final result = await _api.continueWorkflow(widget.workflowId);
+      if (!mounted) return;
+      setState(() {
+        _run = result.workflow;
+        _busy = false;
+      });
+      final msg = result.delivered
+          ? 'Continue — delivered to Slave'
+          : 'Continue — Slave offline';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } on WorkflowApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Continue failed')),
+      );
+    }
+  }
+
+  Future<void> _startNode(String nodeId) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final result = await _api.startNode(widget.workflowId, nodeId);
+      if (!mounted) return;
+      setState(() {
+        _run = result.workflow;
+        _busy = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.delivered
+                ? 'Node $nodeId started'
+                : 'Node $nodeId — Slave offline',
+          ),
+        ),
+      );
+    } on WorkflowApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _patchPolicy(WorkflowNode node, {String? model, NodePolicy? policy}) async {
+    if (_patchingNodeId != null) return;
+    setState(() => _patchingNodeId = node.id);
+    try {
+      final run = await _api.patchNode(
+        widget.workflowId,
+        node.id,
+        model: model,
+        policy: policy,
+      );
+      if (!mounted) return;
+      setState(() {
+        _run = run;
+        _patchingNodeId = null;
+      });
+    } on WorkflowApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _patchingNodeId = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+      await _refresh(silent: true);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _patchingNodeId = null);
+      await _refresh(silent: true);
     }
   }
 
@@ -136,7 +244,7 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            onPressed: _loading || _starting ? null : () => _refresh(),
+            onPressed: _loading || _busy ? null : () => _refresh(),
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -147,24 +255,47 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
           : SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                child: FilledButton.icon(
-                  onPressed: run.canStart && !_starting ? _start : null,
-                  icon: _starting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.play_arrow),
-                  label: Text(
-                    _starting
-                        ? 'Starting…'
-                        : run.canStart
-                            ? 'Start'
-                            : run.isTerminal
+                child: Row(
+                  children: [
+                    if (run.canStart)
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _busy ? null : _start,
+                          icon: _busy
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.play_arrow),
+                          label: Text(_busy ? 'Starting…' : 'Start'),
+                        ),
+                      ),
+                    if (run.canContinue) ...[
+                      if (run.canStart) const SizedBox(width: 8),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _busy ? null : _continue,
+                          icon: const Icon(Icons.skip_next),
+                          label: Text(_busy ? '…' : 'Continue'),
+                        ),
+                      ),
+                    ],
+                    if (!run.canStart && !run.canContinue)
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: null,
+                          icon: const Icon(Icons.play_arrow),
+                          label: Text(
+                            run.isTerminal
                                 ? 'Terminal (${run.status})'
                                 : '已下发 (${run.status})',
-                  ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -220,10 +351,43 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
           ],
           const SizedBox(height: 20),
           Text('Nodes', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Model + switches PATCH to Gateway (defaults off). '
+            'Ready nodes: Start; after approve without auto-next: Continue.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
           const SizedBox(height: 8),
           ...run.nodes.map(
             (n) => _NodeTile(
               node: n,
+              catalog: _catalog,
+              patching: _patchingNodeId == n.id,
+              busy: _busy,
+              onModelChanged: n.policyEditable
+                  ? (model) => unawaited(_patchPolicy(n, model: model))
+                  : null,
+              onAutoApproveChanged: n.policyEditable
+                  ? (v) => unawaited(
+                        _patchPolicy(
+                          n,
+                          policy: n.policy.copyWith(autoApprove: v),
+                        ),
+                      )
+                  : null,
+              onAutoStartNextChanged: n.policyEditable
+                  ? (v) => unawaited(
+                        _patchPolicy(
+                          n,
+                          policy: n.policy.copyWith(autoStartNext: v),
+                        ),
+                      )
+                  : null,
+              onStartNode: n.isReady && !_busy
+                  ? () => unawaited(_startNode(n.id))
+                  : null,
               onOpenLogs: n.taskId != null && n.taskId!.isNotEmpty
                   ? () {
                       Navigator.of(context).push<void>(
@@ -274,13 +438,6 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
                   : null,
             ),
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Logs via WS when taskId is set. Diff + Review when awaiting_review.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
         ],
       ),
     );
@@ -290,20 +447,47 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
 class _NodeTile extends StatelessWidget {
   const _NodeTile({
     required this.node,
+    required this.catalog,
+    required this.patching,
+    required this.busy,
+    this.onModelChanged,
+    this.onAutoApproveChanged,
+    this.onAutoStartNextChanged,
+    this.onStartNode,
     this.onOpenLogs,
     this.onOpenDiff,
     this.onOpenReview,
   });
 
   final WorkflowNode node;
+  final ModelCatalog catalog;
+  final bool patching;
+  final bool busy;
+  final ValueChanged<String>? onModelChanged;
+  final ValueChanged<bool>? onAutoApproveChanged;
+  final ValueChanged<bool>? onAutoStartNextChanged;
+  final VoidCallback? onStartNode;
   final VoidCallback? onOpenLogs;
   final VoidCallback? onOpenDiff;
   final VoidCallback? onOpenReview;
+
+  String _labelFor(String id) {
+    for (final m in catalog.models) {
+      if (m.id == id) return m.label;
+    }
+    return id;
+  }
 
   @override
   Widget build(BuildContext context) {
     final awaiting = node.isAwaitingReview;
     final scheme = Theme.of(context).colorScheme;
+    final modelIds = catalog.models.map((m) => m.id).toList();
+    if (!modelIds.contains(node.model)) {
+      modelIds.insert(0, node.model);
+    }
+    final editable = onModelChanged != null && !patching && !busy;
+
     return Card(
       elevation: awaiting ? 2 : 0,
       color: awaiting ? scheme.tertiaryContainer.withValues(alpha: 0.55) : null,
@@ -313,44 +497,124 @@ class _NodeTile extends StatelessWidget {
             ? BorderSide(color: scheme.tertiary, width: 1.5)
             : BorderSide(color: scheme.outlineVariant),
       ),
-      child: ListTile(
-        title: Text(
-          node.title?.isNotEmpty == true ? node.title! : node.id,
-          style: TextStyle(
-            fontWeight: awaiting ? FontWeight.w700 : FontWeight.w500,
-          ),
-        ),
-        subtitle: Text(
-          [
-            if (node.title != null && node.title!.isNotEmpty) node.id,
-            if (node.dependsOn.isNotEmpty)
-              'depends: ${node.dependsOn.join(', ')}',
-            if (node.taskId != null) 'task: ${node.taskId}',
-          ].where((s) => s.isNotEmpty).join('\n'),
-        ),
-        isThreeLine: node.dependsOn.isNotEmpty || node.taskId != null,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 8, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (onOpenReview != null)
-              IconButton(
-                tooltip: 'Review',
-                onPressed: onOpenReview,
-                icon: const Icon(Icons.rate_review_outlined),
-              ),
-            if (onOpenDiff != null)
-              IconButton(
-                tooltip: 'Diff (read-only)',
-                onPressed: onOpenDiff,
-                icon: const Icon(Icons.difference_outlined),
-              ),
-            if (onOpenLogs != null)
-              IconButton(
-                tooltip: 'Logs',
-                onPressed: onOpenLogs,
-                icon: const Icon(Icons.terminal),
-              ),
-            NodeStatusChip(status: node.status),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        node.title?.isNotEmpty == true ? node.title! : node.id,
+                        style: TextStyle(
+                          fontWeight:
+                              awaiting ? FontWeight.w700 : FontWeight.w500,
+                          fontSize: 15,
+                        ),
+                      ),
+                      if (node.title != null && node.title!.isNotEmpty)
+                        Text(
+                          node.id,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      if (node.dependsOn.isNotEmpty)
+                        Text(
+                          'depends: ${node.dependsOn.join(', ')}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                    ],
+                  ),
+                ),
+                if (onOpenReview != null)
+                  IconButton(
+                    tooltip: 'Review',
+                    onPressed: onOpenReview,
+                    icon: const Icon(Icons.rate_review_outlined),
+                  ),
+                if (onOpenDiff != null)
+                  IconButton(
+                    tooltip: 'Diff (read-only)',
+                    onPressed: onOpenDiff,
+                    icon: const Icon(Icons.difference_outlined),
+                  ),
+                if (onOpenLogs != null)
+                  IconButton(
+                    tooltip: 'Logs',
+                    onPressed: onOpenLogs,
+                    icon: const Icon(Icons.terminal),
+                  ),
+                NodeStatusChip(status: node.status),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    key: ValueKey('model-${node.id}'),
+                    value: modelIds.contains(node.model)
+                        ? node.model
+                        : modelIds.first,
+                    isDense: true,
+                    items: [
+                      for (final id in modelIds)
+                        DropdownMenuItem(
+                          value: id,
+                          child: Text(_labelFor(id)),
+                        ),
+                    ],
+                    onChanged: editable
+                        ? (v) {
+                            if (v != null) onModelChanged!(v);
+                          }
+                        : null,
+                  ),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('自动通过', style: Theme.of(context).textTheme.bodySmall),
+                    Switch(
+                      key: ValueKey('autoApprove-${node.id}'),
+                      value: node.policy.autoApprove,
+                      onChanged: editable ? onAutoApproveChanged : null,
+                    ),
+                  ],
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('自动下个', style: Theme.of(context).textTheme.bodySmall),
+                    Switch(
+                      key: ValueKey('autoStartNext-${node.id}'),
+                      value: node.policy.autoStartNext,
+                      onChanged: editable ? onAutoStartNextChanged : null,
+                    ),
+                  ],
+                ),
+                if (onStartNode != null)
+                  FilledButton.tonalIcon(
+                    key: ValueKey('startNode-${node.id}'),
+                    onPressed: onStartNode,
+                    icon: const Icon(Icons.play_arrow, size: 18),
+                    label: const Text('开始'),
+                  ),
+                if (patching)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
           ],
         ),
       ),

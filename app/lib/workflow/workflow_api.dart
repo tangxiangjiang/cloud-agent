@@ -26,18 +26,27 @@ typedef HttpPost = Future<http.Response> Function(
   Object? body,
 });
 
+typedef HttpPatch = Future<http.Response> Function(
+  Uri url, {
+  Map<String, String>? headers,
+  Object? body,
+});
+
 /// Authenticated workflow HTTP client (Bearer). No CURSOR_API_KEY.
 class WorkflowApi {
   WorkflowApi({
     required this.session,
     HttpGet? get,
     HttpPost? post,
+    HttpPatch? patch,
   })  : _get = get ?? http.get,
-        _post = post ?? http.post;
+        _post = post ?? http.post,
+        _patch = patch ?? http.patch;
 
   final Session session;
   final HttpGet _get;
   final HttpPost _post;
+  final HttpPatch _patch;
 
   Map<String, String> get _headers => {
         'Authorization': 'Bearer ${session.token}',
@@ -112,10 +121,75 @@ class WorkflowApi {
       body: '{}',
     );
     _throwIfBad(res, 'Start workflow');
-    final body = _decodeMap(res.body);
+    return _parseDelivered(res.body, 'Start');
+  }
+
+  /// Resume ready nodes after approve (when autoStartNext is off).
+  Future<StartWorkflowResult> continueWorkflow(String id) async {
+    final res = await _post(
+      _uri('/v1/workflows/${Uri.encodeComponent(id)}/continue'),
+      headers: {
+        ..._headers,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: '{}',
+    );
+    _throwIfBad(res, 'Continue workflow');
+    return _parseDelivered(res.body, 'Continue');
+  }
+
+  /// Start a single ready node.
+  Future<StartWorkflowResult> startNode(String workflowId, String nodeId) async {
+    final res = await _post(
+      _uri(
+        '/v1/workflows/${Uri.encodeComponent(workflowId)}/nodes/${Uri.encodeComponent(nodeId)}/start',
+      ),
+      headers: {
+        ..._headers,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: '{}',
+    );
+    _throwIfBad(res, 'Start node');
+    return _parseDelivered(res.body, 'Start node');
+  }
+
+  /// PATCH model / policy (and optional status fields used by Slave).
+  Future<WorkflowRun> patchNode(
+    String workflowId,
+    String nodeId, {
+    String? model,
+    NodePolicy? policy,
+    String? status,
+    String? taskId,
+  }) async {
+    final body = <String, dynamic>{};
+    if (model != null) body['model'] = model;
+    if (policy != null) body['policy'] = policy.toJson();
+    if (status != null) body['status'] = status;
+    if (taskId != null) body['taskId'] = taskId;
+    if (body.isEmpty) {
+      throw WorkflowApiException('no fields to patch');
+    }
+    final res = await _patch(
+      _uri(
+        '/v1/workflows/${Uri.encodeComponent(workflowId)}/nodes/${Uri.encodeComponent(nodeId)}',
+      ),
+      headers: {
+        ..._headers,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: jsonEncode(body),
+    );
+    _throwIfBad(res, 'Patch node');
+    return WorkflowRun.fromJson(_decodeMap(res.body));
+  }
+
+  StartWorkflowResult _parseDelivered(String raw, String action) {
+    final body = _decodeMap(raw);
     final wf = body['workflow'];
     if (wf is! Map) {
-      throw WorkflowApiException('Start response missing workflow');
+      throw WorkflowApiException('$action response missing workflow');
     }
     return StartWorkflowResult(
       workflow: WorkflowRun.fromJson(Map<String, dynamic>.from(wf)),

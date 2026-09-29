@@ -175,4 +175,76 @@ void main() {
     });
     expect(n.isAwaitingReview, isTrue);
   });
+
+  test('NodePolicy defaults off and patchNode posts policy', () async {
+    final n = WorkflowNode.fromJson({'id': 'A', 'status': 'ready'});
+    expect(n.policy.autoApprove, isFalse);
+    expect(n.policy.autoStartNext, isFalse);
+    expect(n.model, 'auto');
+
+    var patched = false;
+    final api = WorkflowApi(
+      session: session,
+      patch: (uri, {headers, body}) async {
+        patched = true;
+        expect(uri.path, '/v1/workflows/wf_1/nodes/A');
+        final map = jsonDecode(body as String) as Map;
+        expect(map['model'], 'composer-2.5');
+        expect(map['policy']['autoStartNext'], isTrue);
+        expect(map['policy']['autoApprove'], isFalse);
+        return http.Response(
+          jsonEncode({
+            'id': 'wf_1',
+            'bundleId': 'b',
+            'status': 'running',
+            'nodes': [
+              {
+                'id': 'A',
+                'status': 'ready',
+                'model': 'composer-2.5',
+                'policy': {'autoApprove': false, 'autoStartNext': true},
+              },
+            ],
+            'createdAt': '2026-09-28T00:00:00Z',
+          }),
+          200,
+        );
+      },
+    );
+    final run = await api.patchNode(
+      'wf_1',
+      'A',
+      model: 'composer-2.5',
+      policy: const NodePolicy(autoStartNext: true),
+    );
+    expect(patched, isTrue);
+    expect(run.nodes.first.policy.autoStartNext, isTrue);
+    expect(run.nodes.first.model, 'composer-2.5');
+  });
+
+  test('continueWorkflow hits continue path', () async {
+    final api = WorkflowApi(
+      session: session,
+      post: (uri, {headers, body}) async {
+        expect(uri.path, '/v1/workflows/wf_1/continue');
+        return http.Response(
+          jsonEncode({
+            'delivered': true,
+            'workflow': {
+              'id': 'wf_1',
+              'bundleId': 'b',
+              'status': 'running',
+              'nodes': [
+                {'id': 'B', 'status': 'running', 'dependsOn': ['A']},
+              ],
+              'createdAt': '2026-09-28T00:00:00Z',
+            },
+          }),
+          200,
+        );
+      },
+    );
+    final r = await api.continueWorkflow('wf_1');
+    expect(r.delivered, isTrue);
+  });
 }

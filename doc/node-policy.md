@@ -1,6 +1,6 @@
 # 节点执行策略（模型 / 自动通过 / 自动续跑）
 
-**状态：Gateway 续跑门闩 + App 节点策略控件已落地（M10-P01～P02）；自动通过见 M10-P03**  
+**状态：Gateway 续跑门闩 + App 策略控件 + 自动通过已落地（M10-P01～P03）；批量默认见 M10-P04**  
 入口：App **工作流详情**里每个任务（节点）行上的控件，形态对齐设置页的 **下拉 + Switch**（默认关）。
 
 解决：当前 Approve 后 Gateway 会再次 `workflow.assign`，**自动开跑下一 ready 节点**；部分场景希望人审完停住，手动点下一个再跑。同时支持每节点选模型、可选自动通过。
@@ -98,10 +98,13 @@ M01-P02  气泡 …         [Auto ▾]  自动通过 ○──  自动下个 ●
 
 ### 自动通过
 
-节点进入 `awaiting_review` 时：
+节点进入 `awaiting_review` 时（Slave `PATCH` status）：
 
-- 若 `autoApprove`：Gateway（或 Slave 上报 done 后 Gateway）走与 App approve **相同**管道（progress + commit + 审计标 `autoApprove=true`）  
-- 建议：**仅当 diff 非空或空 diff 也可** — 首版允许空 diff 自动过，但审计必记  
+- 若 `policy.autoApprove==true`：Gateway **立刻**走与人工 Approve **相同**管道：节点 → `approved` → `RecomputeReady` → `workflow.review`（`autoApprove: true`）→ Slave 写 progress + git commit  
+- 若同时 `autoStartNext`：再 `AssignWorkflow`；否则下游停在 `ready`  
+- 审计：`workflow.review` meta 含 `autoApprove=true|false`（可区分自动 / 人工）  
+- **Reject** 仅经 `POST .../review`；不受 autoApprove 影响  
+- 空 diff 也允许自动通过（首版），但审计必记  
 
 安全：App 改 `autoApprove` 需 online 会话；审计可查。
 

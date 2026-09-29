@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/audit"
@@ -55,6 +56,7 @@ func main() {
 	taskStore := task.NewStore()
 	wfStore := workflow.NewStore()
 	chatStore := chat.NewStore(taskStore)
+	wfStore.SetReviewAuditor(workflowReviewAuditor{log: auditLog})
 
 	var stateStore persist.Backend
 	if strings.TrimSpace(*stateFile) != "" {
@@ -304,6 +306,24 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 func handleMe(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// workflowReviewAuditor distinguishes human vs autoApprove in audit JSONL (M10-P03).
+type workflowReviewAuditor struct {
+	log *audit.Logger
+}
+
+func (a workflowReviewAuditor) AuditReview(workflowID, nodeID, decision string, autoApprove, autoStartNext bool) {
+	if a.log == nil {
+		return
+	}
+	a.log.Record("workflow.review", "", "/v1/workflows/"+workflowID+"/nodes/"+nodeID+"/review", "", 200, map[string]string{
+		"workflowId":    workflowID,
+		"nodeId":        nodeID,
+		"decision":      decision,
+		"autoApprove":   strconv.FormatBool(autoApprove),
+		"autoStartNext": strconv.FormatBool(autoStartNext),
+	})
 }
 
 func envOr(key, fallback string) string {

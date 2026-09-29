@@ -64,6 +64,8 @@ export interface WorkflowReviewMessage {
   nodeId: string;
   decision: "approve" | "reject" | string;
   comment?: string;
+  /** When true, Gateway auto-approved (M10-P03); progress/commit still required. */
+  autoApprove?: boolean;
 }
 
 /**

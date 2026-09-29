@@ -183,7 +183,8 @@ func (h *OutboundHub) AssignRevise(slaveID, workflowID, nodeID, instruction stri
 
 // AssignReview implements workflow.Starter — notify Slave of approve/reject.
 // On approve, Slave writes progressDoc; reject must not write progress.
-func (h *OutboundHub) AssignReview(slaveID, workflowID, nodeID, decision, comment string) bool {
+// autoApprove=true marks M10-P03 automatic approve (same progress/commit path).
+func (h *OutboundHub) AssignReview(slaveID, workflowID, nodeID, decision, comment string, autoApprove bool) bool {
 	if slaveID == "" || workflowID == "" || nodeID == "" {
 		return false
 	}
@@ -197,10 +198,11 @@ func (h *OutboundHub) AssignReview(slaveID, workflowID, nodeID, decision, commen
 		return false
 	}
 	body := map[string]any{
-		"type":       "workflow.review",
-		"workflowId": workflowID,
-		"nodeId":     nodeID,
-		"decision":   decision,
+		"type":         "workflow.review",
+		"workflowId":   workflowID,
+		"nodeId":       nodeID,
+		"decision":     decision,
+		"autoApprove":  autoApprove,
 	}
 	if comment != "" {
 		body["comment"] = comment

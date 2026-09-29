@@ -116,7 +116,13 @@ type createRequest struct {
 type Starter interface {
 	AssignWorkflow(run *Run) bool
 	AssignRevise(slaveID, workflowID, nodeID, instruction string) bool
-	AssignReview(slaveID, workflowID, nodeID, decision, comment string) bool
+	// AssignReview delivers approve/reject. autoApprove marks M10-P03 automatic approve.
+	AssignReview(slaveID, workflowID, nodeID, decision, comment string, autoApprove bool) bool
+}
+
+// ReviewAuditor records approve/reject with auto vs human distinction (optional).
+type ReviewAuditor interface {
+	AuditReview(workflowID, nodeID, decision string, autoApprove, autoStartNext bool)
 }
 
 type nodePatchRequest struct {
@@ -142,6 +148,7 @@ type Store struct {
 	diffs    map[string]*NodeDiff // workflowId\0nodeId
 	now      func() time.Time
 	starter  Starter
+	auditor  ReviewAuditor
 	onChange OnChange
 }
 
@@ -154,6 +161,8 @@ func NewStore() *Store {
 }
 
 func (s *Store) SetStarter(st Starter) { s.starter = st }
+
+func (s *Store) SetReviewAuditor(a ReviewAuditor) { s.auditor = a }
 
 func (s *Store) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -538,16 +547,10 @@ func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	saved := false
 	s.mu.Lock()
-	defer func() {
-		s.mu.Unlock()
-		if saved {
-			s.notifyChange()
-		}
-	}()
 	run, ok := s.runs[id]
 	if !ok {
+		s.mu.Unlock()
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
@@ -559,18 +562,22 @@ func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if idx < 0 {
+		s.mu.Unlock()
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
 		return
 	}
+
+	enteredAwaiting := false
 	if req.Status != nil {
 		st := strings.TrimSpace(*req.Status)
 		if !validNodeStatus(st) {
+			s.mu.Unlock()
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid node status"})
 			return
 		}
-		// Review gate: never accept approved via this path in P02? Approve is P05.
-		// Still allow storing approved when App/Slave later patches — but RecomputeReady only unlocks on approved.
+		// Review gate: Agent/Slave must report awaiting_review; approve is via review or autoApprove.
 		run.Nodes[idx].Status = st
+		enteredAwaiting = st == NodeAwaitingReview
 	}
 	if req.TaskID != nil {
 		v := strings.TrimSpace(*req.TaskID)
@@ -578,7 +585,6 @@ func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 			run.Nodes[idx].TaskID = nil
 		} else {
 			run.Nodes[idx].TaskID = &v
-			// Attach taskId to the latest revise audit entry for this node (if any).
 			for i := len(run.ReviseHistory) - 1; i >= 0; i-- {
 				if run.ReviseHistory[i].NodeID == nodeID && run.ReviseHistory[i].TaskID == nil {
 					run.ReviseHistory[i].TaskID = &v
@@ -611,9 +617,17 @@ func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 		pol.AutoStartNext = req.Policy.AutoStartNext
 		run.Nodes[idx].Policy = &pol
 	}
-	RecomputeReady(run.Nodes)
 
-	// Workflow-level status from nodes (simple).
+	autoApproved := false
+	autoStartNext := false
+	if enteredAwaiting && nodeWantsAutoApprove(run.Nodes[idx]) {
+		// Same pipeline as human approve (progress + commit via AssignReview).
+		run.Nodes[idx].Status = NodeApproved
+		autoApproved = true
+		autoStartNext = nodeWantsAutoStartNext(run.Nodes[idx])
+	}
+
+	RecomputeReady(run.Nodes)
 	if anyNode(run.Nodes, NodeFailed) {
 		run.Status = StatusFailed
 	} else if allNodesTerminalSuccess(run.Nodes) {
@@ -623,8 +637,21 @@ func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 	}
 	u := s.now().Format(time.RFC3339Nano)
 	run.UpdatedAt = &u
-	saved = true
-	writeJSON(w, http.StatusOK, cloneRun(run))
+	slaveID := ""
+	if run.SlaveID != nil {
+		slaveID = *run.SlaveID
+	}
+	out := cloneRun(run)
+	s.mu.Unlock()
+	s.notifyChange()
+
+	delivered := false
+	if autoApproved {
+		delivered = s.deliverReview(slaveID, id, nodeID, "approve", "autoApprove", true, autoStartNext, out)
+		_ = delivered
+	}
+	// Body remains the Run (backward compatible with Slave/App PATCH clients).
+	writeJSON(w, http.StatusOK, out)
 }
 
 func validNodeStatus(st string) bool {
@@ -794,26 +821,39 @@ func (s *Store) handleReview(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 	s.notifyChange()
 
-	delivered := false
-	if s.starter != nil && slaveID != "" {
-		delivered = s.starter.AssignReview(slaveID, id, nodeID, decision, comment)
-		if !delivered {
-			log.Printf("workflow.review not delivered to slave %q (offline?); progress/commit may be skipped", slaveID)
-		}
-		// After approve: only auto-assign when policy.autoStartNext is explicitly true (M10-P01).
-		if decision == "approve" && autoStartNext {
-			_ = s.starter.AssignWorkflow(out)
-		}
-	} else if slaveID == "" {
-		log.Printf("workflow.review: workflow %s has empty slaveId; progress/commit skipped", id)
-	}
+	delivered := s.deliverReview(slaveID, id, nodeID, decision, comment, false, autoStartNext, out)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"workflow":      out,
 		"delivered":     delivered,
 		"decision":      decision,
 		"comment":       comment,
+		"autoApprove":   false,
 		"autoStartNext": autoStartNext,
 	})
+}
+
+// deliverReview notifies Slave (progress/commit on approve) and optionally continues the DAG.
+func (s *Store) deliverReview(
+	slaveID, workflowID, nodeID, decision, comment string,
+	autoApprove, autoStartNext bool,
+	out *Run,
+) bool {
+	if s.auditor != nil {
+		s.auditor.AuditReview(workflowID, nodeID, decision, autoApprove, autoStartNext)
+	}
+	delivered := false
+	if s.starter != nil && slaveID != "" {
+		delivered = s.starter.AssignReview(slaveID, workflowID, nodeID, decision, comment, autoApprove)
+		if !delivered {
+			log.Printf("workflow.review not delivered to slave %q (offline?); progress/commit may be skipped autoApprove=%v", slaveID, autoApprove)
+		}
+		if decision == "approve" && autoStartNext {
+			_ = s.starter.AssignWorkflow(out)
+		}
+	} else if slaveID == "" {
+		log.Printf("workflow.review: workflow %s has empty slaveId; progress/commit skipped autoApprove=%v", workflowID, autoApprove)
+	}
+	return delivered
 }
 
 func (s *Store) handleGetDiff(w http.ResponseWriter, r *http.Request) {
@@ -1000,6 +1040,10 @@ func cloneNodes(in []Node) []Node {
 
 func nodeWantsAutoStartNext(n Node) bool {
 	return n.Policy != nil && n.Policy.AutoStartNext
+}
+
+func nodeWantsAutoApprove(n Node) bool {
+	return n.Policy != nil && n.Policy.AutoApprove
 }
 
 func strPtr(s string) *string { return &s }

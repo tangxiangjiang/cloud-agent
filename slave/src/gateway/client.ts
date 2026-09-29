@@ -274,6 +274,7 @@ export class GatewayClient {
           nodeId?: string;
           decision?: string;
           comment?: string;
+          autoApprove?: boolean;
         };
         if (!m.workflowId || !m.nodeId || !m.decision) {
           log.warn("workflow.review missing fields");
@@ -283,6 +284,7 @@ export class GatewayClient {
           workflowId: m.workflowId,
           nodeId: m.nodeId,
           decision: m.decision,
+          autoApprove: m.autoApprove === true,
         });
         if (this.opts.onWorkflowReview) {
           try {
@@ -292,6 +294,7 @@ export class GatewayClient {
               decision: m.decision,
             };
             if (m.comment !== undefined) payload.comment = m.comment;
+            if (m.autoApprove === true) payload.autoApprove = true;
             await this.opts.onWorkflowReview(payload);
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);

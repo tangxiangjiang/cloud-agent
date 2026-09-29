@@ -12,6 +12,8 @@ Example line:
 
 Actions include: `pair`, `task.create`, `task.cancel`, `workflow.create`, `workflow.start`, `workflow.revise`, `workflow.review`.
 
+`workflow.review` meta may include `autoApprove` / `autoStartNext` (`true`/`false`) so automatic approve (M10-P03) is distinguishable from App approve.
+
 **Never** logs full `Authorization` / bearer tokens / `CURSOR_API_KEY`. Meta fields containing `token`/`authorization`/`api` are redacted (`***` + last 4).
 
 Query recent ring buffer (Bearer required):

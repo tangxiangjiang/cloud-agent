@@ -10,10 +10,10 @@
 
 ## 完成定义（DoD）
 
-- [ ] autoApprove 触发与人工 approve 副作用一致
-- [ ] 审计可区分自动 / 人工
-- [ ] 与 autoStartNext 组合单测（开/关矩阵至少 2 格）
-- [ ] Reject 不受 autoApprove 影响
+- [x] autoApprove 触发与人工 approve 副作用一致
+- [x] 审计可区分自动 / 人工
+- [x] 与 autoStartNext 组合单测（开/关矩阵至少 2 格）
+- [x] Reject 不受 autoApprove 影响
 
 ## 禁止事项
 

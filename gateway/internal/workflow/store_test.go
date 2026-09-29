@@ -432,10 +432,12 @@ func TestCreateRejectsCycle(t *testing.T) {
 }
 
 type recordingStarter struct {
-	assignN  int
-	reviewN  int
-	reviseN  int
-	lastRun  *workflow.Run
+	assignN      int
+	reviewN      int
+	reviseN      int
+	lastRun      *workflow.Run
+	lastAutoAppr bool
+	lastDecision string
 }
 
 func (r *recordingStarter) AssignWorkflow(run *workflow.Run) bool {
@@ -447,8 +449,10 @@ func (r *recordingStarter) AssignRevise(slaveID, workflowID, nodeID, instruction
 	r.reviseN++
 	return true
 }
-func (r *recordingStarter) AssignReview(slaveID, workflowID, nodeID, decision, comment string) bool {
+func (r *recordingStarter) AssignReview(slaveID, workflowID, nodeID, decision, comment string, autoApprove bool) bool {
 	r.reviewN++
+	r.lastDecision = decision
+	r.lastAutoAppr = autoApprove
 	return true
 }
 
@@ -594,6 +598,184 @@ func TestStartReadyNode(t *testing.T) {
 	}
 	if after.Nodes[1].Model == nil || *after.Nodes[1].Model != "composer-2.5" {
 		t.Fatalf("B model: %+v", after.Nodes[1].Model)
+	}
+}
+
+type recordingAuditor struct {
+	events []struct {
+		wf, node, decision string
+		autoApprove        bool
+		autoStartNext      bool
+	}
+}
+
+func (a *recordingAuditor) AuditReview(workflowID, nodeID, decision string, autoApprove, autoStartNext bool) {
+	a.events = append(a.events, struct {
+		wf, node, decision string
+		autoApprove        bool
+		autoStartNext      bool
+	}{workflowID, nodeID, decision, autoApprove, autoStartNext})
+}
+
+func TestAutoApproveWithoutAutoStartNext(t *testing.T) {
+	store := workflow.NewStore()
+	st := &recordingStarter{}
+	aud := &recordingAuditor{}
+	store.SetStarter(st)
+	store.SetReviewAuditor(aud)
+	h := store.Handler()
+	body := `{
+		"bundleId":"b","repoId":"r","slaveId":"s1",
+		"nodes":[
+			{"id":"A","dependsOn":[],"policy":{"autoApprove":true,"autoStartNext":false}},
+			{"id":"B","dependsOn":["A"]}
+		]
+	}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	patch := httptest.NewRecorder()
+	h.ServeHTTP(patch, httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
+		strings.NewReader(`{"status":"awaiting_review","taskId":"tsk_1"}`)))
+	if patch.Code != http.StatusOK {
+		t.Fatalf("patch: %d %s", patch.Code, patch.Body.String())
+	}
+	var after workflow.Run
+	_ = json.NewDecoder(patch.Body).Decode(&after)
+	if after.Nodes[0].Status != workflow.NodeApproved {
+		t.Fatalf("A want approved, got %s", after.Nodes[0].Status)
+	}
+	if after.Nodes[1].Status != workflow.NodeReady {
+		t.Fatalf("B want ready, got %s", after.Nodes[1].Status)
+	}
+	if st.reviewN != 1 || !st.lastAutoAppr || st.lastDecision != "approve" {
+		t.Fatalf("review: n=%d auto=%v dec=%s", st.reviewN, st.lastAutoAppr, st.lastDecision)
+	}
+	if st.assignN != 0 {
+		t.Fatalf("must not AssignWorkflow when autoStartNext=false, got %d", st.assignN)
+	}
+	if len(aud.events) != 1 || !aud.events[0].autoApprove || aud.events[0].autoStartNext {
+		t.Fatalf("audit: %+v", aud.events)
+	}
+}
+
+func TestAutoApproveWithAutoStartNext(t *testing.T) {
+	store := workflow.NewStore()
+	st := &recordingStarter{}
+	aud := &recordingAuditor{}
+	store.SetStarter(st)
+	store.SetReviewAuditor(aud)
+	h := store.Handler()
+	body := `{
+		"bundleId":"b","repoId":"r","slaveId":"s1",
+		"nodes":[
+			{"id":"A","dependsOn":[],"policy":{"autoApprove":true,"autoStartNext":true}},
+			{"id":"B","dependsOn":["A"]}
+		]
+	}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	patch := httptest.NewRecorder()
+	h.ServeHTTP(patch, httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
+		strings.NewReader(`{"status":"awaiting_review"}`)))
+	if patch.Code != http.StatusOK {
+		t.Fatalf("patch: %d %s", patch.Code, patch.Body.String())
+	}
+	var after workflow.Run
+	_ = json.NewDecoder(patch.Body).Decode(&after)
+	if after.Nodes[0].Status != workflow.NodeApproved {
+		t.Fatalf("want approved got %s", after.Nodes[0].Status)
+	}
+	if st.reviewN != 1 || !st.lastAutoAppr {
+		t.Fatalf("review auto: %+v", st)
+	}
+	if st.assignN != 1 {
+		t.Fatalf("autoStartNext must AssignWorkflow, got %d", st.assignN)
+	}
+	if len(aud.events) != 1 || !aud.events[0].autoApprove || !aud.events[0].autoStartNext {
+		t.Fatalf("audit: %+v", aud.events)
+	}
+}
+
+func TestRejectIgnoresAutoApprove(t *testing.T) {
+	store := workflow.NewStore()
+	st := &recordingStarter{}
+	store.SetStarter(st)
+	h := store.Handler()
+	// Reject is only via review API; autoApprove must not apply and must not assign.
+	body := `{
+		"bundleId":"b","repoId":"r","slaveId":"s1",
+		"nodes":[
+			{"id":"A","dependsOn":[],"policy":{"autoApprove":false,"autoStartNext":true}},
+			{"id":"B","dependsOn":["A"]}
+		]
+	}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
+		strings.NewReader(`{"status":"awaiting_review"}`)))
+	st.reviewN = 0
+	st.assignN = 0
+	st.lastAutoAppr = true
+
+	rej := httptest.NewRecorder()
+	h.ServeHTTP(rej, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/review",
+		strings.NewReader(`{"decision":"reject"}`)))
+	if rej.Code != http.StatusOK {
+		t.Fatalf("reject: %d", rej.Code)
+	}
+	var resp struct {
+		Workflow    workflow.Run `json:"workflow"`
+		AutoApprove bool         `json:"autoApprove"`
+	}
+	_ = json.NewDecoder(rej.Body).Decode(&resp)
+	if resp.AutoApprove {
+		t.Fatal("reject must not be autoApprove")
+	}
+	if resp.Workflow.Nodes[0].Status != workflow.NodeRejected {
+		t.Fatalf("want rejected, got %s", resp.Workflow.Nodes[0].Status)
+	}
+	if st.lastAutoAppr {
+		t.Fatal("AssignReview autoApprove must be false for human reject")
+	}
+	if st.assignN != 0 {
+		t.Fatalf("reject must not assign, got %d", st.assignN)
+	}
+}
+
+func TestHumanApproveAuditNotAuto(t *testing.T) {
+	store := workflow.NewStore()
+	st := &recordingStarter{}
+	aud := &recordingAuditor{}
+	store.SetStarter(st)
+	store.SetReviewAuditor(aud)
+	h := store.Handler()
+	body := `{"bundleId":"b","repoId":"r","slaveId":"s1","nodes":[{"id":"A","dependsOn":[]}]}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
+		strings.NewReader(`{"status":"awaiting_review"}`)))
+	ok := httptest.NewRecorder()
+	h.ServeHTTP(ok, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/review",
+		strings.NewReader(`{"decision":"approve"}`)))
+	if ok.Code != http.StatusOK {
+		t.Fatalf("approve: %d", ok.Code)
+	}
+	if st.lastAutoAppr {
+		t.Fatal("human approve must pass autoApprove=false")
+	}
+	if len(aud.events) != 1 || aud.events[0].autoApprove {
+		t.Fatalf("audit human: %+v", aud.events)
 	}
 }
 

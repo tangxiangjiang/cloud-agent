@@ -238,6 +238,7 @@ export class SerialDagScheduler {
       workflowId: msg.workflowId,
       nodeId: msg.nodeId,
       decision,
+      autoApprove: msg.autoApprove === true,
     });
 
     if (decision === "reject") {

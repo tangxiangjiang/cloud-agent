@@ -13,7 +13,7 @@
 
 | 控件 | 类型 | 默认 | 含义 |
 |------|------|------|------|
-| **模型** | 下拉 | **Auto** | 本节点 Local Agent 使用的 model；`auto` → Slave `defaultModel` |
+| **模型** | 下拉 | **Auto** | 本节点 Local Agent 模型；`auto` → Cursor Router（`auto-smart`） |
 | **自动通过** | Switch | **关** | 节点进入 `awaiting_review` 后是否**不经人手**直接 Approve |
 | **自动开始下个任务** | Switch | **关** | 本节点 Approve 后，是否自动 `assign` 续跑下游 ready 节点 |
 
@@ -111,7 +111,7 @@ App「执行 plan」页可批量设「本 Milestone 默认」（两开关默认�
 
 ### 模型
 
-`task.assign` / 节点执行时带 `model`；`auto` 由 Slave 解析。与 Chat 共用模型列表 API（若已有）。
+`task.assign` / 节点执行时带 `model`；`auto` 由 Slave 解析为 Cursor Router。与 Chat 共用模型列表 API（若已有）。
 
 ---
 

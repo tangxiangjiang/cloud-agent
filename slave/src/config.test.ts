@@ -129,6 +129,29 @@ describe("validateConfig", () => {
     }
   });
 
+  it("defaults defaultModel to auto-smart and optimizeFor to balanced", () => {
+    const cfg = validateConfig({
+      gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
+      slaveId: "slave_devpc",
+      repos: [{ id: "r1", name: "a", cwd: absA }],
+    });
+    assert.equal(cfg.defaultModel, "auto-smart");
+    assert.equal(cfg.optimizeFor, "balanced");
+  });
+
+  it("rejects invalid optimizeFor", () => {
+    assert.throws(
+      () =>
+        validateConfig({
+          gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
+          slaveId: "slave_devpc",
+          optimizeFor: "default",
+          repos: [{ id: "r1", name: "a", cwd: absA }],
+        }),
+      (e: unknown) => e instanceof ConfigError && /optimizeFor/.test(e.message),
+    );
+  });
+
   it("rejects absolute or parent index path", () => {
     assert.throws(
       () =>

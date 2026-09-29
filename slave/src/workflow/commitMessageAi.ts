@@ -4,6 +4,10 @@
 import { Agent, type AgentOptions } from "@cursor/sdk";
 import { log } from "../log.js";
 import { assertNoCloud } from "../agent/localHandler.js";
+import {
+  resolveModelSelection,
+  type OptimizeFor,
+} from "../agent/modelSelection.js";
 import type { WorkflowNode } from "./types.js";
 
 /**
@@ -13,6 +17,7 @@ import type { WorkflowNode } from "./types.js";
 export async function generateCommitMessageWithAi(opts: {
   apiKey: string;
   model: string;
+  optimizeFor?: OptimizeFor;
   cwd: string;
   status: string;
   diffStat: string;
@@ -48,7 +53,7 @@ Rules:
 
   const createOptions: AgentOptions = {
     apiKey: opts.apiKey,
-    model: { id: opts.model },
+    model: resolveModelSelection(opts.model, opts.model, opts.optimizeFor ?? "balanced"),
     local: {
       cwd: opts.cwd,
       settingSources: [],

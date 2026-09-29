@@ -3,6 +3,7 @@
 
 import type { SlaveConfig } from "../config.js";
 import { findRepo } from "../config.js";
+import type { OptimizeFor } from "../agent/modelSelection.js";
 import type { AssignedTask, EmitEvent, TaskHandlers } from "../gateway/types.js";
 import { log } from "../log.js";
 import { generateCommitMessageWithAi } from "./commitMessageAi.js";
@@ -47,7 +48,11 @@ export class SerialDagScheduler {
       handlers: TaskHandlers;
       emit: EmitEvent;
       /** When set, approve uses Local Agent to draft the commit message. */
-      commitAi?: { apiKey: string; model: string } | null;
+      commitAi?: {
+        apiKey: string;
+        model: string;
+        optimizeFor?: OptimizeFor;
+      } | null;
       /** Persist baselines/agentIds across slave restarts. */
       stateFile?: string;
     },
@@ -304,12 +309,13 @@ export class SerialDagScheduler {
       const commitResult = await commitOnApprove({
         repoCwd: repo.cwd,
         node,
-        comment: msg.comment,
+        comment: msg.comment ?? null,
         generateMessage: commitAi
           ? async (ctx) =>
               generateCommitMessageWithAi({
                 apiKey: commitAi.apiKey,
                 model: commitAi.model,
+                optimizeFor: commitAi.optimizeFor ?? this.opts.cfg.optimizeFor,
                 cwd: repo.cwd,
                 status: ctx.status,
                 diffStat: ctx.diffStat,

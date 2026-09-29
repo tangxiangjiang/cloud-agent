@@ -87,7 +87,8 @@ Diff：[docs/diff-baseline.md](./docs/diff-baseline.md) · Approve 写进度：[
 | `repos[]` | 兼容旧字段；等同无 `index` 的 `projects` |
 | `apiKeyEnv` | Cursor API Key 环境变量名（默认 `CURSOR_API_KEY`） |
 | `tokenEnv` | Gateway Bearer 环境变量名（默认 `GATEWAY_TOKEN`） |
-| `defaultModel` | task 未带 model 时使用（默认 `composer-2.5`） |
+| `defaultModel` | task 未带 model 时使用；`auto` / `auto-smart` = Cursor Router（默认 `auto-smart`） |
+| `optimizeFor` | Router 模式：`cost` \| `balanced` \| `intelligence`（默认 `balanced`） |
 
 工程 milestone 索引约定见仓库根 [`ai/milestones.md`](../ai/milestones.md)。
 

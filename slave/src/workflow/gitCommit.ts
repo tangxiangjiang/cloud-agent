@@ -118,7 +118,7 @@ export async function commitOnApprove(opts: {
 > {
   const fallback = fallbackCommitMessage({
     node: opts.node,
-    comment: opts.comment,
+    comment: opts.comment ?? null,
   });
 
   let dirty = false;

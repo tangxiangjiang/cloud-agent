@@ -4,6 +4,10 @@
 import { Agent, type AgentOptions } from "@cursor/sdk";
 import { log } from "../log.js";
 import { assertNoCloud } from "../agent/localHandler.js";
+import {
+  resolveModelSelection,
+  type OptimizeFor,
+} from "../agent/modelSelection.js";
 
 export interface InferredPhaseStatus {
   id: string;
@@ -143,6 +147,7 @@ inferredPhaseStatus is OPTIONAL guesswork for humans only — never applied auto
 export async function generateSyncSummaryWithAi(opts: {
   apiKey: string;
   model: string;
+  optimizeFor?: OptimizeFor;
   ctx: SyncSummaryContext;
   timeoutMs?: number;
 }): Promise<SyncAiSummaryResult | null> {
@@ -151,7 +156,11 @@ export async function generateSyncSummaryWithAi(opts: {
 
   const createOptions: AgentOptions = {
     apiKey: opts.apiKey,
-    model: { id: opts.model },
+    model: resolveModelSelection(
+      opts.model,
+      opts.model,
+      opts.optimizeFor ?? "balanced",
+    ),
     local: {
       cwd: opts.ctx.cwd,
       settingSources: [],

@@ -34,10 +34,20 @@ describe("assertNoCloud", () => {
 });
 
 describe("resolveTaskModel", () => {
-  it("maps auto and empty to defaultModel", () => {
-    assert.equal(resolveTaskModel("auto", "composer-2.5"), "composer-2.5");
+  it("maps auto to auto-smart (Cursor Router)", () => {
+    assert.equal(resolveTaskModel("auto", "composer-2.5"), "auto-smart");
+    assert.equal(resolveTaskModel("auto-smart", "composer-2.5"), "auto-smart");
+  });
+
+  it("maps empty to defaultModel id", () => {
     assert.equal(resolveTaskModel("", "composer-2.5"), "composer-2.5");
-    assert.equal(resolveTaskModel(null, "composer-2.5"), "composer-2.5");
-    assert.equal(resolveTaskModel("gpt-5.6-sol-medium", "composer-2.5"), "gpt-5.6-sol-medium");
+    assert.equal(resolveTaskModel(null, "auto-smart"), "auto-smart");
+  });
+
+  it("passes through explicit ids", () => {
+    assert.equal(
+      resolveTaskModel("gpt-5.6-sol-medium", "auto-smart"),
+      "gpt-5.6-sol-medium",
+    );
   });
 });

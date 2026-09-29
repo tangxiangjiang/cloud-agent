@@ -15,8 +15,12 @@ projects:
 # Name of the env var that holds the Cursor API key (not the key itself).
 apiKeyEnv: CURSOR_API_KEY
 
-# Default model when task.model is omitted (Local Agent requires a model).
-defaultModel: composer-2.5
+# Default model when task.model is omitted.
+# auto / auto-smart = Cursor Router (IDE Auto). Use a concrete id if Router is off for your team.
+defaultModel: auto-smart
+
+# Cursor Router optimize_for when resolving auto / auto-smart: cost | balanced | intelligence
+optimizeFor: balanced
 
 # Env var name for Gateway Bearer (from POST /v1/auth/pair). Required to run.
 tokenEnv: GATEWAY_TOKEN

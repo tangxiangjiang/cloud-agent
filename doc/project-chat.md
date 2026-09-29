@@ -45,7 +45,7 @@ Slave → 工程
 
 | UI | 含义 |
 |----|------|
-| **Auto**（默认） | 不传具体 model，或传 `auto`；Slave 用 `defaultModel` / 服务端推荐映射 |
+| **Auto**（默认） | 传 `auto`；Slave 映射为 Cursor Router：`auto-smart` + `optimize_for`（配置 `optimizeFor`，默认 `balanced`） |
 | 具体 id | 如 `composer-2.5`；来自 Gateway 下发的 **允许列表**（避免 App 写死过时列表） |
 
 `GET /v1/models`（Bearer）返回静态可配置目录（`GATEWAY_MODELS` 逗号分隔 id，缺省内置 Auto + 常用 id）：
@@ -60,7 +60,7 @@ Slave → 工程
 }
 ```
 
-未知 id 时 Slave 回退 `defaultModel` 并在 status 事件里带上解析结果。
+未知 id 时仍原样传给 SDK；空 model 回退 Slave `defaultModel`。Auto 的 status 事件会带 `resolvedModel: auto-smart` 与 `optimizeFor`。
 
 ### Ask / Plan 系统前缀
 
@@ -170,7 +170,7 @@ Gateway 组 prompt（注入 mode 前缀）→ 现有 `task.assign`。
 }
 ```
 
-`model: auto` → Slave 解析为配置的 `defaultModel`（或后续路由策略）。
+`model: auto` → Slave 解析为 Cursor Router（`auto-smart` + `optimize_for`，见 `slave/config.yaml` 的 `optimizeFor`）。空 model → `defaultModel`（默认亦为 `auto-smart`）。
 
 ---
 

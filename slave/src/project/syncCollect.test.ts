@@ -42,6 +42,7 @@ describe("collectProjectSync", () => {
       apiKeyEnv: "CURSOR_API_KEY",
       tokenEnv: "GATEWAY_TOKEN",
       defaultModel: "composer-2.5",
+      optimizeFor: "balanced",
       syncAiSummary: true,
     };
   }

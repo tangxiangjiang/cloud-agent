@@ -52,7 +52,6 @@ function buildHandlers(
   return new LocalAgentTaskHandler({
     cfg,
     apiKey,
-    defaultModel: cfg.defaultModel,
   });
 }
 
@@ -135,6 +134,7 @@ async function main(): Promise<void> {
                 generateSyncSummaryWithAi({
                   apiKey,
                   model: cfg.defaultModel,
+                  optimizeFor: cfg.optimizeFor,
                   ctx,
                 }),
             }
@@ -175,7 +175,7 @@ async function main(): Promise<void> {
 
   const commitAi =
     !values.stub && apiKey
-      ? { apiKey, model: cfg.defaultModel }
+      ? { apiKey, model: cfg.defaultModel, optimizeFor: cfg.optimizeFor }
       : null;
 
   const stateFile =

@@ -9,13 +9,16 @@ import { attemptRunCancel } from "../safety/cancel.js";
 import { resolveAssignedRepo } from "../safety/repo.js";
 import { applyChatModePrefix, normalizeChatMode } from "./chatMode.js";
 import { mapSdkMessage } from "./mapStream.js";
+import {
+  isAutoModelId,
+  resolveModelSelection,
+  type OptimizeFor,
+} from "./modelSelection.js";
 
 export interface LocalAgentHandlerOptions {
   cfg: SlaveConfig;
   /** Cursor API key value (from env named by apiKeyEnv). Never log this. */
   apiKey: string;
-  /** Fallback model id when task.model is absent. */
-  defaultModel: string;
 }
 
 /**
@@ -97,12 +100,18 @@ export class LocalAgentTaskHandler implements TaskHandlers {
       return;
     }
 
-    const modelId = resolveTaskModel(task.model, this.opts.defaultModel);
+    const requested = String(task.model ?? "").trim();
+    const model = resolveModelSelection(
+      task.model,
+      this.opts.cfg.defaultModel,
+      this.opts.cfg.optimizeFor,
+    );
+    const modelId = model.id;
 
     // Local-only: whitelist cwd only; never cloud; never settingSources "all".
     const createOptions: AgentOptions = {
       apiKey: this.opts.apiKey,
-      model: { id: modelId },
+      model,
       local: {
         cwd: repo.cwd,
         settingSources: [],
@@ -110,11 +119,18 @@ export class LocalAgentTaskHandler implements TaskHandlers {
     };
     assertNoCloud(createOptions);
 
+    const optimizeFor =
+      model.params?.find((p) => p.id === "optimize_for")?.value ??
+      this.opts.cfg.optimizeFor;
     emit(task.id, "status", {
       status: "running",
       mode: normalizeChatMode(task.mode),
-      ...(String(task.model ?? "").trim().toLowerCase() === "auto"
-        ? { resolvedModel: modelId, model: "auto" }
+      ...(isAutoModelId(requested) || (!requested && isAutoModelId(this.opts.cfg.defaultModel))
+        ? {
+            model: requested || "auto",
+            resolvedModel: modelId,
+            optimizeFor,
+          }
         : { model: modelId }),
     });
 
@@ -125,7 +141,7 @@ export class LocalAgentTaskHandler implements TaskHandlers {
         try {
           agent = await Agent.resume(resumeId, {
             apiKey: this.opts.apiKey,
-            model: { id: modelId },
+            model,
             local: {
               cwd: repo.cwd,
               settingSources: [],
@@ -135,6 +151,7 @@ export class LocalAgentTaskHandler implements TaskHandlers {
             taskId: task.id,
             agentId: agent.agentId,
             model: modelId,
+            optimizeFor: model.params ? optimizeFor : undefined,
             cwd: repo.cwd,
           });
         } catch (resumeErr) {
@@ -153,6 +170,7 @@ export class LocalAgentTaskHandler implements TaskHandlers {
           taskId: task.id,
           agentId: agent.agentId,
           model: modelId,
+          optimizeFor: model.params ? optimizeFor : undefined,
           cwd: repo.cwd,
         });
       }
@@ -262,16 +280,13 @@ export class LocalAgentTaskHandler implements TaskHandlers {
   }
 }
 
-/** Resolve task.model: empty / "auto" → Slave defaultModel. */
+/** @deprecated use resolveModelSelection — kept for call-site string checks. */
 export function resolveTaskModel(
   taskModel: string | null | undefined,
   defaultModel: string,
+  optimizeFor: OptimizeFor = "balanced",
 ): string {
-  const raw = (taskModel ?? "").trim();
-  if (!raw || raw.toLowerCase() === "auto") {
-    return defaultModel.trim() || "composer-2.5";
-  }
-  return raw;
+  return resolveModelSelection(taskModel, defaultModel, optimizeFor).id;
 }
 
 /** Compile-time / runtime guard: AgentOptions must not enable cloud. */

@@ -4,6 +4,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
+import {
+  parseOptimizeFor,
+  type OptimizeFor,
+} from "./agent/modelSelection.js";
 
 /** Project whitelist entry (formerly `repos`). */
 export interface ProjectConfig {
@@ -30,8 +34,13 @@ export interface SlaveConfig {
   apiKeyEnv: string;
   /** Environment variable name that holds the Gateway Bearer token (M04-P02+). */
   tokenEnv: string;
-  /** Default Local Agent model id when task.model is omitted. */
+  /**
+   * Default Local Agent model when task.model is omitted.
+   * Use `auto` / `auto-smart` for Cursor Router (IDE Auto).
+   */
   defaultModel: string;
+  /** Cursor Router mode when resolving auto / auto-smart. */
+  optimizeFor: OptimizeFor;
   /**
    * When true (default), project.sync may call Local Agent for a short summary
    * if API key is present. Disable via config or env SYNC_AI_SUMMARY=0.
@@ -62,6 +71,7 @@ type RawConfig = {
   apiKeyEnv?: unknown;
   tokenEnv?: unknown;
   defaultModel?: unknown;
+  optimizeFor?: unknown;
   syncAiSummary?: unknown;
   /** Forbidden: secrets must come from env named by apiKeyEnv. */
   apiKey?: unknown;
@@ -187,8 +197,14 @@ export function validateConfig(raw: unknown): SlaveConfig {
       : requireString(obj.tokenEnv, "tokenEnv");
   const defaultModel =
     obj.defaultModel === undefined || obj.defaultModel === null
-      ? "composer-2.5"
+      ? "auto-smart"
       : requireString(obj.defaultModel, "defaultModel");
+  let optimizeFor: OptimizeFor;
+  try {
+    optimizeFor = parseOptimizeFor(obj.optimizeFor);
+  } catch (err) {
+    throw new ConfigError(err instanceof Error ? err.message : String(err));
+  }
 
   let syncAiSummary = true;
   if (obj.syncAiSummary !== undefined && obj.syncAiSummary !== null) {
@@ -215,6 +231,7 @@ export function validateConfig(raw: unknown): SlaveConfig {
     apiKeyEnv,
     tokenEnv,
     defaultModel,
+    optimizeFor,
     syncAiSummary,
   };
   if (name !== undefined) {
@@ -260,6 +277,7 @@ export function configSummary(cfg: SlaveConfig): Record<string, unknown> {
     apiKeyEnv: cfg.apiKeyEnv,
     tokenEnv: cfg.tokenEnv,
     defaultModel: cfg.defaultModel,
+    optimizeFor: cfg.optimizeFor,
     syncAiSummary: cfg.syncAiSummary,
     apiKeyPresent: Boolean(process.env[cfg.apiKeyEnv]),
     tokenPresent: Boolean(process.env[cfg.tokenEnv]),

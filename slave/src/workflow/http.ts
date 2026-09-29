@@ -120,6 +120,28 @@ export class GatewayHttpApi {
     }
     return (await res.json()) as NodeDiffPayload;
   }
+
+  /** Slave → Gateway project sync report (M08). */
+  async postProjectSync(body: {
+    requestId: string;
+    slaveId: string;
+    repoId: string;
+    payload: Record<string, unknown>;
+  }): Promise<{ ok: boolean; syncedAt?: string }> {
+    const res = await fetch(`${this.baseUrl}/v1/project-sync`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`postProjectSync ${res.status}: ${text}`);
+    }
+    return (await res.json()) as { ok: boolean; syncedAt?: string };
+  }
 }
 
 export type { WorkflowNode };

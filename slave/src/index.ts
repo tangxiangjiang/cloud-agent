@@ -14,6 +14,7 @@ import type { TaskHandlers } from "./gateway/types.js";
 import { log, setLogLevel } from "./log.js";
 import { buildProjectCatalog } from "./project/catalog.js";
 import { ensureAllProjectGitRepos } from "./project/ensureGit.js";
+import { collectProjectSync } from "./project/syncCollect.js";
 import { StubTaskHandler } from "./tasks/stubHandler.js";
 import { GatewayHttpApi, gatewayHttpBase } from "./workflow/http.js";
 import { SerialDagScheduler } from "./workflow/scheduler.js";
@@ -103,6 +104,7 @@ async function main(): Promise<void> {
 
   // Client is created first so scheduler can emit via it; scheduler wired after.
   let scheduler!: SerialDagScheduler;
+  let client!: GatewayClient;
 
   const clientOpts: ConstructorParameters<typeof GatewayClient>[0] = {
     url: cfg.gatewayUrl,
@@ -114,11 +116,44 @@ async function main(): Promise<void> {
     onWorkflowAssign: (run) => scheduler.enqueue(run),
     onWorkflowRevise: (msg) => scheduler.enqueueRevise(msg),
     onWorkflowReview: (msg) => scheduler.enqueueReview(msg),
+    onProjectSync: async ({ requestId, repoId }) => {
+      const payload = await collectProjectSync({
+        cfg,
+        slaveId: cfg.slaveId,
+        requestId,
+        repoId,
+      });
+      try {
+        await http.postProjectSync({
+          requestId,
+          slaveId: cfg.slaveId,
+          repoId,
+          payload: payload as unknown as Record<string, unknown>,
+        });
+        log.info("project.sync reported via HTTP", {
+          repoId,
+          requestId,
+          branch: payload.branch,
+          dirty: payload.dirty,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        log.warn("project.sync HTTP failed; falling back to WS", {
+          repoId,
+          error: message,
+        });
+        client.sendProjectSyncResult({
+          requestId,
+          repoId,
+          payload: payload as unknown as Record<string, unknown>,
+        });
+      }
+    },
   };
   if (cfg.name !== undefined) {
     clientOpts.name = cfg.name;
   }
-  const client = new GatewayClient(clientOpts);
+  client = new GatewayClient(clientOpts);
 
   const apiKey = process.env[cfg.apiKeyEnv]?.trim();
   const commitAi =

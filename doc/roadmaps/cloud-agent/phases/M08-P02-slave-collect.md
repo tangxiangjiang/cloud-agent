@@ -17,12 +17,12 @@ Slave 收到 `project.sync` 后，在白名单 cwd 内做**结构化只读采集
 
 ## 完成定义（DoD）
 
-- [ ] 处理 WS `project.sync`；`repoId` 必须命中白名单
-- [ ] 采集：`branch` / `head` / `dirty` / milestones 索引 / progress phases / 可选 `git log -n 10`
-- [ ] 组装 `ProjectSyncPayload`（schemaVersion=1）并 `POST /v1/project-sync`（或 WS result）
-- [ ] 失败时上报 error 字段，不崩溃进程
-- [ ] 单测：无 git / 无 progress 文件时的降级
-- [ ] 默认不写工作区文件
+- [x] 处理 WS `project.sync`；`repoId` 必须命中白名单
+- [x] 采集：`branch` / `head` / `dirty` / milestones 索引 / progress phases / 可选 `git log -n 10`
+- [x] 组装 `ProjectSyncPayload`（schemaVersion=1）并 `POST /v1/project-sync`（或 WS result）
+- [x] 失败时上报 error 字段，不崩溃进程
+- [x] 单测：无 git / 无 progress 文件时的降级
+- [x] 默认不写工作区文件
 
 ## 禁止事项
 

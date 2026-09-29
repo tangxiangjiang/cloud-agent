@@ -60,6 +60,8 @@ export type InboundMessage =
       decision: "approve" | "reject" | string;
       comment?: string;
     }
+  | { type: "project.sync"; requestId?: string; repoId: string }
+  | { type: "project.sync.ok"; requestId?: string }
   | { type: "error"; error?: string }
   | { type: string; [k: string]: unknown };
 

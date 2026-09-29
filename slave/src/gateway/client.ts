@@ -29,6 +29,11 @@ export interface GatewayClientOptions {
   onWorkflowRevise?: (msg: WorkflowReviseMessage) => void | Promise<void>;
   /** Optional review hook: approve → write progress; reject → no progress */
   onWorkflowReview?: (msg: WorkflowReviewMessage) => void | Promise<void>;
+  /** Optional project.sync collect hook (M08). */
+  onProjectSync?: (msg: {
+    requestId: string;
+    repoId: string;
+  }) => void | Promise<void>;
   heartbeatMs?: number;
   /** Initial reconnect delay; doubles up to maxReconnectMs. */
   reconnectMs?: number;
@@ -301,6 +306,55 @@ export class GatewayClient {
         }
         break;
       }
+      case "project.sync": {
+        const m = msg as { requestId?: string; repoId?: string };
+        const requestId = (m.requestId ?? "").trim();
+        const repoId = (m.repoId ?? "").trim();
+        if (!repoId) {
+          log.warn("project.sync missing repoId");
+          break;
+        }
+        log.info("project.sync requested", { requestId: requestId || null, repoId });
+        if (this.opts.onProjectSync) {
+          try {
+            await this.opts.onProjectSync({
+              requestId: requestId || `req_${Date.now()}`,
+              repoId,
+            });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            log.error("project.sync handler failed", { repoId, error: message });
+            this.sendProjectSyncResult({
+              requestId: requestId || `req_${Date.now()}`,
+              repoId,
+              payload: {
+                schemaVersion: 1,
+                requestId: requestId || `req_${Date.now()}`,
+                slaveId: this.opts.slaveId,
+                repoId,
+                error: message,
+                summary: `collect failed: ${message}`,
+                syncedAt: new Date().toISOString(),
+                branch: null,
+                head: null,
+                dirty: null,
+                phases: [],
+                recentCommits: [],
+                warnings: [],
+                activeWorkflows: [],
+              },
+            });
+          }
+        } else {
+          log.warn("project.sync ignored (no handler)");
+        }
+        break;
+      }
+      case "project.sync.ok":
+        log.info("project.sync.ok", {
+          requestId: (msg as { requestId?: string }).requestId ?? null,
+        });
+        break;
       case "error":
         log.error("gateway error", {
           error: (msg as { error?: string }).error ?? "unknown",
@@ -315,6 +369,21 @@ export class GatewayClient {
   emitTaskEvent: EmitEvent = (taskId, kind, payload) => {
     this.emitEvent(taskId, kind, payload);
   };
+
+  /** WS fallback when HTTP POST /v1/project-sync is unavailable. */
+  sendProjectSyncResult(body: {
+    requestId: string;
+    repoId: string;
+    payload: Record<string, unknown>;
+  }): void {
+    this.send({
+      type: "project.sync.result",
+      requestId: body.requestId,
+      slaveId: this.opts.slaveId,
+      repoId: body.repoId,
+      payload: body.payload,
+    });
+  }
 
   private sendRegister(): void {
     const projects = this.opts.projects;

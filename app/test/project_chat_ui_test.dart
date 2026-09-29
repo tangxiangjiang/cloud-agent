@@ -31,10 +31,28 @@ SlaveInfo _slave({bool online = true}) => SlaveInfo.fromJson({
     });
 
 void main() {
-  test('ChatApi create and sendMessage', () async {
+  test('ChatApi create, listModels and sendMessage', () async {
     var posts = 0;
+    var gets = 0;
     final api = ChatApi(
       session: _session,
+      get: (uri, {headers}) async {
+        gets++;
+        expect(headers?['Authorization'], 'Bearer tok_chat_test_xxxx');
+        if (uri.path == '/v1/models') {
+          return http.Response(
+            jsonEncode({
+              'default': 'auto',
+              'models': [
+                {'id': 'auto', 'label': 'Auto'},
+                {'id': 'composer-2.5', 'label': 'Composer 2.5'},
+              ],
+            }),
+            200,
+          );
+        }
+        return http.Response('{}', 404);
+      },
       post: (uri, {headers, body}) async {
         posts++;
         expect(headers?['Authorization'], 'Bearer tok_chat_test_xxxx');
@@ -57,13 +75,14 @@ void main() {
         if (uri.path.endsWith('/messages')) {
           final map = jsonDecode(body as String) as Map;
           expect(map['text'], 'hello');
-          expect(map['mode'], 'agent');
+          expect(map['mode'], 'ask');
+          expect(map['model'], 'composer-2.5');
           return http.Response(
             jsonEncode({
               'taskId': 'tsk_1',
               'chatId': 'chat_1',
-              'mode': 'agent',
-              'model': 'auto',
+              'mode': 'ask',
+              'model': 'composer-2.5',
             }),
             202,
           );
@@ -72,6 +91,10 @@ void main() {
       },
     );
 
+    final catalog = await api.listModels();
+    expect(catalog.models.length, 2);
+    expect(catalog.defaultId, 'auto');
+
     final sess = await api.createChat(
       slaveId: 'slave_devpc',
       repoId: 'r_cloud_agent',
@@ -79,9 +102,15 @@ void main() {
     expect(sess.id, 'chat_1');
     expect(sess.model, 'auto');
 
-    final send = await api.sendMessage(chatId: sess.id, text: 'hello', mode: 'agent');
+    final send = await api.sendMessage(
+      chatId: sess.id,
+      text: 'hello',
+      mode: 'ask',
+      model: 'composer-2.5',
+    );
     expect(send.taskId, 'tsk_1');
     expect(posts, 2);
+    expect(gets, 1);
   });
 
   testWidgets('project page has Chat entry', (tester) async {
@@ -117,6 +146,21 @@ void main() {
     var created = false;
     final api = ChatApi(
       session: _session,
+      get: (uri, {headers}) async {
+        if (uri.path == '/v1/models') {
+          return http.Response(
+            jsonEncode({
+              'default': 'auto',
+              'models': [
+                {'id': 'auto', 'label': 'Auto'},
+                {'id': 'composer-2.5', 'label': 'Composer 2.5'},
+              ],
+            }),
+            200,
+          );
+        }
+        return http.Response('{}', 404);
+      },
       post: (uri, {headers, body}) async {
         if (uri.path == '/v1/chats') {
           created = true;
@@ -134,12 +178,15 @@ void main() {
           );
         }
         if (uri.path.endsWith('/messages')) {
+          final map = jsonDecode(body as String) as Map;
+          expect(map['mode'], 'ask');
+          expect(map['model'], 'composer-2.5');
           return http.Response(
             jsonEncode({
               'taskId': 'tsk_ui',
               'chatId': 'chat_ui',
-              'mode': 'agent',
-              'model': 'auto',
+              'mode': 'ask',
+              'model': 'composer-2.5',
             }),
             202,
           );
@@ -173,7 +220,18 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(created, isTrue);
-    expect(find.textContaining('Agent · Auto'), findsWidgets);
+    expect(find.text('Agent'), findsWidgets);
+    expect(find.text('Ask'), findsOneWidget);
+    expect(find.text('Plan'), findsOneWidget);
+    expect(find.text('Auto'), findsWidgets);
+
+    await tester.tap(find.text('Ask'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(DropdownButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Composer 2.5').last);
+    await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField), 'add loading');
     await tester.tap(find.byTooltip('Send'));

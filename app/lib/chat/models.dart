@@ -100,3 +100,53 @@ class ChatSendResult {
     );
   }
 }
+
+/// Entry from GET /v1/models.
+class ModelEntry {
+  const ModelEntry({required this.id, required this.label});
+
+  final String id;
+  final String label;
+
+  factory ModelEntry.fromJson(Map<String, dynamic> json) {
+    final id = json['id'] as String? ?? '';
+    return ModelEntry(
+      id: id,
+      label: json['label'] as String? ?? id,
+    );
+  }
+}
+
+/// Catalog from GET /v1/models (M09-P03).
+class ModelCatalog {
+  const ModelCatalog({
+    this.defaultId = 'auto',
+    this.models = const [
+      ModelEntry(id: 'auto', label: 'Auto'),
+    ],
+  });
+
+  final String defaultId;
+  final List<ModelEntry> models;
+
+  factory ModelCatalog.fromJson(Map<String, dynamic> json) {
+    final raw = json['models'];
+    final models = <ModelEntry>[];
+    if (raw is List) {
+      for (final m in raw) {
+        if (m is Map) {
+          models.add(ModelEntry.fromJson(Map<String, dynamic>.from(m)));
+        }
+      }
+    }
+    if (models.isEmpty) {
+      models.add(const ModelEntry(id: 'auto', label: 'Auto'));
+    }
+    return ModelCatalog(
+      defaultId: json['default'] as String? ?? 'auto',
+      models: models,
+    );
+  }
+
+  static const fallback = ModelCatalog();
+}

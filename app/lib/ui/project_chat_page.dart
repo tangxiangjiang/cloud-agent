@@ -25,7 +25,7 @@ class _Bubble {
   bool done;
 }
 
-/// Project chat: Agent mode + Auto model (M09-P02).
+/// Project chat: Agent / Ask / Plan + model picker (M09-P03).
 class ProjectChatPage extends StatefulWidget {
   const ProjectChatPage({
     super.key,
@@ -55,6 +55,9 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
   final List<_Bubble> _bubbles = [];
 
   ChatSession? _session;
+  ModelCatalog _catalog = ModelCatalog.fallback;
+  String _mode = 'agent';
+  String _model = 'auto';
   bool _starting = true;
   bool _sending = false;
   bool _running = false;
@@ -67,10 +70,30 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
 
   bool get _online => widget.slave.online;
 
+  String get _modeLabel {
+    switch (_mode) {
+      case 'ask':
+        return 'Ask';
+      case 'plan':
+        return 'Plan';
+      default:
+        return 'Agent';
+    }
+  }
+
+  String get _modelLabel => _labelForModel(_model);
+
+  String _labelForModel(String id) {
+    for (final m in _catalog.models) {
+      if (m.id == id) return m.label;
+    }
+    return id;
+  }
+
   @override
   void initState() {
     super.initState();
-    unawaited(_ensureSession());
+    unawaited(_bootstrap());
   }
 
   @override
@@ -79,6 +102,26 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
     _input.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  Future<void> _bootstrap() async {
+    setState(() {
+      _starting = true;
+      _error = null;
+    });
+    try {
+      final catalog = await _api.listModels();
+      if (!mounted) return;
+      setState(() {
+        _catalog = catalog;
+        if (!_catalog.models.any((m) => m.id == _model)) {
+          _model = catalog.defaultId;
+        }
+      });
+    } catch (_) {
+      // Keep fallback catalog; chat still works with Auto.
+    }
+    await _ensureSession();
   }
 
   Future<void> _ensureSession() async {
@@ -90,12 +133,14 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
       final sess = await _api.createChat(
         slaveId: widget.slave.id,
         repoId: widget.project.id,
-        mode: 'agent',
-        model: 'auto',
+        mode: _mode,
+        model: _model,
       );
       if (!mounted) return;
       setState(() {
         _session = sess;
+        _mode = sess.mode;
+        _model = sess.model;
         _starting = false;
       });
     } catch (e) {
@@ -207,8 +252,8 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
       final result = await _api.sendMessage(
         chatId: sess.id,
         text: text,
-        mode: 'agent',
-        model: 'auto',
+        mode: _mode,
+        model: _model,
       );
       if (!mounted) return;
       setState(() {
@@ -289,21 +334,14 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
     final title = widget.project.name.isNotEmpty
         ? widget.project.name
         : widget.project.id;
+    final modelIds = _catalog.models.map((m) => m.id).toList();
+    if (!modelIds.contains(_model)) {
+      modelIds.insert(0, _model);
+    }
 
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Chat · $title', style: const TextStyle(fontSize: 16)),
-            Text(
-              'Agent · Auto',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
+        title: Text('Chat · $title', style: const TextStyle(fontSize: 16)),
         actions: [
           IconButton(
             tooltip: 'New chat',
@@ -314,6 +352,55 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
       ),
       body: Column(
         children: [
+          Material(
+            color: theme.colorScheme.surfaceContainerLow,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'agent', label: Text('Agent')),
+                        ButtonSegment(value: 'ask', label: Text('Ask')),
+                        ButtonSegment(value: 'plan', label: Text('Plan')),
+                      ],
+                      selected: {_mode},
+                      onSelectionChanged: _starting || _running || _sending
+                          ? null
+                          : (next) {
+                              if (next.isEmpty) return;
+                              setState(() => _mode = next.first);
+                            },
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: modelIds.contains(_model) ? _model : modelIds.first,
+                      items: [
+                        for (final id in modelIds)
+                          DropdownMenuItem(
+                            value: id,
+                            child: Text(_labelForModel(id)),
+                          ),
+                      ],
+                      onChanged: _starting || _running || _sending
+                          ? null
+                          : (v) {
+                              if (v == null) return;
+                              setState(() => _model = v);
+                            },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
           if (!_online)
             Material(
               color: theme.colorScheme.errorContainer,
@@ -340,7 +427,7 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
                     child: Text(
                       _starting
                           ? 'Starting chat…'
-                          : 'Say what you want to change in this project.',
+                          : 'Say what you want ($_modeLabel · $_modelLabel).',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -406,9 +493,9 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
                       enabled: !_starting && _online,
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => unawaited(_send()),
-                      decoration: const InputDecoration(
-                        hintText: 'Message (Agent · Auto)',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        hintText: 'Message ($_modeLabel · $_modelLabel)',
+                        border: const OutlineInputBorder(),
                         isDense: true,
                       ),
                     ),
@@ -423,7 +510,8 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
                   else
                     IconButton.filled(
                       tooltip: 'Send',
-                      onPressed: _online && !_starting ? () => unawaited(_send()) : null,
+                      onPressed:
+                          _online && !_starting ? () => unawaited(_send()) : null,
                       icon: const Icon(Icons.send),
                     ),
                 ],

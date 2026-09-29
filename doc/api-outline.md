@@ -125,6 +125,7 @@ GET 响应额外字段（对账，不改写节点 status）：
 | GET | `/v1/chats/{id}` | 会话 + messages 摘要 |
 | POST | `/v1/chats/{id}/messages` | `{text,mode?,model?}` → `202 {taskId,chatId}`；组 mode 前缀 prompt → Task |
 | POST | `/v1/chats/{id}/stop` | 取消最近一条关联 Task（同 `POST /v1/tasks/{id}/cancel`） |
+| GET | `/v1/models` | 模型目录 `{default,models[{id,label}]}`；`GATEWAY_MODELS` 可覆盖 |
 
 Task 可选字段：`chatId`、`mode`、`model`（`auto` 由 Slave 解析为 `defaultModel`）。流式仍走 App WS / `GET /v1/tasks/{id}/events`。审计：`chat.create` / `chat.message` / `chat.stop`。
 

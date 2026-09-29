@@ -72,6 +72,7 @@ curl -s http://127.0.0.1:8080/v1/auth/me \
 | `-pair-code` / `GATEWAY_PAIR_CODE` | 配对码；为空则启动时随机生成并打日志 |
 | `-audit-log` / `GATEWAY_AUDIT_LOG` | 审计 JSONL 路径；默认 stderr（见 [docs/audit.md](./docs/audit.md)） |
 | `-config` / `GATEWAY_CONFIG` | YAML 配置（slave 占位列表）；见 `config.example.yaml` |
+| `GATEWAY_MODELS` | 可选；逗号分隔 model id，供 `GET /v1/models`（缺省内置 Auto + 常用列表） |
 
 ```bash
 copy config.example.yaml config.yaml   # Windows

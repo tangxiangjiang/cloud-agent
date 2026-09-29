@@ -48,6 +48,16 @@ class ChatApi {
         .replace(queryParameters: query);
   }
 
+  /// Allowed chat models for the App picker (static Gateway catalog).
+  Future<ModelCatalog> listModels() async {
+    final res = await _get(
+      _uri('/v1/models'),
+      headers: _headers,
+    );
+    _throwIfBad(res, 'List models');
+    return ModelCatalog.fromJson(_decodeMap(res.body));
+  }
+
   Future<ChatSession> createChat({
     required String slaveId,
     required String repoId,

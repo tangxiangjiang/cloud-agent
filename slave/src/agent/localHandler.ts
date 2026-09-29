@@ -7,6 +7,7 @@ import type { AssignedTask, EmitEvent, TaskHandlers } from "../gateway/types.js"
 import { log } from "../log.js";
 import { attemptRunCancel } from "../safety/cancel.js";
 import { resolveAssignedRepo } from "../safety/repo.js";
+import { applyChatModePrefix, normalizeChatMode } from "./chatMode.js";
 import { mapSdkMessage } from "./mapStream.js";
 
 export interface LocalAgentHandlerOptions {
@@ -79,8 +80,8 @@ export class LocalAgentTaskHandler implements TaskHandlers {
     }
     const { repo } = resolved;
 
-    const prompt = (task.prompt ?? "").trim();
-    if (!prompt) {
+    const rawPrompt = (task.prompt ?? "").trim();
+    if (!rawPrompt) {
       emit(task.id, "error", {
         message: "empty prompt",
         code: "empty_prompt",
@@ -89,6 +90,7 @@ export class LocalAgentTaskHandler implements TaskHandlers {
       emit(task.id, "done", { status: "error" });
       return;
     }
+    const prompt = applyChatModePrefix(rawPrompt, task.mode);
 
     if (this.cancelled.has(task.id)) {
       emit(task.id, "done", { status: "cancelled" });
@@ -110,9 +112,10 @@ export class LocalAgentTaskHandler implements TaskHandlers {
 
     emit(task.id, "status", {
       status: "running",
+      mode: normalizeChatMode(task.mode),
       ...(String(task.model ?? "").trim().toLowerCase() === "auto"
         ? { resolvedModel: modelId, model: "auto" }
-        : {}),
+        : { model: modelId }),
     });
 
     let agent: Awaited<ReturnType<typeof Agent.create>> | undefined;

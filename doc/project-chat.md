@@ -1,6 +1,6 @@
 # 工程 AI 对话（Project Chat）
 
-**状态：Gateway Chat→Task + App 基础对话页已落地（M09-P01～P02）；Ask/Plan UI / 模型列表 / 历史见后续 phase**  
+**状态：Gateway Chat→Task + App 对话页（Agent/Ask/Plan + 模型列表）已落地（M09-P01～P03）；会话历史见 M09-P04**  
 入口：App **Slave → 工程 → 对话**（与 Milestone / 同步并列）。  
 体验对齐 Cursor 对话：**Agent / Ask / Plan** + **模型选择**（默认 **Auto**）。
 
@@ -48,7 +48,7 @@ Slave → 工程
 | **Auto**（默认） | 不传具体 model，或传 `auto`；Slave 用 `defaultModel` / 服务端推荐映射 |
 | 具体 id | 如 `composer-2.5`；来自 Gateway 下发的 **允许列表**（避免 App 写死过时列表） |
 
-`GET /v1/models`（或随 `GET /v1/slaves` 附带）返回：
+`GET /v1/models`（Bearer）返回静态可配置目录（`GATEWAY_MODELS` 逗号分隔 id，缺省内置 Auto + 常用 id）：
 
 ```json
 {
@@ -60,7 +60,15 @@ Slave → 工程
 }
 ```
 
-首版列表可由 Gateway 配置 / Slave register 上报合并；未知 id 时 Slave 回退 `defaultModel` 并在事件里注明。
+未知 id 时 Slave 回退 `defaultModel` 并在 status 事件里带上解析结果。
+
+### Ask / Plan 系统前缀
+
+Gateway `BuildPrompt` 与 Slave `applyChatModePrefix` 双端注入（Slave 若发现已有 `[Mode: Ask` / `[Mode: Plan` 则不重复）：
+
+- **Ask**：`[Mode: Ask — READ-ONLY. …]` — 禁止写文件 / 变仓库  
+- **Plan**：`[Mode: Plan — Produce a structured plan…]` — 默认不改仓，除非用户明确执行  
+- **Agent**：不加前缀
 
 ---
 
@@ -179,9 +187,10 @@ Gateway 组 prompt（注入 mode 前缀）→ 现有 `task.assign`。
 | Phase | 内容 |
 |-------|------|
 | **P1** | `POST /chats` + `/messages` 映射 Task；App 基础对话页（仅 Agent + Auto/单模型） |
-| **P2** | Ask / Plan 前缀与 UI 切换；模型列表 API；停止 / 新会话 |
-| **P3** | 会话历史持久化（SQLite）；多会话列表 |
-| **P4**（可选） | 「提交为审核」→ 生成 diff 进 awaiting_review |
+| **P2** | App 对话 UI（流式 / 停止 / 新会话） |
+| **P3** | Ask / Plan 前缀与 UI 切换；`GET /v1/models` |
+| **P4** | 会话历史持久化（SQLite）；多会话列表 |
+| **P5**（可选） | 「提交为审核」→ 生成 diff 进 awaiting_review |
 
 Roadmap：[M09](./roadmaps/cloud-agent/milestones/M09-project-chat.md)。
 

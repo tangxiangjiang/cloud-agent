@@ -14,6 +14,7 @@ import (
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/audit"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/auth"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/chat"
+	"github.com/tangxiangjiang/cloud-agent/gateway/internal/models"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/persist"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/projectsync"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/ratelimit"
@@ -133,6 +134,7 @@ func main() {
 	mux.Handle("GET /v1/auth/me", authStore.Middleware(http.HandlerFunc(handleMe)))
 	mux.Handle("GET /v1/slaves", authStore.Middleware(http.HandlerFunc(slaveReg.HandleList)))
 	mux.Handle("GET /v1/audit", authStore.Middleware(http.HandlerFunc(auditLog.HandleList)))
+	mux.Handle("GET /v1/models", authStore.Middleware(models.Handler(models.FromEnv())))
 
 	taskHandler := authStore.Middleware(auditTasks(auditLog, taskStore.Handler()))
 	mux.Handle("/v1/tasks", taskHandler)

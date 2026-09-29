@@ -114,6 +114,20 @@ GET 响应额外字段（对账，不改写节点 status）：
 
 `warnings[].code`：`progress_ahead` | `gateway_ahead` | `no_active_workflow` | `no_workflow` | `dirty_worktree`。
 
+### 工程对话（M09-P01 Gateway）
+
+见 **[project-chat.md](./project-chat.md)**。Bearer；**不**接受 App 传入 cwd。会话进程内存储（持久化见 M09-P04）。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/v1/chats` | 创建会话 `{slaveId,repoId,mode?,model?}` → `201` |
+| GET | `/v1/chats?slaveId=&repoId=` | 列表 |
+| GET | `/v1/chats/{id}` | 会话 + messages 摘要 |
+| POST | `/v1/chats/{id}/messages` | `{text,mode?,model?}` → `202 {taskId,chatId}`；组 mode 前缀 prompt → Task |
+| POST | `/v1/chats/{id}/stop` | 取消最近一条关联 Task（同 `POST /v1/tasks/{id}/cancel`） |
+
+Task 可选字段：`chatId`、`mode`、`model`（`auto` 由 Slave 解析为 `defaultModel`）。流式仍走 App WS / `GET /v1/tasks/{id}/events`。审计：`chat.create` / `chat.message` / `chat.stop`。
+
 ### 创建任务
 
 `POST /tasks`  

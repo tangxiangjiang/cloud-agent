@@ -12,11 +12,11 @@ Gateway 提供 ChatSession；发消息创建/复用 Task 下发给 Slave；复�
 
 ## 完成定义（DoD）
 
-- [ ] `POST /v1/chats`、`POST /v1/chats/{id}/messages` → `taskId`
-- [ ] Task 含 `chatId` / `mode` / `model`；`auto` 在 Slave 可解析
-- [ ] 取消走现有 cancel
-- [ ] SQLite 或内存会话（至少进程内可用；持久化可放到 P04）
-- [ ] 单测：创建会话 + 发消息生成 task
+- [x] `POST /v1/chats`、`POST /v1/chats/{id}/messages` → `taskId`
+- [x] Task 含 `chatId` / `mode` / `model`；`auto` 在 Slave 可解析
+- [x] 取消走现有 cancel
+- [x] SQLite 或内存会话（至少进程内可用；持久化可放到 P04）
+- [x] 单测：创建会话 + 发消息生成 task
 
 ## 禁止事项
 

@@ -38,6 +38,8 @@ type Task struct {
 	RepoID        *string    `json:"repoId"`
 	Prompt        *string    `json:"prompt"`
 	Model         *string    `json:"model"`
+	ChatID        *string    `json:"chatId,omitempty"`
+	Mode          *string    `json:"mode,omitempty"`
 	AgentID       *string    `json:"agentId"`
 	RunID         *string    `json:"runId"`
 	WorkflowID    *string    `json:"workflowId"`
@@ -66,6 +68,21 @@ type createRequest struct {
 	Model      string `json:"model"`
 	WorkflowID string `json:"workflowId"`
 	NodeID     string `json:"nodeId"`
+	ChatID     string `json:"chatId"`
+	Mode       string `json:"mode"`
+}
+
+// CreateInput is used by Chat and HTTP create.
+type CreateInput struct {
+	SlaveID    string
+	RepoID     string
+	Prompt     string
+	Model      string
+	WorkflowID string
+	NodeID     string
+	ChatID     string
+	Mode       string
+	IdemKey    string
 }
 
 type Store struct {
@@ -110,14 +127,38 @@ func (s *Store) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idem := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	out, replay, err := s.Create(CreateInput{
+		SlaveID:    req.SlaveID,
+		RepoID:     req.RepoID,
+		Prompt:     req.Prompt,
+		Model:      req.Model,
+		WorkflowID: req.WorkflowID,
+		NodeID:     req.NodeID,
+		ChatID:     req.ChatID,
+		Mode:       req.Mode,
+		IdemKey:    strings.TrimSpace(r.Header.Get("Idempotency-Key")),
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if replay {
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	writeJSON(w, http.StatusCreated, out)
+}
+
+// Create inserts a queued task and optionally dispatches to Slave (non-workflow).
+// replay=true when Idempotency-Key hit an existing task.
+func (s *Store) Create(in CreateInput) (out *Task, replay bool, err error) {
+	idem := strings.TrimSpace(in.IdemKey)
 	if idem != "" {
 		s.mu.RLock()
 		if id, ok := s.byIdem[idem]; ok {
 			t := cloneTask(s.tasks[id])
 			s.mu.RUnlock()
-			writeJSON(w, http.StatusOK, t)
-			return
+			return t, true, nil
 		}
 		s.mu.RUnlock()
 	}
@@ -125,26 +166,31 @@ func (s *Store) handleCreate(w http.ResponseWriter, r *http.Request) {
 	now := s.now()
 	id, err := newID("tsk")
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "id generation failed"})
-		return
+		return nil, false, err
 	}
 	created := now.Format(time.RFC3339Nano)
 	updated := created
 	t := &Task{
 		ID:        id,
 		Status:    StatusQueued,
-		SlaveID:   strPtr(req.SlaveID),
-		RepoID:    strPtr(req.RepoID),
-		Prompt:    strPtr(req.Prompt),
-		Model:     strPtr(req.Model),
+		SlaveID:   strPtr(strings.TrimSpace(in.SlaveID)),
+		RepoID:    strPtr(strings.TrimSpace(in.RepoID)),
+		Prompt:    strPtr(in.Prompt),
+		Model:     strPtr(strings.TrimSpace(in.Model)),
 		CreatedAt: created,
 		UpdatedAt: &updated,
 	}
-	if v := strings.TrimSpace(req.WorkflowID); v != "" {
+	if v := strings.TrimSpace(in.WorkflowID); v != "" {
 		t.WorkflowID = strPtr(v)
 	}
-	if v := strings.TrimSpace(req.NodeID); v != "" {
+	if v := strings.TrimSpace(in.NodeID); v != "" {
 		t.NodeID = strPtr(v)
+	}
+	if v := strings.TrimSpace(in.ChatID); v != "" {
+		t.ChatID = strPtr(v)
+	}
+	if v := strings.TrimSpace(in.Mode); v != "" {
+		t.Mode = strPtr(v)
 	}
 
 	s.mu.Lock()
@@ -152,21 +198,19 @@ func (s *Store) handleCreate(w http.ResponseWriter, r *http.Request) {
 		if idExisting, ok := s.byIdem[idem]; ok {
 			existing := cloneTask(s.tasks[idExisting])
 			s.mu.Unlock()
-			writeJSON(w, http.StatusOK, existing)
-			return
+			return existing, true, nil
 		}
 		s.byIdem[idem] = id
 	}
 	s.tasks[id] = t
-	out := cloneTask(t)
+	out = cloneTask(t)
 	s.mu.Unlock()
 
 	// Workflow-owned tasks are executed by Slave DAG scheduler; skip WS assign.
 	if s.dispatcher != nil && (out.WorkflowID == nil || *out.WorkflowID == "") {
 		go s.dispatcher.Assign(out)
 	}
-
-	writeJSON(w, http.StatusCreated, out)
+	return out, false, nil
 }
 
 func (s *Store) handleList(w http.ResponseWriter, r *http.Request) {
@@ -243,24 +287,30 @@ func (s *Store) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 func (s *Store) handleCancel(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	status, code := s.Cancel(id)
+	if code == http.StatusNotFound {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	writeJSON(w, code, map[string]string{"status": status})
+}
 
+// Cancel requests Slave cancel when possible; returns resulting status and HTTP-ish code.
+func (s *Store) Cancel(id string) (status string, code int) {
 	s.mu.Lock()
 	t, ok := s.tasks[id]
 	if !ok {
 		s.mu.Unlock()
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
-		return
+		return "", http.StatusNotFound
 	}
 	switch t.Status {
 	case StatusFinished, StatusError, StatusCancelled:
 		st := t.Status
 		s.mu.Unlock()
-		writeJSON(w, http.StatusOK, map[string]string{"status": st})
-		return
+		return st, http.StatusOK
 	case StatusCancelling:
 		s.mu.Unlock()
-		writeJSON(w, http.StatusOK, map[string]string{"status": StatusCancelling})
-		return
+		return StatusCancelling, http.StatusOK
 	}
 	slaveID := ""
 	if t.SlaveID != nil {
@@ -277,18 +327,16 @@ func (s *Store) handleCancel(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 	t, ok = s.tasks[id]
 	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
-		return
+		return "", http.StatusNotFound
 	}
 	u := s.now().Format(time.RFC3339Nano)
 	t.UpdatedAt = &u
 	if delivered {
 		t.Status = StatusCancelling
-		writeJSON(w, http.StatusOK, map[string]string{"status": StatusCancelling})
-		return
+		return StatusCancelling, http.StatusOK
 	}
 	t.Status = StatusCancelled
-	writeJSON(w, http.StatusOK, map[string]string{"status": StatusCancelled})
+	return StatusCancelled, http.StatusOK
 }
 
 // ListQueuedForSlave returns queued tasks for a slave (for claim-on-register).

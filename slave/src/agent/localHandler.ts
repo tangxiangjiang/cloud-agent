@@ -95,7 +95,7 @@ export class LocalAgentTaskHandler implements TaskHandlers {
       return;
     }
 
-    const modelId = (task.model ?? this.opts.defaultModel).trim() || this.opts.defaultModel;
+    const modelId = resolveTaskModel(task.model, this.opts.defaultModel);
 
     // Local-only: whitelist cwd only; never cloud; never settingSources "all".
     const createOptions: AgentOptions = {
@@ -108,7 +108,12 @@ export class LocalAgentTaskHandler implements TaskHandlers {
     };
     assertNoCloud(createOptions);
 
-    emit(task.id, "status", { status: "running" });
+    emit(task.id, "status", {
+      status: "running",
+      ...(String(task.model ?? "").trim().toLowerCase() === "auto"
+        ? { resolvedModel: modelId, model: "auto" }
+        : {}),
+    });
 
     let agent: Awaited<ReturnType<typeof Agent.create>> | undefined;
     try {
@@ -252,6 +257,18 @@ export class LocalAgentTaskHandler implements TaskHandlers {
       }
     }
   }
+}
+
+/** Resolve task.model: empty / "auto" → Slave defaultModel. */
+export function resolveTaskModel(
+  taskModel: string | null | undefined,
+  defaultModel: string,
+): string {
+  const raw = (taskModel ?? "").trim();
+  if (!raw || raw.toLowerCase() === "auto") {
+    return defaultModel.trim() || "composer-2.5";
+  }
+  return raw;
 }
 
 /** Compile-time / runtime guard: AgentOptions must not enable cloud. */

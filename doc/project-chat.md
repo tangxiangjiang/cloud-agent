@@ -1,6 +1,6 @@
 # 工程 AI 对话（Project Chat）
 
-**状态：设计草案（未实现）**  
+**状态：Gateway Chat→Task 桥接已落地（M09-P01）；App UI / Ask·Plan 完善 / 历史见后续 phase**  
 入口：App **Slave → 工程 → 对话**（与 Milestone / 同步并列）。  
 体验对齐 Cursor 对话：**Agent / Ask / Plan** + **模型选择**（默认 **Auto**）。
 

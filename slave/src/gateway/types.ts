@@ -16,6 +16,10 @@ export interface AssignedTask {
   resumeAgentId?: string | null;
   workflowId?: string | null;
   nodeId?: string | null;
+  /** Project chat session id when task originated from POST /v1/chats/.../messages. */
+  chatId?: string | null;
+  /** agent | ask | plan */
+  mode?: string | null;
   createdAt?: string;
   updatedAt?: string | null;
   error?: { code?: string; message?: string } | null;

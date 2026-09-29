@@ -13,6 +13,7 @@ import (
 
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/audit"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/auth"
+	"github.com/tangxiangjiang/cloud-agent/gateway/internal/chat"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/persist"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/projectsync"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/ratelimit"
@@ -47,10 +48,12 @@ func main() {
 	auditLog := audit.NewLogger(1000, sink)
 	pairLimit := ratelimit.New(0, 10)   // 10 / min / IP
 	reviseLimit := ratelimit.New(0, 30) // 30 / min / IP
+	chatLimit := ratelimit.New(0, 30)   // 30 / min / IP (chat messages)
 
 	authStore := auth.NewStore(pairCode)
 	taskStore := task.NewStore()
 	wfStore := workflow.NewStore()
+	chatStore := chat.NewStore(taskStore)
 
 	var stateStore persist.Backend
 	if strings.TrimSpace(*stateFile) != "" {
@@ -142,6 +145,11 @@ func main() {
 
 	syncSvc.Mount(mux, authStore.Middleware)
 
+	chatInner := limitPathSuffix(chatLimit, "/messages", auditChats(auditLog, chatStore.Handler()))
+	chatHandler := authStore.Middleware(chatInner)
+	mux.Handle("/v1/chats", chatHandler)
+	mux.Handle("/v1/chats/", chatHandler)
+
 	mux.HandleFunc("GET /v1/ws", hub.HandleWS)
 	mux.HandleFunc("GET /v1/slave/ws", slaveHub.HandleWS)
 
@@ -207,6 +215,24 @@ func auditWorkflows(a *audit.Logger, next http.Handler) http.Handler {
 			action = "workflow.revise"
 		case strings.HasSuffix(p, "/review"):
 			action = "workflow.review"
+		}
+		a.Record(action, r.Method, p, audit.ClientIP(r), rw.status, nil)
+	})
+}
+
+func auditChats(a *audit.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rw := &statusRecorder{ResponseWriter: w, status: 200}
+		next.ServeHTTP(rw, r)
+		action := "chat"
+		p := r.URL.Path
+		switch {
+		case r.Method == http.MethodPost && p == "/v1/chats":
+			action = "chat.create"
+		case strings.HasSuffix(p, "/messages"):
+			action = "chat.message"
+		case strings.HasSuffix(p, "/stop"):
+			action = "chat.stop"
 		}
 		a.Record(action, r.Method, p, audit.ClientIP(r), rw.status, nil)
 	})

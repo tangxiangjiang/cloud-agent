@@ -60,6 +60,9 @@ class WorkflowNode {
 
   bool get isReady => status == 'ready';
 
+  bool get canReset =>
+      status == 'failed' || status == 'rejected' || status == 'cancelled';
+
   /// Policy/model edits apply immediately except while actively running.
   bool get policyEditable => status != 'running';
 

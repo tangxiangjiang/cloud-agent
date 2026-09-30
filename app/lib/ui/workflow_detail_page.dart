@@ -202,6 +202,62 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
     }
   }
 
+  Future<void> _resetNode(WorkflowNode node) async {
+    if (_busy) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('重新跑这个节点？'),
+        content: Text(
+          '仅重置「${node.title?.isNotEmpty == true ? node.title : node.id}」'
+          '（failed/rejected），已通过的上游节点保留，不会新建整个 workflow。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('重置并开始'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final result = await _api.resetNode(
+        widget.workflowId,
+        node.id,
+        start: true,
+      );
+      if (!mounted) return;
+      setState(() {
+        _run = result.workflow;
+        _busy = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.delivered
+                ? '已重置并下发 ${node.id}'
+                : '已重置 ${node.id}（Slave 离线时稍后 Continue/Start）',
+          ),
+        ),
+      );
+    } on WorkflowApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+    }
+  }
+
   Future<void> _patchPolicy(WorkflowNode node, {String? model, NodePolicy? policy}) async {
     if (_patchingNodeId != null) return;
     setState(() => _patchingNodeId = node.id);
@@ -289,9 +345,12 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
                           onPressed: null,
                           icon: const Icon(Icons.play_arrow),
                           label: Text(
-                            run.isTerminal
-                                ? 'Terminal (${run.status})'
-                                : '已下发 (${run.status})',
+                            run.status == 'failed' &&
+                                    run.nodes.any((n) => n.canReset)
+                                ? '有失败节点 — 点「重新跑」'
+                                : run.isTerminal
+                                    ? 'Terminal (${run.status})'
+                                    : '已下发 (${run.status})',
                           ),
                         ),
                       ),
@@ -354,7 +413,7 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
           const SizedBox(height: 4),
           Text(
             'Model + switches PATCH to Gateway (defaults off). '
-            'Ready nodes: Start; after approve without auto-next: Continue.',
+            'Ready: 开始；失败/拒绝: 重新跑（只重置该节点）；Approve 后无自动下个: Continue。',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -387,6 +446,9 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
                   : null,
               onStartNode: n.isReady && !_busy
                   ? () => unawaited(_startNode(n.id))
+                  : null,
+              onResetNode: n.canReset && !_busy
+                  ? () => unawaited(_resetNode(n))
                   : null,
               onOpenLogs: n.taskId != null && n.taskId!.isNotEmpty
                   ? () {
@@ -454,6 +516,7 @@ class _NodeTile extends StatelessWidget {
     this.onAutoApproveChanged,
     this.onAutoStartNextChanged,
     this.onStartNode,
+    this.onResetNode,
     this.onOpenLogs,
     this.onOpenDiff,
     this.onOpenReview,
@@ -467,6 +530,7 @@ class _NodeTile extends StatelessWidget {
   final ValueChanged<bool>? onAutoApproveChanged;
   final ValueChanged<bool>? onAutoStartNextChanged;
   final VoidCallback? onStartNode;
+  final VoidCallback? onResetNode;
   final VoidCallback? onOpenLogs;
   final VoidCallback? onOpenDiff;
   final VoidCallback? onOpenReview;
@@ -606,6 +670,13 @@ class _NodeTile extends StatelessWidget {
                     onPressed: onStartNode,
                     icon: const Icon(Icons.play_arrow, size: 18),
                     label: const Text('开始'),
+                  ),
+                if (onResetNode != null)
+                  FilledButton.tonalIcon(
+                    key: ValueKey('resetNode-${node.id}'),
+                    onPressed: onResetNode,
+                    icon: const Icon(Icons.restart_alt, size: 18),
+                    label: const Text('重新跑'),
                   ),
                 if (patching)
                   const SizedBox(

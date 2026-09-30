@@ -812,3 +812,80 @@ func TestCreateInheritsDefaultModelAndPolicy(t *testing.T) {
 	}
 }
 
+func TestResetFailedNodeRevivesWorkflow(t *testing.T) {
+	store := workflow.NewStore()
+	h := store.Handler()
+	body := `{
+		"bundleId":"b","repoId":"r","slaveId":"slave_devpc",
+		"nodes":[
+			{"id":"A","dependsOn":[]},
+			{"id":"B","dependsOn":["A"]}
+		]
+	}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/start", nil))
+
+	failRec := httptest.NewRecorder()
+	h.ServeHTTP(failRec, httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
+		strings.NewReader(`{"status":"failed","taskId":"tsk_fail"}`)))
+	if failRec.Code != http.StatusOK {
+		t.Fatalf("fail patch: %d %s", failRec.Code, failRec.Body.String())
+	}
+	var failed workflow.Run
+	_ = json.NewDecoder(failRec.Body).Decode(&failed)
+	if failed.Status != workflow.StatusFailed {
+		t.Fatalf("workflow want failed, got %s", failed.Status)
+	}
+
+	// continue blocked while failed
+	cont := httptest.NewRecorder()
+	h.ServeHTTP(cont, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/continue", nil))
+	if cont.Code != http.StatusConflict {
+		t.Fatalf("continue want 409, got %d", cont.Code)
+	}
+
+	resetRec := httptest.NewRecorder()
+	h.ServeHTTP(resetRec, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/reset",
+		strings.NewReader(`{"start":false}`)))
+	if resetRec.Code != http.StatusOK {
+		t.Fatalf("reset: %d %s", resetRec.Code, resetRec.Body.String())
+	}
+	var resp struct {
+		Workflow workflow.Run `json:"workflow"`
+		NodeID   string       `json:"nodeId"`
+	}
+	_ = json.NewDecoder(resetRec.Body).Decode(&resp)
+	if resp.Workflow.Status != workflow.StatusRunning {
+		t.Fatalf("workflow want running after reset, got %s", resp.Workflow.Status)
+	}
+	var nodeA *workflow.Node
+	for i := range resp.Workflow.Nodes {
+		if resp.Workflow.Nodes[i].ID == "A" {
+			nodeA = &resp.Workflow.Nodes[i]
+			break
+		}
+	}
+	if nodeA == nil || nodeA.Status != workflow.NodeReady {
+		t.Fatalf("A want ready, got %+v", nodeA)
+	}
+	if nodeA.TaskID != nil {
+		t.Fatalf("taskId should clear, got %v", *nodeA.TaskID)
+	}
+
+	// approved node cannot reset
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
+		strings.NewReader(`{"status":"awaiting_review"}`)))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/review",
+		strings.NewReader(`{"decision":"approve"}`)))
+	bad := httptest.NewRecorder()
+	h.ServeHTTP(bad, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/reset",
+		strings.NewReader(`{}`)))
+	if bad.Code != http.StatusConflict {
+		t.Fatalf("reset approved want 409, got %d %s", bad.Code, bad.Body.String())
+	}
+}
+

@@ -176,6 +176,7 @@ func (s *Store) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/workflows/{id}/continue", s.handleContinue)
 	mux.HandleFunc("PATCH /v1/workflows/{id}/nodes/{nodeId}", s.handlePatchNode)
 	mux.HandleFunc("POST /v1/workflows/{id}/nodes/{nodeId}/start", s.handleStartNode)
+	mux.HandleFunc("POST /v1/workflows/{id}/nodes/{nodeId}/reset", s.handleResetNode)
 	mux.HandleFunc("GET /v1/workflows/{id}/nodes/{nodeId}/diff", s.handleGetDiff)
 	mux.HandleFunc("PUT /v1/workflows/{id}/nodes/{nodeId}/diff", s.handlePutDiff)
 	mux.HandleFunc("POST /v1/workflows/{id}/nodes/{nodeId}/revise", s.handleRevise)
@@ -640,14 +641,7 @@ func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 		autoStartNext = nodeWantsAutoStartNext(run.Nodes[idx])
 	}
 
-	RecomputeReady(run.Nodes)
-	if anyNode(run.Nodes, NodeFailed) {
-		run.Status = StatusFailed
-	} else if allNodesTerminalSuccess(run.Nodes) {
-		run.Status = StatusCompleted
-	} else if run.Status == StatusPending {
-		run.Status = StatusRunning
-	}
+	syncWorkflowStatusAfterNodes(run)
 	u := s.now().Format(time.RFC3339Nano)
 	run.UpdatedAt = &u
 	slaveID := ""
@@ -665,6 +659,84 @@ func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 	}
 	// Body remains the Run (backward compatible with Slave/App PATCH clients).
 	writeJSON(w, http.StatusOK, out)
+}
+
+// handleResetNode clears a failed/rejected/cancelled node back to ready/pending
+// without recreating the whole workflow. Optional body: {"start":true} to assign if ready.
+func (s *Store) handleResetNode(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	nodeID := r.PathValue("nodeId")
+	startAfter := false
+	if r.Body != nil && r.ContentLength != 0 {
+		var req struct {
+			Start *bool `json:"start"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil && req.Start != nil {
+			startAfter = *req.Start
+		}
+	}
+
+	s.mu.Lock()
+	run, ok := s.runs[id]
+	if !ok {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "workflow not found"})
+		return
+	}
+	if run.Status == StatusCompleted {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "workflow completed"})
+		return
+	}
+	idx := -1
+	for i := range run.Nodes {
+		if run.Nodes[i].ID == nodeID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
+		return
+	}
+	st := run.Nodes[idx].Status
+	switch st {
+	case NodeFailed, NodeRejected, NodeCancelled:
+		// ok
+	default:
+		s.mu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "node must be failed, rejected, or cancelled",
+		})
+		return
+	}
+
+	// Clear prior task so logs/UI don't stick to the failed run.
+	run.Nodes[idx].TaskID = nil
+	run.Nodes[idx].Status = NodePending
+	syncWorkflowStatusAfterNodes(run)
+	// Ensure this node is ready when deps are satisfied (RecomputeReady only touches pending).
+	if run.Nodes[idx].Status == NodePending {
+		// deps already checked inside RecomputeReady; if still pending, deps not approved
+	}
+	u := s.now().Format(time.RFC3339Nano)
+	run.UpdatedAt = &u
+	out := cloneRun(run)
+	nodeReady := out.Nodes[idx].Status == NodeReady
+	s.mu.Unlock()
+	s.notifyChange()
+
+	delivered := false
+	if startAfter && nodeReady && s.starter != nil {
+		delivered = s.starter.AssignWorkflow(out)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"workflow":  out,
+		"delivered": delivered,
+		"nodeId":    nodeID,
+		"started":   startAfter && nodeReady,
+	})
 }
 
 func validNodeStatus(st string) bool {
@@ -696,6 +768,30 @@ func allNodesTerminalSuccess(nodes []Node) bool {
 		}
 	}
 	return len(nodes) > 0
+}
+
+// syncWorkflowStatusAfterNodes recomputes ready nodes and workflow status.
+// Clearing the last failed/rejected node can revive a failed workflow to running.
+func syncWorkflowStatusAfterNodes(run *Run) {
+	if run == nil {
+		return
+	}
+	RecomputeReady(run.Nodes)
+	if anyNode(run.Nodes, NodeFailed) || anyNode(run.Nodes, NodeRejected) {
+		run.Status = StatusFailed
+		return
+	}
+	if allNodesTerminalSuccess(run.Nodes) {
+		run.Status = StatusCompleted
+		return
+	}
+	if run.Status == StatusFailed || run.Status == StatusCancelled {
+		run.Status = StatusRunning
+		return
+	}
+	if run.Status == StatusPending {
+		run.Status = StatusRunning
+	}
 }
 
 func (s *Store) handleRevise(w http.ResponseWriter, r *http.Request) {

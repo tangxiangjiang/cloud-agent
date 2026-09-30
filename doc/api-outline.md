@@ -250,6 +250,9 @@ Header 可选：`Idempotency-Key: <uuid>`
 
 `POST /workflows/{workflowId}/nodes/{nodeId}/start` → 仅当该节点为 `ready` 时 assign。
 
+`POST /workflows/{workflowId}/nodes/{nodeId}/reset` → 仅当节点为 `failed` / `rejected` / `cancelled`：清 `taskId`、回到 `ready`（依赖未齐则为 `pending`），并把 workflow 从 `failed` 恢复为 `running`（已通过的上游不动）。  
+Body 可选 `{ "start": true }`：节点变为 `ready` 时立即 `AssignWorkflow`。
+
 **节点状态 / 策略同步**（Bearer；Slave 在跑节点时调用）
 
 `PATCH /workflows/{workflowId}/nodes/{nodeId}`

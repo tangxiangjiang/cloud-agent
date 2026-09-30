@@ -159,6 +159,27 @@ class WorkflowApi {
     return _parseDelivered(res.body, 'Start node');
   }
 
+  /// Reset a failed/rejected/cancelled node (does not recreate the workflow).
+  /// When [start] is true and the node becomes ready, assign to Slave.
+  Future<StartWorkflowResult> resetNode(
+    String workflowId,
+    String nodeId, {
+    bool start = true,
+  }) async {
+    final res = await _post(
+      _uri(
+        '/v1/workflows/${Uri.encodeComponent(workflowId)}/nodes/${Uri.encodeComponent(nodeId)}/reset',
+      ),
+      headers: {
+        ..._headers,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: jsonEncode({'start': start}),
+    );
+    _throwIfBad(res, 'Reset node');
+    return _parseDelivered(res.body, 'Reset node');
+  }
+
   /// PATCH model / policy (and optional status fields used by Slave).
   Future<WorkflowRun> patchNode(
     String workflowId,

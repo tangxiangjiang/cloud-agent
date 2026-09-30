@@ -46,3 +46,10 @@
 - [ ] 审计：`GET /v1/audit` 或 `GATEWAY_AUDIT_LOG` JSONL
 - [ ] pair / revise 超限返回 429
 - [ ] Local only；未引导提交密钥进 git
+
+## Slave-Master（M11）
+
+- [ ] Master 配置多条 Slave，每条仅一工程
+- [ ] App 可见配置与 running/stopped；Start / Stop / Restart
+- [ ] App 增删改配置经 Gateway → Master 落盘
+- [ ] 一子 Slave 崩溃不影响其他工程

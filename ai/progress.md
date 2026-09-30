@@ -41,10 +41,17 @@
 | M09-P02 | approved | App 对话页（Agent + Auto） |
 | M09-P03 | approved | Ask / Plan 与模型列表 |
 | M09-P04 | approved | 会话历史与多会话 |
+| M09-P05 | pending | 对话真流式（token / text-delta） |
 | M10-P01 | approved | Gateway 续跑门闩 |
 | M10-P02 | approved | App 节点策略控件 |
 | M10-P03 | approved | 自动通过 |
 | M10-P04 | approved | 创建/批量默认策略 |
+| M11-P01 | pending | 设计与配置契约 |
+| M11-P02 | pending | Master 守护与子进程生命周期 |
+| M11-P03 | pending | 子 Slave 一工程约束与迁移 |
+| M11-P04 | pending | Gateway Master 通道与 HTTP |
+| M11-P05 | pending | App 舰队管理 UI |
+| M11-P06 | pending | 联调、审计与部署文档 |
 
 ## 勾选
 
@@ -84,7 +91,14 @@
 - [x] M09-P02 @approved 2026-09-30
 - [x] M09-P03 @approved 2026-09-30
 - [x] M09-P04 @approved 2026-09-30
+- [ ] M09-P05
 - [x] M10-P01 @approved 2026-09-30
 - [x] M10-P02 @approved 2026-09-30
 - [x] M10-P03 @approved 2026-09-30
 - [x] M10-P04 @approved 2026-09-30
+- [ ] M11-P01
+- [ ] M11-P02
+- [ ] M11-P03
+- [ ] M11-P04
+- [ ] M11-P05
+- [ ] M11-P06

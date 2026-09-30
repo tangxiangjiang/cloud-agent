@@ -163,6 +163,18 @@
             "mode": "phase_file",
             "extra": "Do not mark approved; human review required."
           }
+        },
+        {
+          "id": "M09-P05",
+          "title": "对话真流式",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M09-P05-true-streaming.md",
+          "dependsOn": ["M09-P04"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required. Wire SDK onDelta/text-delta to assistant.delta for true streaming. Follow doc/project-chat.md streaming section."
+          }
         }
       ]
     },
@@ -217,6 +229,85 @@
           "prompt": {
             "mode": "phase_file",
             "extra": "Do not mark approved; human review required."
+          }
+        }
+      ]
+    },
+    {
+      "id": "M11",
+      "title": "Slave-Master",
+      "progressDoc": "ai/progress.md",
+      "phases": [
+        {
+          "id": "M11-P01",
+          "title": "设计与配置契约",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M11-P01-design-config.md",
+          "dependsOn": [],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required. Follow doc/slave-master.md. Design/docs/contracts only."
+          }
+        },
+        {
+          "id": "M11-P02",
+          "title": "Master 守护与子进程生命周期",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M11-P02-master-lifecycle.md",
+          "dependsOn": ["M11-P01"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required. Follow doc/slave-master.md. No Gateway/App UI in this phase."
+          }
+        },
+        {
+          "id": "M11-P03",
+          "title": "子 Slave 一工程约束与迁移",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M11-P03-one-project-slave.md",
+          "dependsOn": ["M11-P02"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required. Enforce 1 project per child slave; migration docs/script."
+          }
+        },
+        {
+          "id": "M11-P04",
+          "title": "Gateway Master 通道与 HTTP",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M11-P04-gateway-master-api.md",
+          "dependsOn": ["M11-P03"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required. Follow doc/slave-master.md control plane. Data plane still per child slaveId."
+          }
+        },
+        {
+          "id": "M11-P05",
+          "title": "App 舰队管理 UI",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M11-P05-app-fleet-ui.md",
+          "dependsOn": ["M11-P04"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required. No API keys in App. Start/stop/CRUD via Gateway."
+          }
+        },
+        {
+          "id": "M11-P06",
+          "title": "联调、审计与部署文档",
+          "phaseRef": "doc/roadmaps/cloud-agent/phases/M11-P06-docs-harden.md",
+          "dependsOn": ["M11-P05"],
+          "model": "composer-2.5",
+          "onFailure": "stop",
+          "prompt": {
+            "mode": "phase_file",
+            "extra": "Do not mark approved; human review required. Deploy + audit + deprecate multi-project single process."
           }
         }
       ]

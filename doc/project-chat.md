@@ -1,6 +1,6 @@
 # 工程 AI 对话（Project Chat）
 
-**状态：工程对话（含 Ask/Plan、模型列表、会话历史）已落地（M09-P01～P04）**  
+**状态：工程对话（Ask/Plan、模型、历史）已落地（M09-P01～P04）；真流式见 M09-P05**  
 入口：App **Slave → 工程 → 对话**（与 Milestone / 同步并列）。  
 体验对齐 Cursor 对话：**Agent / Ask / Plan** + **模型选择**（默认 **Auto**）。
 
@@ -9,6 +9,17 @@
 - App **不持有** `CURSOR_API_KEY`，不直连 Slave  
 - 执行只在工程白名单 `cwd`（Local Agent）  
 - 流式输出走现有 App WS（`assistant.delta` / tool / status）  
+
+### 流式现状与缺口（M09-P05）
+
+| 层 | 现状 | 问题 |
+|----|------|------|
+| Slave | `agent.send` + `run.stream()`，把整段 `assistant` 文本映射成 `assistant.delta` | **粒度粗**（非 token）；看起来像「生成完才出字」 |
+| SDK | 细粒度应用 `send({ onDelta })` / `text-delta` | **尚未接线** |
+| App | `sendMessage` 返回后才订 WS；Gateway 可 replay 缓冲 | 晚订阅时可能**一坨刷出** |
+| Gateway / App UI | 每条 delta 即推即改气泡；**不**等 `done` 才显示 | 协议侧已支持流式 |
+
+目标：Slave 发高频 `assistant.delta`；App 气泡边收边长。
 
 相关：自由任务雏形见 [api-outline.md](./api-outline.md) `POST /v1/tasks`；审核闸门见 [workflow.md](./workflow.md)。本功能是**会话式**自由任务，不替代 Milestone DAG。
 
@@ -216,7 +227,8 @@ Gateway 组 prompt（注入 mode 前缀）→ 现有 `task.assign`。
 | **P2** | App 对话 UI（流式 / 停止 / 新会话） |
 | **P3** | Ask / Plan 前缀与 UI 切换；`GET /v1/models` |
 | **P4** | 会话历史持久化（SQLite）；多会话列表 |
-| **P5**（可选） | 「提交为审核」→ 生成 diff 进 awaiting_review |
+| **P5** | **真流式**：SDK `onDelta`/`text-delta` → 高频 `assistant.delta`；可选更早订 WS |
+| **P6**（可选） | 「提交为审核」→ 生成 diff 进 awaiting_review |
 
 Roadmap：[M09](./roadmaps/cloud-agent/milestones/M09-project-chat.md)。
 

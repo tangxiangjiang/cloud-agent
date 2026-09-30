@@ -67,6 +67,28 @@ Base path：`/v1`
 
 `repos` 为 `projects` 的扁平映射（兼容旧客户端 / 任务白名单）。App 主路径：Slave → 工程 → Milestone → `POST /v1/workflows`（或续跑已有实例）。工程索引见 [`ai/milestones.md`](../ai/milestones.md)。
 
+（**M11**）数据面仍按上表子 `slaveId`；一工程一 Slave。控制面见下节与 **[slave-master.md](./slave-master.md)**。
+
+### Masters（slave-master 控制面，M11 草案）
+
+见 **[slave-master.md](./slave-master.md)**。Bearer；Master 出站 `GET /v1/master/ws`。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/v1/masters` | 已注册 Master 列表 |
+| GET | `/v1/masters/{masterId}` | 配置 ∪ 运行态 `slaves[]` |
+| POST | `/v1/masters/{masterId}/slaves` | 新增 Slave 配置 → Master |
+| PUT/PATCH | `/v1/masters/{masterId}/slaves/{slaveId}` | 改配置 |
+| DELETE | `/v1/masters/{masterId}/slaves/{slaveId}` | 删配置（先 stop） |
+| POST | `/v1/masters/{masterId}/slaves/{slaveId}/start` | 拉起子进程 |
+| POST | `/v1/masters/{masterId}/slaves/{slaveId}/stop` | 关闭 |
+| POST | `/v1/masters/{masterId}/slaves/{slaveId}/restart` | 重启 |
+
+Master offline → `409`；指令未送达 → `503`；等 Master 回执超时 → `504`（默认 30s）。  
+App **不**传 API Key；`cwd` / `repoId` 唯一性由 Master 校验。  
+`stop` 时 Gateway 对该 `slaveId` 尽力 cancel 进行中 tasks，再等 Master grace/kill。  
+舰队管理以本表为准；`GET /v1/slaves` 仍为数据面登记（工程入口只展示 running+online）。
+
 ### 工程状态同步（M08-P01 Gateway）
 
 见 **[project-sync.md](./project-sync.md)**。Bearer 鉴权；**不**改写 Workflow 节点 status。

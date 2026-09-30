@@ -20,22 +20,26 @@
 │ Flutter App │ ───────────────────► │  Gateway (Go)    │
 │  (手机)     │ ◄─── 事件推送 ────── │                  │
 └─────────────┘                      └────────┬─────────┘
-                                              │ Slave 出站连接
-                                              ▼
-                                     ┌──────────────────┐
-                                     │ Local Slave      │
-                                     │ (Node + SDK)     │
-                                     │ local.cwd=仓库   │
-                                     └──────────────────┘
+                                              │
+                         ┌────────────────────┼────────────────────┐
+                         │ Master 控制面       │ 子 Slave 数据面（每工程） │
+                         ▼                    ▼                    ▼
+                ┌────────────────┐   ┌─────────────┐      ┌─────────────┐
+                │ slave-master   │──►│ Slave × 工程 │  …   │ Slave × 工程 │
+                │ 配置 / 启停    │   │ Local Agent  │      │ Local Agent  │
+                └────────────────┘   └─────────────┘      └─────────────┘
 ```
+
+（**M11**：一工程一 Slave；Master 为守护进程。设计见 [slave-master.md](./slave-master.md)。过渡期仍可单进程多 `projects[]`，将废弃。）
 
 | 角色 | 职责 | 语言 |
 |------|------|------|
-| Flutter App | **触发 + 进度 + 审核**（不做设计/拆 phase） | Dart |
-| Gateway | 鉴权、工作流/任务、审核中转、向 App 推事件、审计 | **Go** |
-| Local Slave | 调 `@cursor/sdk` 编码；**仅 App 批准后**更新进度文档 | **Node (TS)** |
+| Flutter App | **触发 + 进度 + 审核**；M11 起可管 Master 下 Slave 配置/启停 | Dart |
+| Gateway | 鉴权、工作流/任务、审核中转、向 App 推事件、审计；Master 控制面 | **Go** |
+| slave-master | 本机守护：多 Slave 配置、spawn/stop、向 Gateway 上报 | **Node (TS)** |
+| Local Slave | 调 `@cursor/sdk` 编码（**单工程**）；**仅 App 批准后**更新进度文档 | **Node (TS)** |
 
-分工原则：Go 只做网关与编排；**只有 Node Slave 调用官方 SDK**。
+分工原则：Go 只做网关与编排；**只有子 Node Slave 调用官方 SDK**；Master 不跑 Agent。
 
 ## 数据流（两条）
 
@@ -66,7 +70,8 @@
 | 工具闸门 | hooks / sandbox 限制危险 shell（后续迭代） |
 | 审计 | 记录 pair / task / workflow / review / revise（见 [gateway/docs/audit.md](../gateway/docs/audit.md)；不含 API Key 明文） |
 | 状态持久化 | Gateway → `.local/gateway/state.db`（SQLite；可从旧 `state.json` 迁移）；Slave baselines → `.local/slave-runtime.json`（见 [gateway/docs/state-persist.md](../gateway/docs/state-persist.md)） |
-| 工程对账（规划） | App「同步」→ Slave 采集 → `project_sync`；见 [project-sync.md](./project-sync.md) |
+| 工程对账 | App「同步」→ Slave 采集 → `project_sync`；见 [project-sync.md](./project-sync.md) |
+| 进程隔离（M11） | 一工程一 Slave；Master 守护；见 [slave-master.md](./slave-master.md) |
 
 说明：Local 仍会把任务相关**代码片段/上下文**发给 Cursor 托管模型做推理——与「整仓落在云端 VM」不同。个人相对云厂商法务不对等，故用架构规避整仓托管风险。
 

@@ -18,7 +18,7 @@ M06（App WS / Task 流）；建议与 M08 并行或之后（工程页入口已�
 
 ## 验收
 
-- 工程页可进对话，发送后看到流式回复  
+- 工程页可进对话，发送后看到流式回复（**真·边生成边显示**，见 P05）  
 - Agent / Ask / Plan 切换影响后续发送（至少 prompt 可区分）  
 - 模型默认 Auto；可选具体 model  
 - 可停止生成；Key 不进 App  
@@ -31,3 +31,4 @@ M06（App WS / Task 流）；建议与 M08 并行或之后（工程页入口已�
 | M09-P02 | [App 对话页（Agent + Auto）](../phases/M09-P02-app-chat-ui.md) |
 | M09-P03 | [Ask / Plan 与模型列表](../phases/M09-P03-modes-models.md) |
 | M09-P04 | [会话历史与多会话](../phases/M09-P04-chat-history.md) |
+| M09-P05 | [对话真流式（token / text-delta）](../phases/M09-P05-true-streaming.md) |

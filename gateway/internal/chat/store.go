@@ -54,12 +54,16 @@ type Session struct {
 	Mode         string    `json:"mode"`
 	Model        string    `json:"model"`
 	Status       string    `json:"status"`
+	Title        string    `json:"title,omitempty"`
 	Messages     []Message `json:"messages"`
 	CreatedAt    string    `json:"createdAt"`
 	UpdatedAt    string    `json:"updatedAt"`
 	Preview      string    `json:"preview,omitempty"`
 	MessageCount int       `json:"messageCount,omitempty"`
 }
+
+// AutotitleFunc asks Slave to refine a chat title from the first user message.
+type AutotitleFunc func(slaveID, chatID, text string)
 
 type createSessionRequest struct {
 	SlaveID string `json:"slaveId"`
@@ -81,11 +85,19 @@ type assistantSummaryRequest struct {
 
 // Store holds chat sessions; optional SQLite via persist.ChatSessionStore (M09-P04).
 type Store struct {
-	mu      sync.RWMutex
-	chats   map[string]*Session
-	now     func() time.Time
-	tasks   *task.Store
-	persist persist.ChatSessionStore
+	mu        sync.RWMutex
+	chats     map[string]*Session
+	now       func() time.Time
+	tasks     *task.Store
+	persist   persist.ChatSessionStore
+	autotitle AutotitleFunc
+}
+
+// SetAutotitle wires Slave-side AI title naming (optional).
+func (s *Store) SetAutotitle(fn AutotitleFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.autotitle = fn
 }
 
 func NewStore(tasks *task.Store) *Store {
@@ -133,6 +145,7 @@ func (s *Store) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/chats", s.handleCreate)
 	mux.HandleFunc("GET /v1/chats", s.handleList)
 	mux.HandleFunc("GET /v1/chats/{id}", s.handleGet)
+	mux.HandleFunc("PATCH /v1/chats/{id}", s.handlePatch)
 	mux.HandleFunc("POST /v1/chats/{id}/messages", s.handleMessage)
 	mux.HandleFunc("POST /v1/chats/{id}/assistant", s.handleAssistant)
 	mux.HandleFunc("POST /v1/chats/{id}/stop", s.handleStop)
@@ -320,6 +333,17 @@ func (s *Store) handleMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := s.now().Format(time.RFC3339Nano)
+	userCount := 0
+	for _, m := range sess.Messages {
+		if m.Role == "user" {
+			userCount++
+		}
+	}
+	needAutotitle := false
+	if userCount == 0 && strings.TrimSpace(sess.Title) == "" {
+		sess.Title = SuggestTitle(text)
+		needAutotitle = true
+	}
 	sess.Messages = append(sess.Messages, Message{
 		ID:      msgID,
 		Role:    "user",
@@ -333,8 +357,13 @@ func (s *Store) handleMessage(w http.ResponseWriter, r *http.Request) {
 	sess.UpdatedAt = now
 	slaveID := sess.SlaveID
 	repoID := sess.RepoID
+	autotitleFn := s.autotitle
 	s.persistLocked(sess)
 	s.mu.Unlock()
+
+	if needAutotitle && autotitleFn != nil && slaveID != "" {
+		go autotitleFn(slaveID, id, text)
+	}
 
 	tsk, _, err := s.tasks.Create(task.CreateInput{
 		SlaveID: slaveID,
@@ -373,6 +402,50 @@ func (s *Store) handleMessage(w http.ResponseWriter, r *http.Request) {
 		"mode":   mode,
 		"model":  model,
 	})
+}
+
+func (s *Store) handlePatch(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Title *string `json:"title"`
+		Mode  *string `json:"mode"`
+		Model *string `json:"model"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	if req.Title == nil && req.Mode == nil && req.Model == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no fields to patch"})
+		return
+	}
+	s.mu.Lock()
+	sess, ok := s.chats[id]
+	if !ok {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	if req.Title != nil {
+		t := SanitizeTitle(*req.Title)
+		if t == "" {
+			s.mu.Unlock()
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "title required"})
+			return
+		}
+		sess.Title = t
+	}
+	if req.Mode != nil {
+		sess.Mode = normalizeMode(*req.Mode)
+	}
+	if req.Model != nil {
+		sess.Model = normalizeModel(*req.Model)
+	}
+	sess.UpdatedAt = s.now().Format(time.RFC3339Nano)
+	out := cloneSession(sess, true)
+	s.persistLocked(sess)
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleAssistant records a truncated assistant summary after a turn (no tool payloads).
@@ -479,6 +552,7 @@ func (s *Store) persistLocked(sess *Session) {
 		Mode:      sess.Mode,
 		Model:     sess.Model,
 		Status:    sess.Status,
+		Title:     sess.Title,
 		Messages:  body,
 		CreatedAt: sess.CreatedAt,
 		UpdatedAt: sess.UpdatedAt,
@@ -506,6 +580,7 @@ func sessionFromRow(row persist.ChatSessionRow) (*Session, error) {
 		Mode:      row.Mode,
 		Model:     row.Model,
 		Status:    row.Status,
+		Title:     row.Title,
 		Messages:  msgs,
 		CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,

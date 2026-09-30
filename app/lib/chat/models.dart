@@ -7,6 +7,7 @@ class ChatSession {
     this.mode = 'agent',
     this.model = 'auto',
     this.status = 'idle',
+    this.title,
     this.messages = const [],
     this.createdAt,
     this.updatedAt,
@@ -20,11 +21,21 @@ class ChatSession {
   final String mode;
   final String model;
   final String status;
+  final String? title;
   final List<ChatMessageSummary> messages;
   final String? createdAt;
   final String? updatedAt;
   final String? preview;
   final int messageCount;
+
+  /// Prefer AI/user title, then preview, then id.
+  String get displayTitle {
+    final t = title?.trim();
+    if (t != null && t.isNotEmpty) return t;
+    final p = preview?.trim();
+    if (p != null && p.isNotEmpty) return p;
+    return id;
+  }
 
   factory ChatSession.fromJson(Map<String, dynamic> json) {
     final raw = json['messages'];
@@ -43,11 +54,29 @@ class ChatSession {
       mode: json['mode'] as String? ?? 'agent',
       model: json['model'] as String? ?? 'auto',
       status: json['status'] as String? ?? 'idle',
+      title: json['title'] as String?,
       messages: messages,
       createdAt: json['createdAt'] as String?,
       updatedAt: json['updatedAt'] as String?,
       preview: json['preview'] as String?,
       messageCount: json['messageCount'] as int? ?? messages.length,
+    );
+  }
+
+  ChatSession copyWith({String? title}) {
+    return ChatSession(
+      id: id,
+      slaveId: slaveId,
+      repoId: repoId,
+      mode: mode,
+      model: model,
+      status: status,
+      title: title ?? this.title,
+      messages: messages,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      preview: preview,
+      messageCount: messageCount,
     );
   }
 }

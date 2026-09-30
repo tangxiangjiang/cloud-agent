@@ -95,6 +95,22 @@ func (h *OutboundHub) RequestModelsRefresh() (slaveID string, ok bool) {
 	return "", false
 }
 
+// RequestChatAutotitle asks a Slave to name a chat from the first user message.
+func (h *OutboundHub) RequestChatAutotitle(slaveID, chatID, text string) bool {
+	h.mu.Lock()
+	c := h.conns[slaveID]
+	h.mu.Unlock()
+	if c == nil {
+		return false
+	}
+	c.sendJSON(map[string]any{
+		"type":   "chat.autotitle",
+		"chatId": chatID,
+		"text":   text,
+	})
+	return true
+}
+
 func (h *OutboundHub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := slaveUpgrader.Upgrade(w, r, nil)
 	if err != nil {

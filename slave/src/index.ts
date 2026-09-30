@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { parseArgs } from "node:util";
+import { generateChatTitleWithAi } from "./agent/chatTitleAi.js";
 import { listCursorModels } from "./agent/listModels.js";
 import { LocalAgentTaskHandler } from "./agent/localHandler.js";
 import {
@@ -149,6 +150,29 @@ async function main(): Promise<void> {
         handlers.setAvailableModels(availableModelIds);
       }
       return cursorModels;
+    },
+    onChatAutotitle: async ({ chatId, text }) => {
+      if (!apiKey || values.stub) return;
+      const cwd = cfg.projects[0]?.cwd ?? cfg.repos[0]?.cwd;
+      if (!cwd) {
+        log.warn("chat.autotitle skipped: no project cwd", { chatId });
+        return;
+      }
+      const title = await generateChatTitleWithAi({
+        apiKey,
+        model: cfg.defaultModel,
+        optimizeFor: cfg.optimizeFor,
+        autoModelId: cfg.autoModelId,
+        availableModelIds,
+        cwd,
+        text,
+      });
+      if (!title) {
+        log.info("chat.autotitle empty; keeping provisional", { chatId });
+        return;
+      }
+      await http.patchChatTitle(chatId, title);
+      log.info("chat.autotitle applied", { chatId, title });
     },
     handlers,
     onWorkflowAssign: (run) => scheduler.enqueue(run),

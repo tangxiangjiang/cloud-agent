@@ -125,6 +125,11 @@ func main() {
 	slaveHub.SetProjectSyncResultHandler(func(slaveID, requestID, repoID string, payload json.RawMessage) error {
 		return syncSvc.StoreReport(slaveID, requestID, repoID, payload)
 	})
+	chatStore.SetAutotitle(func(slaveID, chatID, text string) {
+		if !slaveHub.RequestChatAutotitle(slaveID, chatID, text) {
+			log.Printf("chat autotitle: slave %s offline for %s", slaveID, chatID)
+		}
+	})
 
 	log.Printf("pair code: %s (use POST /v1/auth/pair)", authStore.PairCode())
 

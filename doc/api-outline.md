@@ -120,10 +120,11 @@ GET 响应额外字段（对账，不改写节点 status）：
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/v1/chats` | 创建会话 `{slaveId,repoId,mode?,model?}` → `201` |
-| GET | `/v1/chats?slaveId=&repoId=` | 列表 |
+| POST | `/v1/chats` | 创建会话 `{slaveId,repoId,mode?,model?}` → `201`（App 宜懒创建：首条消息时再调） |
+| GET | `/v1/chats?slaveId=&repoId=` | 列表（`updatedAt` 降序；含 `title`/`preview`） |
 | GET | `/v1/chats/{id}` | 会话 + messages 摘要 |
-| POST | `/v1/chats/{id}/messages` | `{text,mode?,model?}` → `202 {taskId,chatId}`；组 mode 前缀 prompt → Task |
+| PATCH | `/v1/chats/{id}` | `{title}` 手工改名（Sanitize） |
+| POST | `/v1/chats/{id}/messages` | `{text,mode?,model?}` → `202 {taskId,chatId}`；首条用户消息写临时 `title` 并触发 Slave `chat.autotitle` |
 | POST | `/v1/chats/{id}/assistant` | `{taskId?,content}` 截断写入 assistant 摘要（无 tool payload） |
 | POST | `/v1/chats/{id}/stop` | 取消最近一条关联 Task（同 `POST /v1/tasks/{id}/cancel`） |
 | GET | `/v1/models` | App 下拉选择列表 `{default,models[{id,label}]}`（可编辑；首启种子来自 `GATEWAY_MODELS` / 内置） |

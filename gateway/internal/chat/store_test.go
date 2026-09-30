@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/chat"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/persist"
@@ -182,6 +183,9 @@ func TestPersistRoundTripAndList(t *testing.T) {
 	if list.Chats[0].Preview != "hello history" {
 		t.Fatalf("preview: %q", list.Chats[0].Preview)
 	}
+	if list.Chats[0].Title != "hello history" {
+		t.Fatalf("provisional title: %q", list.Chats[0].Title)
+	}
 	if len(list.Chats[0].Messages) != 0 {
 		t.Fatalf("list should omit messages: %+v", list.Chats[0].Messages)
 	}
@@ -195,5 +199,76 @@ func TestPersistRoundTripAndList(t *testing.T) {
 	}
 	if loaded.Messages[0].Role != "user" || loaded.Messages[1].Role != "assistant" {
 		t.Fatalf("roles: %+v", loaded.Messages)
+	}
+}
+
+func TestSuggestTitleAndPatch(t *testing.T) {
+	if got := chat.SuggestTitle("  fix login loading  "); got != "fix login loading" {
+		t.Fatalf("suggest: %q", got)
+	}
+	if got := chat.SanitizeTitle("  「AI 标题」  "); got != "AI 标题" {
+		t.Fatalf("sanitize: %q", got)
+	}
+
+	tasks := task.NewStore()
+	chats := chat.NewStore(tasks)
+	autoDone := make(chan struct{}, 1)
+	var gotSlave, gotText string
+	chats.SetAutotitle(func(slaveID, chatID, text string) {
+		gotSlave, gotText = slaveID, text
+		_ = chatID
+		select {
+		case autoDone <- struct{}{}:
+		default:
+		}
+	})
+	h := chats.Handler()
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(
+		http.MethodPost, "/v1/chats",
+		strings.NewReader(`{"slaveId":"slave_devpc","repoId":"r1"}`),
+	))
+	var sess chat.Session
+	_ = json.Unmarshal(rec.Body.Bytes(), &sess)
+
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, httptest.NewRequest(
+		http.MethodPost, "/v1/chats/"+sess.ID+"/messages",
+		strings.NewReader(`{"text":"rename me please"}`),
+	))
+	if rec2.Code != http.StatusAccepted {
+		t.Fatalf("msg=%d %s", rec2.Code, rec2.Body.String())
+	}
+	select {
+	case <-autoDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("autotitle not called")
+	}
+	if gotSlave != "slave_devpc" || gotText != "rename me please" {
+		t.Fatalf("autotitle args slave=%s text=%q", gotSlave, gotText)
+	}
+
+	getRec := httptest.NewRecorder()
+	h.ServeHTTP(getRec, httptest.NewRequest(http.MethodGet, "/v1/chats/"+sess.ID, nil))
+	var after chat.Session
+	_ = json.Unmarshal(getRec.Body.Bytes(), &after)
+	if after.Title != "rename me please" {
+		t.Fatalf("provisional title: %q", after.Title)
+	}
+
+	patchRec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPatch, "/v1/chats/"+sess.ID,
+		strings.NewReader(`{"title":"  手工标题  "}`),
+	)
+	h.ServeHTTP(patchRec, req)
+	if patchRec.Code != http.StatusOK {
+		t.Fatalf("patch=%d %s", patchRec.Code, patchRec.Body.String())
+	}
+	var patched chat.Session
+	_ = json.Unmarshal(patchRec.Body.Bytes(), &patched)
+	if patched.Title != "手工标题" {
+		t.Fatalf("patched title: %q", patched.Title)
 	}
 }

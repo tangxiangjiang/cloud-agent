@@ -19,6 +19,7 @@ type ChatSessionRow struct {
 	Mode      string          `json:"mode"`
 	Model     string          `json:"model"`
 	Status    string          `json:"status"`
+	Title     string          `json:"title"`
 	Messages  json.RawMessage `json:"messages"` // []Message JSON
 	CreatedAt string          `json:"createdAt"`
 	UpdatedAt string          `json:"updatedAt"`
@@ -111,17 +112,18 @@ func (s *SQLiteStore) UpsertChatSession(row ChatSessionRow) error {
 		body = "[]"
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO chat_sessions(id, slave_id, repo_id, mode, model, status, messages_json, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO chat_sessions(id, slave_id, repo_id, mode, model, status, title, messages_json, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   slave_id = excluded.slave_id,
 		   repo_id = excluded.repo_id,
 		   mode = excluded.mode,
 		   model = excluded.model,
 		   status = excluded.status,
+		   title = excluded.title,
 		   messages_json = excluded.messages_json,
 		   updated_at = excluded.updated_at`,
-		row.ID, row.SlaveID, row.RepoID, row.Mode, row.Model, row.Status,
+		row.ID, row.SlaveID, row.RepoID, row.Mode, row.Model, row.Status, row.Title,
 		body, row.CreatedAt, row.UpdatedAt,
 	)
 	return err
@@ -129,12 +131,12 @@ func (s *SQLiteStore) UpsertChatSession(row ChatSessionRow) error {
 
 // GetChatSession implements ChatSessionStore for SQLite.
 func (s *SQLiteStore) GetChatSession(id string) (*ChatSessionRow, error) {
-	var slaveID, repoID, mode, model, status, body, createdAt, updatedAt string
+	var slaveID, repoID, mode, model, status, title, body, createdAt, updatedAt string
 	err := s.db.QueryRow(
-		`SELECT slave_id, repo_id, mode, model, status, messages_json, created_at, updated_at
+		`SELECT slave_id, repo_id, mode, model, status, COALESCE(title,''), messages_json, created_at, updated_at
 		 FROM chat_sessions WHERE id = ?`,
 		id,
-	).Scan(&slaveID, &repoID, &mode, &model, &status, &body, &createdAt, &updatedAt)
+	).Scan(&slaveID, &repoID, &mode, &model, &status, &title, &body, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -148,6 +150,7 @@ func (s *SQLiteStore) GetChatSession(id string) (*ChatSessionRow, error) {
 		Mode:      mode,
 		Model:     model,
 		Status:    status,
+		Title:     title,
 		Messages:  json.RawMessage(body),
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
@@ -156,7 +159,7 @@ func (s *SQLiteStore) GetChatSession(id string) (*ChatSessionRow, error) {
 
 // ListChatSessions implements ChatSessionStore for SQLite.
 func (s *SQLiteStore) ListChatSessions(slaveID, repoID string) ([]ChatSessionRow, error) {
-	q := `SELECT id, slave_id, repo_id, mode, model, status, messages_json, created_at, updated_at
+	q := `SELECT id, slave_id, repo_id, mode, model, status, COALESCE(title,''), messages_json, created_at, updated_at
 	      FROM chat_sessions WHERE 1=1`
 	args := []any{}
 	if slaveID != "" {
@@ -178,7 +181,7 @@ func (s *SQLiteStore) ListChatSessions(slaveID, repoID string) ([]ChatSessionRow
 		var row ChatSessionRow
 		var body string
 		if err := rows.Scan(
-			&row.ID, &row.SlaveID, &row.RepoID, &row.Mode, &row.Model, &row.Status,
+			&row.ID, &row.SlaveID, &row.RepoID, &row.Mode, &row.Model, &row.Status, &row.Title,
 			&body, &row.CreatedAt, &row.UpdatedAt,
 		); err != nil {
 			return nil, err

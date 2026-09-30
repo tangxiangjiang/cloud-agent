@@ -130,7 +130,9 @@ Assistant 摘要由 App 在 turn 结束后 `POST /v1/chats/{id}/assistant` 上�
 }
 ```
 
-→ `201 { "id": "chat_…", … }`
+→ `201 { "id": "chat_…", … }`  
+
+App：**进入对话页先 `GET /v1/chats` 打开最近一条**；无历史则空白窗，**发送首条消息时再 `POST /v1/chats`**。
 
 ### 发消息
 
@@ -145,11 +147,16 @@ Assistant 摘要由 App 在 turn 结束后 `POST /v1/chats/{id}/assistant` 上�
 ```
 
 → `202 { "taskId": "tsk_…", "chatId": "chat_…" }`  
-Gateway 组 prompt（注入 mode 前缀）→ 现有 `task.assign`。
+Gateway 组 prompt（注入 mode 前缀）→ 现有 `task.assign`。  
+首条用户消息：写入临时 `title`（截断原文），并向在线 Slave 发 `chat.autotitle`；Slave 用短 Local Agent 取名后 `PATCH` 回写。
+
+### 改名
+
+`PATCH /v1/chats/{id}` → `{ "title": "手工标题" }`（用户可覆盖 AI 标题）。
 
 ### 列表 / 历史
 
-- `GET /v1/chats?slaveId=&repoId=` → `{chats:[{id,preview,messageCount,…}]}`（无 messages 正文）  
+- `GET /v1/chats?slaveId=&repoId=` → `{chats:[{id,title,preview,messageCount,…}]}`（无 messages 正文；按 `updatedAt` 降序）  
 - `GET /v1/chats/{id}` → 含截断后的 `messages[]`  
 - `POST /v1/chats/{id}/assistant` → `{taskId?,content}` 写入 assistant 摘要  
 - 实时：`GET /v1/ws` 订阅 `taskId`（与现网一致）
@@ -180,10 +187,10 @@ Gateway 组 prompt（注入 mode 前缀）→ 现有 `task.assign`。
 
 | 区域 | 行为 |
 |------|------|
-| AppBar | 工程名；模式 Segmented：Agent / Ask / Plan；模型下拉（默认 Auto） |
-| 消息区 | 用户气泡 + assistant 流式；tool 可折叠一行 |
+| AppBar | 会话标题 · 工程名（点标题或编辑可改名）；模式 Segmented：Agent / Ask / Plan；模型下拉（默认 Auto） |
+| 消息区 | 用户气泡 + assistant 流式；tool 可折叠一行；无会话时提示「发送以开始」 |
 | 底栏 | 多行输入、发送、停止（running 时） |
-| 会话 | 右上「历史」底栏列表 +「新对话」 |
+| 会话 | 进入恢复最近会话；右上「历史」列表（显示 title）+「新对话」（清空本地，首条再创建） |
 
 **与审核关系：** Agent 模式改代码**不强制**走 `awaiting_review`（自由对话）；若需「对话里改完也要审」，P3 再加「提交审核」生成临时单节点 Workflow（非首版）。
 

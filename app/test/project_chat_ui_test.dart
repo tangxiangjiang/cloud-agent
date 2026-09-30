@@ -31,9 +31,10 @@ SlaveInfo _slave({bool online = true}) => SlaveInfo.fromJson({
     });
 
 void main() {
-  test('ChatApi create, listModels and sendMessage', () async {
+  test('ChatApi create, listModels, rename and sendMessage', () async {
     var posts = 0;
     var gets = 0;
+    var patches = 0;
     final api = ChatApi(
       session: _session,
       get: (uri, {headers}) async {
@@ -89,6 +90,25 @@ void main() {
         }
         return http.Response('{}', 404);
       },
+      patch: (uri, {headers, body}) async {
+        patches++;
+        expect(uri.path, '/v1/chats/chat_1');
+        final map = jsonDecode(body as String) as Map;
+        expect(map['title'], 'My title');
+        return http.Response(
+          jsonEncode({
+            'id': 'chat_1',
+            'slaveId': 'slave_devpc',
+            'repoId': 'r_cloud_agent',
+            'mode': 'agent',
+            'model': 'auto',
+            'title': 'My title',
+            'status': 'idle',
+            'messages': <dynamic>[],
+          }),
+          200,
+        );
+      },
     );
 
     final catalog = await api.listModels();
@@ -102,6 +122,10 @@ void main() {
     expect(sess.id, 'chat_1');
     expect(sess.model, 'auto');
 
+    final renamed = await api.renameChat(sess.id, 'My title');
+    expect(renamed.title, 'My title');
+    expect(renamed.displayTitle, 'My title');
+
     final send = await api.sendMessage(
       chatId: sess.id,
       text: 'hello',
@@ -111,6 +135,7 @@ void main() {
     expect(send.taskId, 'tsk_1');
     expect(posts, 2);
     expect(gets, 1);
+    expect(patches, 1);
   });
 
   testWidgets('project page has Chat entry', (tester) async {
@@ -140,7 +165,7 @@ void main() {
     expect(find.byTooltip('Project chat'), findsOneWidget);
   });
 
-  testWidgets('chat page send shows user bubble', (tester) async {
+  testWidgets('chat page lazy-creates on first send', (tester) async {
     final slave = _slave();
     final project = slave.effectiveProjects.first;
     var created = false;
@@ -155,6 +180,24 @@ void main() {
                 {'id': 'auto', 'label': 'Auto'},
                 {'id': 'composer-2.5', 'label': 'Composer 2.5'},
               ],
+            }),
+            200,
+          );
+        }
+        if (uri.path == '/v1/chats') {
+          return http.Response(jsonEncode({'chats': <dynamic>[]}), 200);
+        }
+        if (uri.path.endsWith('/chat_ui')) {
+          return http.Response(
+            jsonEncode({
+              'id': 'chat_ui',
+              'slaveId': 'slave_devpc',
+              'repoId': 'r_cloud_agent',
+              'mode': 'ask',
+              'model': 'composer-2.5',
+              'title': 'add loading',
+              'status': 'idle',
+              'messages': <dynamic>[],
             }),
             200,
           );
@@ -206,7 +249,6 @@ void main() {
           project: project,
           api: api,
           wsFactory: (buf, taskId) {
-            // No-op WS: return client that never connects.
             return AppWsClient(
               session: _session,
               buffer: buf,
@@ -219,7 +261,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(created, isTrue);
+    expect(created, isFalse);
+    expect(find.textContaining('New chat'), findsWidgets);
     expect(find.text('Agent'), findsWidgets);
     expect(find.text('Ask'), findsOneWidget);
     expect(find.text('Plan'), findsOneWidget);
@@ -239,13 +282,15 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pumpAndSettle();
 
-    expect(find.text('add loading'), findsOneWidget);
+    expect(created, isTrue);
+    expect(find.text('add loading'), findsWidgets);
     expect(find.text('You'), findsOneWidget);
   });
 
-  testWidgets('history sheet lists chats', (tester) async {
+  testWidgets('opens latest chat and history shows title', (tester) async {
     final slave = _slave();
     final project = slave.effectiveProjects.first;
+    var created = false;
     final api = ChatApi(
       session: _session,
       get: (uri, {headers}) async {
@@ -270,7 +315,7 @@ void main() {
                   'repoId': 'r_cloud_agent',
                   'mode': 'ask',
                   'model': 'auto',
-                  'status': 'idle',
+                  'title': 'Earlier topic',
                   'preview': 'earlier question',
                   'messageCount': 2,
                   'messages': <dynamic>[],
@@ -289,6 +334,7 @@ void main() {
               'repoId': 'r_cloud_agent',
               'mode': 'ask',
               'model': 'auto',
+              'title': 'Earlier topic',
               'status': 'idle',
               'messages': [
                 {
@@ -312,6 +358,7 @@ void main() {
       },
       post: (uri, {headers, body}) async {
         if (uri.path == '/v1/chats') {
+          created = true;
           return http.Response(
             jsonEncode({
               'id': 'chat_new',
@@ -341,12 +388,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(created, isFalse);
+    expect(find.text('earlier answer'), findsOneWidget);
+    expect(find.textContaining('Earlier topic'), findsOneWidget);
+
     await tester.tap(find.byTooltip('History'));
     await tester.pumpAndSettle();
-    expect(find.text('earlier question'), findsOneWidget);
-
-    await tester.tap(find.text('earlier question'));
-    await tester.pumpAndSettle();
-    expect(find.text('earlier answer'), findsOneWidget);
+    expect(find.text('Earlier topic'), findsWidgets);
   });
 }

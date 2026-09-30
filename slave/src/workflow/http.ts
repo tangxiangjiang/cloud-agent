@@ -74,6 +74,24 @@ export class GatewayHttpApi {
     return (await res.json()) as WorkflowRun;
   }
 
+  async patchChatTitle(chatId: string, title: string): Promise<void> {
+    const res = await fetch(
+      `${this.baseUrl}/v1/chats/${encodeURIComponent(chatId)}`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${this.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ title }),
+      },
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`patchChatTitle ${res.status}: ${text}`);
+    }
+  }
+
   async getWorkflow(workflowId: string): Promise<WorkflowRun> {
     const res = await fetch(
       `${this.baseUrl}/v1/workflows/${encodeURIComponent(workflowId)}`,

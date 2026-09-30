@@ -36,6 +36,12 @@ typedef HttpPut = Future<http.Response> Function(
   Object? body,
 });
 
+typedef HttpPatch = Future<http.Response> Function(
+  Uri url, {
+  Map<String, String>? headers,
+  Object? body,
+});
+
 /// Bearer client for project chat (no API key / cwd).
 class ChatApi {
   ChatApi({
@@ -44,16 +50,19 @@ class ChatApi {
     HttpPost? post,
     HttpDelete? delete,
     HttpPut? put,
+    HttpPatch? patch,
   })  : _get = get ?? http.get,
         _post = post ?? http.post,
         _delete = delete ?? http.delete,
-        _put = put ?? http.put;
+        _put = put ?? http.put,
+        _patch = patch ?? http.patch;
 
   final Session session;
   final HttpGet _get;
   final HttpPost _post;
   final HttpDelete _delete;
   final HttpPut _put;
+  final HttpPatch _patch;
 
   Map<String, String> get _headers => {
         'Authorization': 'Bearer ${session.token}',
@@ -174,6 +183,20 @@ class ChatApi {
       headers: _headers,
     );
     _throwIfBad(res, 'Get chat');
+    return ChatSession.fromJson(_decodeMap(res.body));
+  }
+
+  /// Rename session (manual override of AI / provisional title).
+  Future<ChatSession> renameChat(String chatId, String title) async {
+    final res = await _patch(
+      _uri('/v1/chats/${Uri.encodeComponent(chatId)}'),
+      headers: {
+        ..._headers,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: jsonEncode({'title': title}),
+    );
+    _throwIfBad(res, 'Rename chat');
     return ChatSession.fromJson(_decodeMap(res.body));
   }
 

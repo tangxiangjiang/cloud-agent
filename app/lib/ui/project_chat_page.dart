@@ -123,32 +123,71 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
     } catch (_) {
       // Keep fallback catalog; chat still works with Auto.
     }
-    await _ensureSession();
+    await _resumeOrBlank();
   }
 
-  void _applySession(ChatSession sess) {
+  void _applySession(ChatSession sess, {bool replaceBubbles = true}) {
     _session = sess;
     _mode = sess.mode;
     _model = sess.model;
-    _bubbles
-      ..clear()
-      ..addAll(
-        sess.messages.map(
-          (m) => _Bubble(
-            role: m.role,
-            text: m.content,
-            taskId: m.taskId,
-            done: true,
+    if (replaceBubbles) {
+      _bubbles
+        ..clear()
+        ..addAll(
+          sess.messages.map(
+            (m) => _Bubble(
+              role: m.role,
+              text: m.content,
+              taskId: m.taskId,
+              done: true,
+            ),
           ),
-        ),
-      );
+        );
+    }
   }
 
-  Future<void> _ensureSession() async {
+  /// Open latest session for this project, or leave a blank composer (lazy create).
+  Future<void> _resumeOrBlank() async {
     setState(() {
       _starting = true;
       _error = null;
     });
+    try {
+      final list = await _api.listChats(
+        slaveId: widget.slave.id,
+        repoId: widget.project.id,
+      );
+      if (!mounted) return;
+      if (list.isEmpty) {
+        setState(() {
+          _session = null;
+          _bubbles.clear();
+          _history = list;
+          _starting = false;
+        });
+        return;
+      }
+      final sess = await _api.getChat(list.first.id);
+      if (!mounted) return;
+      setState(() {
+        _history = list;
+        _applySession(sess);
+        _starting = false;
+      });
+      _scrollToEnd();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _starting = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  /// Create Gateway session only when the user sends the first message.
+  Future<ChatSession?> _ensureSessionForSend() async {
+    final existing = _session;
+    if (existing != null) return existing;
     try {
       final sess = await _api.createChat(
         slaveId: widget.slave.id,
@@ -156,17 +195,74 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
         mode: _mode,
         model: _model,
       );
+      if (!mounted) return null;
+      setState(() => _applySession(sess, replaceBubbles: false));
+      return sess;
+    } catch (e) {
+      if (!mounted) return null;
+      setState(() => _error = e.toString());
+      return null;
+    }
+  }
+
+  Future<void> _refreshSessionTitle() async {
+    final id = _session?.id;
+    if (id == null) return;
+    try {
+      final sess = await _api.getChat(id);
+      if (!mounted || _session?.id != id) return;
+      setState(() {
+        _session = _session!.copyWith(title: sess.title);
+      });
+    } catch (_) {
+      // Best-effort; provisional title remains.
+    }
+  }
+
+  Future<void> _renameChat() async {
+    final sess = _session;
+    if (sess == null) return;
+    final controller = TextEditingController(text: sess.displayTitle);
+    final next = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Rename chat'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 64,
+            decoration: const InputDecoration(
+              hintText: 'Session title',
+            ),
+            onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+    if (next == null || next.isEmpty || !mounted) return;
+    try {
+      final updated = await _api.renameChat(sess.id, next);
       if (!mounted) return;
       setState(() {
-        _applySession(sess);
-        _starting = false;
+        _session = sess.copyWith(title: updated.title ?? next);
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _starting = false;
-        _error = e.toString();
-      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Rename failed: $e')),
+      );
     }
   }
 
@@ -226,10 +322,6 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
                               itemBuilder: (context, i) {
                                 final c = _history[i];
                                 final selected = c.id == _session?.id;
-                                final title = (c.preview != null &&
-                                        c.preview!.isNotEmpty)
-                                    ? c.preview!
-                                    : c.id;
                                 return ListTile(
                                   selected: selected,
                                   leading: Icon(
@@ -238,7 +330,7 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
                                         : Icons.chat_bubble_outline,
                                   ),
                                   title: Text(
-                                    title,
+                                    c.displayTitle,
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -334,6 +426,7 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
         content: content,
         taskId: taskId,
       );
+      await _refreshSessionTitle();
     } catch (_) {
       // Best-effort; history still has user turns.
     }
@@ -409,12 +502,6 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
       );
       return;
     }
-    var sess = _session;
-    if (sess == null) {
-      await _ensureSession();
-      sess = _session;
-      if (sess == null) return;
-    }
 
     setState(() {
       _sending = true;
@@ -426,6 +513,22 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
       _input.clear();
     });
     _scrollToEnd();
+
+    final wasNew = _session == null;
+    final sess = await _ensureSessionForSend();
+    if (sess == null) {
+      if (!mounted) return;
+      setState(() {
+        _sending = false;
+        if (_bubbles.isNotEmpty && _bubbles.last.role == 'assistant') {
+          _bubbles.last
+            ..text = 'Failed: ${_error ?? 'create chat'}'
+            ..streaming = false
+            ..done = true;
+        }
+      });
+      return;
+    }
 
     try {
       final result = await _api.sendMessage(
@@ -444,6 +547,16 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
         }
       });
       await _attachStream(result.taskId);
+      if (wasNew) {
+        // Provisional title from Gateway; AI title arrives via Slave shortly.
+        unawaited(_refreshSessionTitle());
+        Future<void>.delayed(const Duration(seconds: 3), () {
+          if (mounted) unawaited(_refreshSessionTitle());
+        });
+        Future<void>.delayed(const Duration(seconds: 8), () {
+          if (mounted) unawaited(_refreshSessionTitle());
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -498,21 +611,27 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
       _sending = false;
       _session = null;
       _error = null;
+      _starting = false;
     });
-    await _ensureSession();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('New chat')),
+        const SnackBar(content: Text('New chat — send to start')),
       );
     }
+  }
+
+  String get _appBarTitle {
+    final project = widget.project.name.isNotEmpty
+        ? widget.project.name
+        : widget.project.id;
+    final sess = _session;
+    if (sess == null) return 'New chat · $project';
+    return '${sess.displayTitle} · $project';
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final title = widget.project.name.isNotEmpty
-        ? widget.project.name
-        : widget.project.id;
     final modelIds = _catalog.models.map((m) => m.id).toList();
     if (!modelIds.contains(_model)) {
       modelIds.insert(0, _model);
@@ -520,8 +639,24 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Chat · $title', style: const TextStyle(fontSize: 16)),
+        title: InkWell(
+          onTap: _session == null || _starting
+              ? null
+              : () => unawaited(_renameChat()),
+          child: Text(
+            _appBarTitle,
+            style: const TextStyle(fontSize: 16),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
         actions: [
+          if (_session != null)
+            IconButton(
+              tooltip: 'Rename',
+              onPressed: _starting ? null : () => unawaited(_renameChat()),
+              icon: const Icon(Icons.edit_outlined),
+            ),
           IconButton(
             tooltip: 'History',
             onPressed: _starting ? null : () => unawaited(_openHistoryDrawer()),
@@ -529,7 +664,7 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
           ),
           IconButton(
             tooltip: 'New chat',
-            onPressed: _starting ? null : _newChat,
+            onPressed: _starting ? null : () => unawaited(_newChat()),
             icon: const Icon(Icons.add_comment_outlined),
           ),
         ],
@@ -610,8 +745,10 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
                 ? Center(
                     child: Text(
                       _starting
-                          ? 'Starting chat…'
-                          : 'Say what you want ($_modeLabel · $_modelLabel).',
+                          ? 'Loading chat…'
+                          : _session == null
+                              ? 'New chat — send a message to start\n($_modeLabel · $_modelLabel)'
+                              : 'Say what you want ($_modeLabel · $_modelLabel).',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),

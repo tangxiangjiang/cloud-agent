@@ -120,6 +120,8 @@ CREATE TABLE IF NOT EXISTS model_available (
 	if err != nil {
 		return err
 	}
+	// Additive migrations (ignore if already applied).
+	_, _ = s.db.Exec(`ALTER TABLE chat_sessions ADD COLUMN title TEXT NOT NULL DEFAULT ''`)
 	_, err = s.db.Exec(
 		`INSERT OR REPLACE INTO meta(key, value) VALUES ('schemaVersion', ?)`,
 		fmt.Sprintf("%d", SchemaVersion),

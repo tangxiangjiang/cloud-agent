@@ -27,6 +27,11 @@ export interface GatewayClientOptions {
   models?: CursorModelEntry[];
   /** Re-fetch Cursor models when Gateway sends models.refresh. */
   onModelsRefresh?: () => Promise<CursorModelEntry[]> | CursorModelEntry[];
+  /** Name a chat from the first user message (AI). */
+  onChatAutotitle?: (msg: {
+    chatId: string;
+    text: string;
+  }) => void | Promise<void>;
   handlers: TaskHandlers;
   /** Optional DAG scheduler hook for workflow.assign */
   onWorkflowAssign?: (run: WorkflowRun) => void | Promise<void>;
@@ -191,6 +196,25 @@ export class GatewayClient {
           const message = err instanceof Error ? err.message : String(err);
           log.warn("models.refresh failed", { error: message });
           this.sendModelsReport(this.models);
+        }
+        break;
+      }
+      case "chat.autotitle": {
+        const chatId = String((msg as { chatId?: string }).chatId ?? "").trim();
+        const text = String((msg as { text?: string }).text ?? "").trim();
+        if (!chatId || !text) {
+          log.warn("chat.autotitle missing chatId/text");
+          break;
+        }
+        if (!this.opts.onChatAutotitle) {
+          log.warn("chat.autotitle handler not configured");
+          break;
+        }
+        try {
+          await this.opts.onChatAutotitle({ chatId, text });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          log.warn("chat.autotitle failed", { chatId, error: message });
         }
         break;
       }

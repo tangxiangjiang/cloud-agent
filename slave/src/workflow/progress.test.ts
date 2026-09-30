@@ -11,6 +11,7 @@ import {
   phaseKeyFromNode,
   resolveProgressPath,
   writeProgressOnApprove,
+  writeProgressPhases,
 } from "./progress.js";
 
 describe("resolveProgressPath", () => {
@@ -65,6 +66,24 @@ describe("markPhaseApproved", () => {
     const src = `| Bundle / Node | 状态 | 备注 |\n| M05-P05 | pending | x |\n`;
     const { next } = markPhaseApproved(src, "M05-P05", "2026-09-28T12:00:00.000Z");
     assert.match(next, /\| M05-P05 \| approved \|/);
+  });
+});
+
+describe("writeProgressPhases", () => {
+  it("marks multiple phases and creates file when missing", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "ca-align-"));
+    mkdirSync(path.join(root, "ai"), { recursive: true });
+    const result = writeProgressPhases({
+      repoCwd: root,
+      progressDoc: "ai/progress.md",
+      phases: ["M08-P01", "M08-P02", "bad"],
+      approvedAt: "2026-09-30T00:00:00.000Z",
+    });
+    assert.deepEqual(result.written, ["M08-P01", "M08-P02"]);
+    assert.ok(result.skipped.includes("bad"));
+    const text = readFileSync(path.join(root, "ai", "progress.md"), "utf8");
+    assert.match(text, /- \[x\] M08-P01 @approved 2026-09-30T00:00:00\.000Z/);
+    assert.match(text, /- \[x\] M08-P02 @approved 2026-09-30T00:00:00\.000Z/);
   });
 });
 

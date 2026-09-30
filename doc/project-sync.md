@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS project_sync (
 | 条件 | 警告示例 |
 |------|----------|
 | progress 已 approved，但最新 active Workflow 同 phase 仍为 `ready`/`pending` | 本机进度超前 Gateway |
-| Gateway 节点 `approved`，progress 仍 pending | Gateway 超前 / progress 未写回 |
+| Gateway 节点 `approved`，progress 仍 pending | Gateway 超前 / progress 未写回（常见：审核时 Slave 离线）→ App「Align progress」或 `POST .../sync/align-progress` |
 | 无 active Workflow，但 progress 有未完成 phase | 可「继续」或「新建」Milestone |
 | `dirty == true` | 有未提交变更，Diff 基线可能不稳 |
 | branch 与预期命名不符（可选策略） | 提醒用户是否绑错 cwd |

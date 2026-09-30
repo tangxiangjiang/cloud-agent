@@ -66,6 +66,13 @@ export type InboundMessage =
     }
   | { type: "project.sync"; requestId?: string; repoId: string }
   | { type: "project.sync.ok"; requestId?: string }
+  | {
+      type: "project.progress.align";
+      requestId?: string;
+      repoId: string;
+      progressDoc?: string;
+      phases?: string[];
+    }
   | { type: "models.refresh" }
   | { type: "chat.autotitle"; chatId?: string; text?: string }
   | { type: "error"; error?: string }

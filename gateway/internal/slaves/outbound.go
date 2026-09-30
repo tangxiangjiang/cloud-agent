@@ -210,6 +210,31 @@ func (h *OutboundHub) AssignProjectSync(slaveID, requestID, repoID string) bool 
 	return true
 }
 
+// AssignProgressAlign asks Slave to mark Gateway-approved phases in progress.md (no git commit).
+func (h *OutboundHub) AssignProgressAlign(slaveID, requestID, repoID, progressDoc string, phases []string) bool {
+	if slaveID == "" || repoID == "" || len(phases) == 0 {
+		return false
+	}
+	h.mu.Lock()
+	c := h.conns[slaveID]
+	h.mu.Unlock()
+	if c == nil {
+		return false
+	}
+	doc := progressDoc
+	if doc == "" {
+		doc = "ai/progress.md"
+	}
+	c.sendJSON(map[string]any{
+		"type":        "project.progress.align",
+		"requestId":   requestID,
+		"repoId":      repoID,
+		"progressDoc": doc,
+		"phases":      phases,
+	})
+	return true
+}
+
 // AssignRevise implements workflow.Starter — ask Slave to follow-up on a node.
 func (h *OutboundHub) AssignRevise(slaveID, workflowID, nodeID, instruction string) bool {
 	if slaveID == "" || workflowID == "" || nodeID == "" {

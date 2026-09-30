@@ -148,6 +148,60 @@ class _MilestoneListPageState extends State<MilestoneListPage> {
     );
   }
 
+  Future<void> _alignProgress() async {
+    if (!_online) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Slave offline — align disabled')),
+      );
+      return;
+    }
+    setState(() {
+      _syncing = true;
+      _error = null;
+    });
+    try {
+      final snap = await _syncApi.alignProgressAndSync(
+        slaveId: widget.slave.id,
+        repoId: widget.project.id,
+        timeout: widget.syncTimeout,
+        interval: widget.pollAfterSync,
+      );
+      if (!mounted) return;
+      setState(() {
+        _snapshot = snap;
+        _syncing = false;
+      });
+      final n = snap.warnings.where((w) => w.canAlignProgress).length;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            n == 0
+                ? 'Progress aligned'
+                : 'Aligned — $n gateway_ahead warning${n == 1 ? '' : 's'} left',
+          ),
+        ),
+      );
+    } on ProjectSyncApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _syncing = false;
+        _error = e.message;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Align failed: ${e.message}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _syncing = false;
+        _error = e.toString();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Align failed: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final milestones = widget.project.milestones;
@@ -218,6 +272,7 @@ class _MilestoneListPageState extends State<MilestoneListPage> {
             syncing: _syncing,
             onRefresh: _online ? _runSync : null,
             onContinueWorkflow: _openWorkflow,
+            onAlignProgress: _online ? _alignProgress : null,
           ),
           const Divider(height: 1),
           ListTile(
@@ -288,6 +343,7 @@ class _SyncResultPanel extends StatelessWidget {
     required this.syncing,
     this.onRefresh,
     required this.onContinueWorkflow,
+    this.onAlignProgress,
   });
 
   final bool loading;
@@ -295,6 +351,7 @@ class _SyncResultPanel extends StatelessWidget {
   final bool syncing;
   final VoidCallback? onRefresh;
   final void Function(String workflowId) onContinueWorkflow;
+  final VoidCallback? onAlignProgress;
 
   @override
   Widget build(BuildContext context) {
@@ -366,9 +423,21 @@ class _SyncResultPanel extends StatelessWidget {
           ],
           if (snap.warnings.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Text(
-              'Warnings (${snap.warnings.length})',
-              style: theme.textTheme.titleSmall,
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Warnings (${snap.warnings.length})',
+                    style: theme.textTheme.titleSmall,
+                  ),
+                ),
+                if (onAlignProgress != null &&
+                    snap.warnings.any((w) => w.canAlignProgress))
+                  TextButton(
+                    onPressed: syncing ? null : onAlignProgress,
+                    child: const Text('Align progress'),
+                  ),
+              ],
             ),
             const SizedBox(height: 4),
             ...snap.warnings.map((w) {
@@ -378,6 +447,18 @@ class _SyncResultPanel extends StatelessWidget {
                           w.code == 'progress_ahead'
                       ? snap.report?.workflowId
                       : null);
+              Widget? trailing;
+              if (w.canAlignProgress && onAlignProgress != null) {
+                trailing = TextButton(
+                  onPressed: syncing ? null : onAlignProgress,
+                  child: const Text('Align'),
+                );
+              } else if (wfId != null && wfId.isNotEmpty) {
+                trailing = TextButton(
+                  onPressed: () => onContinueWorkflow(wfId),
+                  child: const Text('Continue'),
+                );
+              }
               return Card(
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
@@ -389,12 +470,7 @@ class _SyncResultPanel extends StatelessWidget {
                       if (w.phaseId != null) w.phaseId!,
                     ].join(' · '),
                   ),
-                  trailing: wfId != null && wfId.isNotEmpty
-                      ? TextButton(
-                          onPressed: () => onContinueWorkflow(wfId),
-                          child: const Text('Continue'),
-                        )
-                      : null,
+                  trailing: trailing,
                 ),
               );
             }),

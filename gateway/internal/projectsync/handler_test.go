@@ -25,11 +25,20 @@ type fakeHub struct {
 	lastSlave string
 	lastReq   string
 	lastRepo  string
+	lastDoc   string
+	lastPh    []string
 	ok        bool
 }
 
 func (f *fakeHub) AssignProjectSync(slaveID, requestID, repoID string) bool {
 	f.lastSlave, f.lastReq, f.lastRepo = slaveID, requestID, repoID
+	return f.ok
+}
+
+func (f *fakeHub) AssignProgressAlign(slaveID, requestID, repoID, progressDoc string, phases []string) bool {
+	f.lastSlave, f.lastReq, f.lastRepo = slaveID, requestID, repoID
+	f.lastDoc = progressDoc
+	f.lastPh = append([]string(nil), phases...)
 	return f.ok
 }
 

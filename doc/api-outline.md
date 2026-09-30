@@ -76,6 +76,7 @@ Base path：`/v1`
 | POST | `/v1/slaves/{slaveId}/projects/{repoId}/sync` | App 触发 → `202`；offline → `409`；无 WS 连接 → `503`；Gateway → Slave WS `project.sync` |
 | POST | `/v1/project-sync` | Slave 上报 `{requestId,slaveId,repoId,payload}` → UPSERT `project_sync` |
 | GET | `/v1/slaves/{slaveId}/projects/{repoId}/sync` | 最近快照 + 现算 `warnings[]` + `report`（phase 并排；M08-P03） |
+| POST | `/v1/slaves/{slaveId}/projects/{repoId}/sync/align-progress` | Gateway 已 approved、本机仍 pending 时，请 Slave 回写 `progress.md`（不 commit）→ `202` |
 | GET | `/v1/slaves/{slaveId}/projects/{repoId}/sync/report` | 同上（UI 友好别名） |
 
 等价 WS：Slave → Gateway `project.sync.result`（同 payload）→ `project.sync.ok`。审计：`project.sync` / `project.sync.result`（无 token / API Key）。
@@ -112,7 +113,8 @@ GET 响应额外字段（对账，不改写节点 status）：
 }
 ```
 
-`warnings[].code`：`progress_ahead` | `gateway_ahead` | `no_active_workflow` | `no_workflow` | `dirty_worktree`。
+`warnings[].code`：`progress_ahead` | `gateway_ahead` | `no_active_workflow` | `no_workflow` | `dirty_worktree`。  
+`gateway_ahead` 的 `suggestion` 为 `align_progress`（App「Align progress」→ `POST .../sync/align-progress`）。
 
 ### 工程对话（M09-P01 Gateway）
 

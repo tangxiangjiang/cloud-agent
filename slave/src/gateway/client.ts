@@ -44,6 +44,13 @@ export interface GatewayClientOptions {
     requestId: string;
     repoId: string;
   }) => void | Promise<void>;
+  /** Catch-up: mark Gateway-approved phases in progress.md (no commit). */
+  onProgressAlign?: (msg: {
+    requestId: string;
+    repoId: string;
+    progressDoc: string;
+    phases: string[];
+  }) => void | Promise<void>;
   heartbeatMs?: number;
   /** Initial reconnect delay; doubles up to maxReconnectMs. */
   reconnectMs?: number;
@@ -404,6 +411,46 @@ export class GatewayClient {
           requestId: (msg as { requestId?: string }).requestId ?? null,
         });
         break;
+      case "project.progress.align": {
+        const m = msg as {
+          requestId?: string;
+          repoId?: string;
+          progressDoc?: string;
+          phases?: unknown;
+        };
+        const requestId = (m.requestId ?? "").trim() || `req_${Date.now()}`;
+        const repoId = (m.repoId ?? "").trim();
+        const progressDoc = (m.progressDoc ?? "").trim() || "ai/progress.md";
+        const phases = Array.isArray(m.phases)
+          ? m.phases.map((p) => String(p ?? "").trim()).filter(Boolean)
+          : [];
+        if (!repoId || phases.length === 0) {
+          log.warn("project.progress.align missing repoId/phases");
+          break;
+        }
+        log.info("project.progress.align requested", {
+          requestId,
+          repoId,
+          progressDoc,
+          phases: phases.length,
+        });
+        if (this.opts.onProgressAlign) {
+          try {
+            await this.opts.onProgressAlign({
+              requestId,
+              repoId,
+              progressDoc,
+              phases,
+            });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            log.error("project.progress.align failed", { repoId, error: message });
+          }
+        } else {
+          log.warn("project.progress.align ignored (no handler)");
+        }
+        break;
+      }
       case "error":
         log.error("gateway error", {
           error: (msg as { error?: string }).error ?? "unknown",

@@ -1,7 +1,7 @@
 # Progress (ai)
 
 权威进度文件（Bundle.`progressDoc` 默认指向此处）。  
-**仅在 App 审核通过后由 Slave 更新。**
+**仅在 App 审核通过后由 Slave 更新；Gateway 超前时可用 Align progress 回写。**
 
 | Bundle / Node | 状态 | 备注 |
 |---------------|------|------|
@@ -32,15 +32,19 @@
 | M07-P01 | approved | 审计 JSONL + pair/revise 限流 |
 | M07-P02 | approved | 样例 DAG + deploy 文档 |
 | M07-P03 | approved | 文档对齐 + MVP checklist |
-| M08-P01 | pending | Gateway 同步 API 与落库 |
-| M08-P02 | pending | Slave 采集与上报 |
-| M08-P03 | pending | 对账 warnings 与查询报告 |
-| M08-P04 | pending | App 工程页同步 UI |
-| M08-P05 | pending | 可选 AI 摘要 |
-| M09-P01 | pending | Chat API 与 Task 桥接 |
-| M09-P02 | pending | App 对话页（Agent + Auto） |
-| M09-P03 | pending | Ask / Plan 与模型列表 |
-| M09-P04 | pending | 会话历史与多会话 |
+| M08-P01 | approved | Gateway 同步 API 与落库 |
+| M08-P02 | approved | Slave 采集与上报 |
+| M08-P03 | approved | 对账 warnings 与查询报告 |
+| M08-P04 | approved | App 工程页同步 UI |
+| M08-P05 | approved | 可选 AI 摘要 |
+| M09-P01 | approved | Chat API 与 Task 桥接 |
+| M09-P02 | approved | App 对话页（Agent + Auto） |
+| M09-P03 | approved | Ask / Plan 与模型列表 |
+| M09-P04 | approved | 会话历史与多会话 |
+| M10-P01 | approved | Gateway 续跑门闩 |
+| M10-P02 | approved | App 节点策略控件 |
+| M10-P03 | approved | 自动通过 |
+| M10-P04 | approved | 创建/批量默认策略 |
 
 ## 勾选
 
@@ -71,12 +75,16 @@
 - [x] M07-P01 @approved 2026-09-28（IDE）
 - [x] M07-P02 @approved 2026-09-28（IDE）
 - [x] M07-P03 @approved 2026-09-28（IDE）
-- [ ] M08-P01
-- [ ] M08-P02
-- [ ] M08-P03
-- [ ] M08-P04
-- [ ] M08-P05
-- [ ] M09-P01
-- [ ] M09-P02
-- [ ] M09-P03
-- [ ] M09-P04
+- [x] M08-P01 @approved 2026-09-30
+- [x] M08-P02 @approved 2026-09-30
+- [x] M08-P03 @approved 2026-09-30
+- [x] M08-P04 @approved 2026-09-30
+- [x] M08-P05 @approved 2026-09-30
+- [x] M09-P01 @approved 2026-09-30
+- [x] M09-P02 @approved 2026-09-30
+- [x] M09-P03 @approved 2026-09-30
+- [x] M09-P04 @approved 2026-09-30
+- [x] M10-P01 @approved 2026-09-30
+- [x] M10-P02 @approved 2026-09-30
+- [x] M10-P03 @approved 2026-09-30
+- [x] M10-P04 @approved 2026-09-30

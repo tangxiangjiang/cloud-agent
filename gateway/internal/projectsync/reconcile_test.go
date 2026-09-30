@@ -46,6 +46,15 @@ func TestReconcileProgressAheadAndGatewayAhead(t *testing.T) {
 	if !codes["gateway_ahead"] {
 		t.Fatalf("expected gateway_ahead: %#v", warnings)
 	}
+	for _, w := range warnings {
+		if w.Code == "gateway_ahead" && w.Suggestion != "align_progress" {
+			t.Fatalf("gateway_ahead suggestion=%q want align_progress", w.Suggestion)
+		}
+	}
+	keys := projectsync.ApprovedPhaseKeys([]*workflow.Run{run})
+	if len(keys) != 1 || keys[0] != "M01-P02" {
+		t.Fatalf("ApprovedPhaseKeys: %#v", keys)
+	}
 	if report.WorkflowID != "wf_1" || len(report.Phases) != 2 {
 		t.Fatalf("report: %#v", report)
 	}

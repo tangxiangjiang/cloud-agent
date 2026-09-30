@@ -242,7 +242,7 @@ func Reconcile(summaryJSON json.RawMessage, runs []*workflow.Run, primary *workf
 				Message:    "Gateway 节点 " + id + " 已 approved，但本机 progress 仍为 pending",
 				PhaseID:    id,
 				WorkflowID: wfID,
-				Suggestion: "check_progress",
+				Suggestion: "align_progress",
 			})
 		}
 	}
@@ -286,4 +286,39 @@ func WarningMessages(ws []Warning) []string {
 		out = append(out, w.Message)
 	}
 	return out
+}
+
+// ApprovedPhaseKeys lists Mxx-Pxx ids whose Gateway node is approved (for progress catch-up).
+func ApprovedPhaseKeys(runs []*workflow.Run) []string {
+	seen := map[string]struct{}{}
+	for _, run := range runs {
+		if run == nil {
+			continue
+		}
+		for _, n := range run.Nodes {
+			if n.Status != workflow.NodeApproved {
+				continue
+			}
+			key := PhaseKeyFromNode(n)
+			if key == "" {
+				continue
+			}
+			seen[key] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ProgressDocFromPayload reads progressDoc from a stored sync summary JSON.
+func ProgressDocFromPayload(summaryJSON json.RawMessage) string {
+	var v struct {
+		ProgressDoc string `json:"progressDoc"`
+	}
+	_ = json.Unmarshal(summaryJSON, &v)
+	return strings.TrimSpace(v.ProgressDoc)
 }

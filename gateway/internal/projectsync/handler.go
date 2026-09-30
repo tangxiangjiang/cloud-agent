@@ -22,9 +22,10 @@ import (
 
 const maxPayloadBytes = 256 * 1024
 
-// SyncDispatcher pushes project.sync to an online Slave.
+// SyncDispatcher pushes project.sync / progress align to an online Slave.
 type SyncDispatcher interface {
 	AssignProjectSync(slaveID, requestID, repoID string) bool
+	AssignProgressAlign(slaveID, requestID, repoID, progressDoc string, phases []string) bool
 }
 
 // WorkflowSource looks up milestone workflows for reconcile (M08-P03).
@@ -71,6 +72,7 @@ func (s *Service) Mount(mux *http.ServeMux, wrap func(http.Handler) http.Handler
 		wrap = func(h http.Handler) http.Handler { return h }
 	}
 	mux.Handle("POST /v1/slaves/{slaveId}/projects/{repoId}/sync", wrap(http.HandlerFunc(s.handleTrigger)))
+	mux.Handle("POST /v1/slaves/{slaveId}/projects/{repoId}/sync/align-progress", wrap(http.HandlerFunc(s.handleAlignProgress)))
 	mux.Handle("GET /v1/slaves/{slaveId}/projects/{repoId}/sync", wrap(http.HandlerFunc(s.handleGet)))
 	mux.Handle("GET /v1/slaves/{slaveId}/projects/{repoId}/sync/report", wrap(http.HandlerFunc(s.handleGet)))
 	mux.Handle("POST /v1/project-sync", wrap(http.HandlerFunc(s.handleReport)))
@@ -158,6 +160,113 @@ func (s *Service) handleTrigger(w http.ResponseWriter, r *http.Request) {
 		"repoId":    repoID,
 		"requestId": reqID,
 		"result":    "accepted",
+	})
+}
+
+// handleAlignProgress asks Slave to mark Gateway-approved phases in progress.md
+// (catch-up when review was missed / Slave was offline). Does not auto-commit.
+func (s *Service) handleAlignProgress(w http.ResponseWriter, r *http.Request) {
+	slaveID := strings.TrimSpace(r.PathValue("slaveId"))
+	repoID := strings.TrimSpace(r.PathValue("repoId"))
+	ip := audit.ClientIP(r)
+	if slaveID == "" || repoID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "slaveId and repoId required"})
+		s.record("project.progress.align", r.Method, r.URL.Path, ip, http.StatusBadRequest, nil)
+		return
+	}
+	if !s.reg.IsOnline(slaveID) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "slave offline"})
+		s.record("project.progress.align", r.Method, r.URL.Path, ip, http.StatusConflict, map[string]string{
+			"slaveId": slaveID,
+			"repoId":  repoID,
+			"reason":  "offline",
+		})
+		return
+	}
+	if !s.reg.HasProject(slaveID, repoID) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "repoId not registered on slave"})
+		s.record("project.progress.align", r.Method, r.URL.Path, ip, http.StatusBadRequest, map[string]string{
+			"slaveId": slaveID,
+			"repoId":  repoID,
+			"reason":  "unknown_repo",
+		})
+		return
+	}
+	if s.wfs == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "workflow source unavailable"})
+		s.record("project.progress.align", r.Method, r.URL.Path, ip, http.StatusServiceUnavailable, map[string]string{
+			"slaveId": slaveID,
+			"repoId":  repoID,
+			"reason":  "no_wfs",
+		})
+		return
+	}
+
+	var body triggerBody
+	if r.Body != nil {
+		_ = json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&body)
+	}
+	reqID := strings.TrimSpace(body.RequestID)
+	if reqID == "" {
+		reqID = newRequestID()
+	}
+
+	runs := s.wfs.ListMilestoneRuns(slaveID, repoID)
+	phases := ApprovedPhaseKeys(runs)
+	if len(phases) == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"requestId": reqID,
+			"status":    "noop",
+			"slaveId":   slaveID,
+			"repoId":    repoID,
+			"phases":    []string{},
+			"message":   "no approved Gateway phases to align",
+		})
+		s.record("project.progress.align", r.Method, r.URL.Path, ip, http.StatusOK, map[string]string{
+			"slaveId": slaveID,
+			"repoId":  repoID,
+			"result":  "noop",
+		})
+		return
+	}
+
+	progressDoc := "ai/progress.md"
+	if row, err := s.store.GetProjectSync(slaveID, repoID); err == nil && row != nil {
+		if d := ProgressDocFromPayload(row.SummaryJSON); d != "" {
+			progressDoc = d
+		}
+	}
+	if primary, _ := s.wfs.FindLatestMilestoneRun(slaveID, repoID); primary != nil && primary.ProgressDoc != nil {
+		if d := strings.TrimSpace(*primary.ProgressDoc); d != "" {
+			progressDoc = d
+		}
+	}
+
+	if s.hub == nil || !s.hub.AssignProgressAlign(slaveID, reqID, repoID, progressDoc, phases) {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "slave connection unavailable"})
+		s.record("project.progress.align", r.Method, r.URL.Path, ip, http.StatusServiceUnavailable, map[string]string{
+			"slaveId":   slaveID,
+			"repoId":    repoID,
+			"requestId": reqID,
+			"reason":    "no_conn",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"requestId":   reqID,
+		"status":      "accepted",
+		"slaveId":     slaveID,
+		"repoId":      repoID,
+		"progressDoc": progressDoc,
+		"phases":      phases,
+	})
+	s.record("project.progress.align", r.Method, r.URL.Path, ip, http.StatusAccepted, map[string]string{
+		"slaveId":   slaveID,
+		"repoId":    repoID,
+		"requestId": reqID,
+		"result":    "accepted",
+		"phases":    strconv.Itoa(len(phases)),
 	})
 }
 

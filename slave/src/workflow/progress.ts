@@ -98,6 +98,55 @@ export function markPhaseApproved(
   return { next, changed };
 }
 
+/**
+ * Mark multiple Gateway-approved phases in progress.md (catch-up / align).
+ * Creates a minimal file when missing. Does not git-commit.
+ */
+export function writeProgressPhases(opts: {
+  repoCwd: string;
+  progressDoc: string | null | undefined;
+  phases: readonly string[];
+  approvedAt?: string;
+}): {
+  written: string[];
+  skipped: string[];
+  path?: string;
+  reason?: string;
+} {
+  const resolved = resolveProgressPath(opts.repoCwd, opts.progressDoc);
+  if (!resolved.ok) {
+    return { written: [], skipped: [], reason: resolved.reason };
+  }
+  const iso = opts.approvedAt ?? new Date().toISOString();
+  let content: string;
+  try {
+    content = readFileSync(resolved.absPath, "utf8");
+  } catch {
+    content = `# Progress\n\n| Bundle / Node | 状态 | 备注 |\n|---------------|------|------|\n\n## 勾选\n\n`;
+  }
+  const written: string[] = [];
+  const skipped: string[] = [];
+  let next = content;
+  for (const raw of opts.phases) {
+    const phaseKey = String(raw ?? "").trim();
+    if (!PHASE_ID_RE.test(phaseKey)) {
+      skipped.push(phaseKey || "(empty)");
+      continue;
+    }
+    const marked = markPhaseApproved(next, phaseKey, iso);
+    if (marked.changed && marked.next !== next) {
+      next = marked.next;
+      written.push(phaseKey);
+    } else {
+      skipped.push(phaseKey);
+    }
+  }
+  if (written.length > 0) {
+    writeFileSync(resolved.absPath, next, "utf8");
+  }
+  return { written, skipped, path: resolved.relPath };
+}
+
 /** Write progress.md for an approved node. Throws on I/O errors after path validation. */
 export function writeProgressOnApprove(opts: {
   repoCwd: string;

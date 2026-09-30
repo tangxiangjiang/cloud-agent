@@ -22,6 +22,10 @@ class SyncWarning {
           code == 'progress_ahead' ||
           code == 'no_active_workflow');
 
+  /// Gateway approved but local progress.md still pending — catch-up write.
+  bool get canAlignProgress =>
+      code == 'gateway_ahead' || suggestion == 'align_progress';
+
   factory SyncWarning.fromJson(Map<String, dynamic> json) {
     return SyncWarning(
       code: json['code'] as String? ?? '',

@@ -8,6 +8,7 @@ import { LocalAgentTaskHandler } from "./agent/localHandler.js";
 import {
   ConfigError,
   configSummary,
+  findRepo,
   isSyncAiSummaryEnabled,
   loadConfigFile,
   resolveConfigPath,
@@ -21,6 +22,7 @@ import { collectProjectSync } from "./project/syncCollect.js";
 import { generateSyncSummaryWithAi } from "./project/syncSummaryAi.js";
 import { StubTaskHandler } from "./tasks/stubHandler.js";
 import { GatewayHttpApi, gatewayHttpBase } from "./workflow/http.js";
+import { writeProgressPhases } from "./workflow/progress.js";
 import { SerialDagScheduler } from "./workflow/scheduler.js";
 
 function usage(): void {
@@ -224,6 +226,26 @@ async function main(): Promise<void> {
           payload: payload as unknown as Record<string, unknown>,
         });
       }
+    },
+    onProgressAlign: async ({ requestId, repoId, progressDoc, phases }) => {
+      const repo = findRepo(cfg, repoId);
+      if (!repo) {
+        log.error("project.progress.align: repo not in whitelist", { repoId });
+        return;
+      }
+      const result = writeProgressPhases({
+        repoCwd: repo.cwd,
+        progressDoc,
+        phases,
+      });
+      log.info("project.progress.align done", {
+        requestId,
+        repoId,
+        path: result.path,
+        written: result.written,
+        skipped: result.skipped,
+        reason: result.reason,
+      });
     },
   };
   if (cfg.name !== undefined) {

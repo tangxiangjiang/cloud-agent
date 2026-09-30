@@ -81,6 +81,56 @@ class ProjectSyncApi {
     return SyncTriggerResult.fromJson(_decodeMap(res.body));
   }
 
+  /// `POST .../sync/align-progress` — ask Slave to mark Gateway-approved phases.
+  Future<SyncTriggerResult> alignProgress({
+    required String slaveId,
+    required String repoId,
+    String? requestId,
+  }) async {
+    final res = await _post(
+      _syncUri(slaveId, repoId, suffix: '/align-progress'),
+      headers: {
+        ..._headers,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: jsonEncode({
+        if (requestId != null && requestId.isNotEmpty) 'requestId': requestId,
+      }),
+    );
+    if (res.statusCode == 409) {
+      throw ProjectSyncApiException(
+        _errorMessage(res, 'Slave offline'),
+        statusCode: 409,
+      );
+    }
+    if (res.statusCode == 503) {
+      throw ProjectSyncApiException(
+        _errorMessage(res, 'Slave connection unavailable'),
+        statusCode: 503,
+      );
+    }
+    _throwIfBad(res, 'Align progress');
+    return SyncTriggerResult.fromJson(_decodeMap(res.body));
+  }
+
+  /// Align progress.md then re-sync so warnings refresh.
+  Future<ProjectSyncSnapshot> alignProgressAndSync({
+    required String slaveId,
+    required String repoId,
+    Duration settle = const Duration(seconds: 1),
+    Duration timeout = const Duration(seconds: 25),
+    Duration interval = const Duration(milliseconds: 800),
+  }) async {
+    await alignProgress(slaveId: slaveId, repoId: repoId);
+    await Future<void>.delayed(settle);
+    return syncAndWait(
+      slaveId: slaveId,
+      repoId: repoId,
+      timeout: timeout,
+      interval: interval,
+    );
+  }
+
   /// `GET .../sync` — latest snapshot + warnings/report.
   Future<ProjectSyncSnapshot> getSync({
     required String slaveId,

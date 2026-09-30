@@ -25,18 +25,35 @@ typedef HttpPost = Future<http.Response> Function(
   Object? body,
 });
 
+typedef HttpDelete = Future<http.Response> Function(
+  Uri url, {
+  Map<String, String>? headers,
+});
+
+typedef HttpPut = Future<http.Response> Function(
+  Uri url, {
+  Map<String, String>? headers,
+  Object? body,
+});
+
 /// Bearer client for project chat (no API key / cwd).
 class ChatApi {
   ChatApi({
     required this.session,
     HttpGet? get,
     HttpPost? post,
+    HttpDelete? delete,
+    HttpPut? put,
   })  : _get = get ?? http.get,
-        _post = post ?? http.post;
+        _post = post ?? http.post,
+        _delete = delete ?? http.delete,
+        _put = put ?? http.put;
 
   final Session session;
   final HttpGet _get;
   final HttpPost _post;
+  final HttpDelete _delete;
+  final HttpPut _put;
 
   Map<String, String> get _headers => {
         'Authorization': 'Bearer ${session.token}',
@@ -48,7 +65,7 @@ class ChatApi {
         .replace(queryParameters: query);
   }
 
-  /// Allowed chat models for the App picker (static Gateway catalog).
+  /// Allowed chat models for the App picker (editable Gateway selection).
   Future<ModelCatalog> listModels() async {
     final res = await _get(
       _uri('/v1/models'),
@@ -56,6 +73,76 @@ class ChatApi {
     );
     _throwIfBad(res, 'List models');
     return ModelCatalog.fromJson(_decodeMap(res.body));
+  }
+
+  /// Selected + Slave-reported available models.
+  Future<ModelManageView> manageModels() async {
+    final res = await _get(
+      _uri('/v1/models/manage'),
+      headers: _headers,
+    );
+    _throwIfBad(res, 'Manage models');
+    return ModelManageView.fromJson(_decodeMap(res.body));
+  }
+
+  /// Add a model id to the App picker list.
+  Future<ModelManageView> addModel({
+    required String id,
+    String? label,
+  }) async {
+    final res = await _post(
+      _uri('/v1/models'),
+      headers: {
+        ..._headers,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: jsonEncode({
+        'id': id,
+        if (label != null && label.isNotEmpty) 'label': label,
+      }),
+    );
+    _throwIfBad(res, 'Add model');
+    return ModelManageView.fromJson(_decodeMap(res.body));
+  }
+
+  /// Remove a model from the App picker (cannot remove auto).
+  Future<ModelManageView> removeModel(String id) async {
+    final res = await _delete(
+      _uri('/v1/models/${Uri.encodeComponent(id)}'),
+      headers: _headers,
+    );
+    _throwIfBad(res, 'Remove model');
+    return ModelManageView.fromJson(_decodeMap(res.body));
+  }
+
+  /// Ask online Slave to refresh Cursor.models.list into available.
+  Future<ModelManageView> refreshModels() async {
+    final res = await _post(
+      _uri('/v1/models/refresh'),
+      headers: {
+        ..._headers,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: '{}',
+    );
+    _throwIfBad(res, 'Refresh models');
+    final map = _decodeMap(res.body);
+    // Accepted payload mirrors manage fields; poll manage after short delay if empty.
+    return ModelManageView.fromJson(map);
+  }
+
+  /// Set default model id (must already be in selected).
+  Future<ModelManageView> setDefaultModel(String id) async {
+    final res = await _put(
+      _uri('/v1/models/default'),
+      headers: {
+        ..._headers,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: jsonEncode({'id': id}),
+    );
+    _throwIfBad(res, 'Set default model');
+    return ModelManageView.fromJson(_decodeMap(res.body));
   }
 
   Future<ChatSession> createChat({

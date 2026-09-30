@@ -142,7 +142,27 @@ func main() {
 	mux.Handle("GET /v1/auth/me", authStore.Middleware(http.HandlerFunc(handleMe)))
 	mux.Handle("GET /v1/slaves", authStore.Middleware(http.HandlerFunc(slaveReg.HandleList)))
 	mux.Handle("GET /v1/audit", authStore.Middleware(http.HandlerFunc(auditLog.HandleList)))
-	mux.Handle("GET /v1/models", authStore.Middleware(models.Handler(models.FromEnv())))
+
+	modelPersist := persist.AsModelCatalogStore(stateStore)
+	modelStore := models.NewStore(modelPersist)
+	modelAPI := &models.API{
+		Store: modelStore,
+		Refresh: func() (string, bool) {
+			return slaveHub.RequestModelsRefresh()
+		},
+	}
+	slaveHub.SetModelsReportHandler(func(slaveID string, reported []slaves.ReportedModel) {
+		entries := make([]models.Entry, 0, len(reported))
+		for _, m := range reported {
+			entries = append(entries, models.Entry{ID: m.ID, Label: m.Label})
+		}
+		if err := modelStore.SetAvailable(entries, slaveID); err != nil {
+			log.Printf("models available update: %v", err)
+		} else {
+			log.Printf("models available from slave %s: %d", slaveID, len(entries))
+		}
+	})
+	modelAPI.Mount(mux, authStore.Middleware)
 
 	taskHandler := authStore.Middleware(auditTasks(auditLog, taskStore.Handler()))
 	mux.Handle("/v1/tasks", taskHandler)

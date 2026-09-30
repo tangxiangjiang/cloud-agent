@@ -36,10 +36,15 @@ export interface SlaveConfig {
   tokenEnv: string;
   /**
    * Default Local Agent model when task.model is omitted.
-   * Use `auto` / `auto-smart` for Cursor Router (IDE Auto).
+   * Pro: usually `default`. Teams: may use `auto-smart`.
    */
   defaultModel: string;
-  /** Cursor Router mode when resolving auto / auto-smart. */
+  /**
+   * What App/Gateway `auto` maps to before catalog check.
+   * Pro: `default`. Teams/Enterprise with Router: `auto-smart`.
+   */
+  autoModelId: string;
+  /** Cursor Router mode when resolved target is `auto-smart`. */
   optimizeFor: OptimizeFor;
   /**
    * When true (default), project.sync may call Local Agent for a short summary
@@ -71,6 +76,7 @@ type RawConfig = {
   apiKeyEnv?: unknown;
   tokenEnv?: unknown;
   defaultModel?: unknown;
+  autoModelId?: unknown;
   optimizeFor?: unknown;
   syncAiSummary?: unknown;
   /** Forbidden: secrets must come from env named by apiKeyEnv. */
@@ -197,8 +203,12 @@ export function validateConfig(raw: unknown): SlaveConfig {
       : requireString(obj.tokenEnv, "tokenEnv");
   const defaultModel =
     obj.defaultModel === undefined || obj.defaultModel === null
-      ? "auto-smart"
+      ? "default"
       : requireString(obj.defaultModel, "defaultModel");
+  const autoModelId =
+    obj.autoModelId === undefined || obj.autoModelId === null
+      ? "default"
+      : requireString(obj.autoModelId, "autoModelId");
   let optimizeFor: OptimizeFor;
   try {
     optimizeFor = parseOptimizeFor(obj.optimizeFor);
@@ -231,6 +241,7 @@ export function validateConfig(raw: unknown): SlaveConfig {
     apiKeyEnv,
     tokenEnv,
     defaultModel,
+    autoModelId,
     optimizeFor,
     syncAiSummary,
   };
@@ -277,6 +288,7 @@ export function configSummary(cfg: SlaveConfig): Record<string, unknown> {
     apiKeyEnv: cfg.apiKeyEnv,
     tokenEnv: cfg.tokenEnv,
     defaultModel: cfg.defaultModel,
+    autoModelId: cfg.autoModelId,
     optimizeFor: cfg.optimizeFor,
     syncAiSummary: cfg.syncAiSummary,
     apiKeyPresent: Boolean(process.env[cfg.apiKeyEnv]),

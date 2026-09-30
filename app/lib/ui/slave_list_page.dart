@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../auth/session.dart';
 import '../slaves/models.dart';
 import '../slaves/slaves_api.dart';
+import 'models_page.dart';
 import 'project_list_page.dart';
 
 /// Step 1: Slave 列表 → 工程列表.
@@ -82,6 +83,17 @@ class _SlaveListPageState extends State<SlaveListPage> {
       appBar: AppBar(
         title: const Text('Slaves'),
         actions: [
+          IconButton(
+            tooltip: '模型列表',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ModelsPage(session: widget.session),
+                ),
+              );
+            },
+            icon: const Icon(Icons.smart_toy_outlined),
+          ),
           IconButton(
             tooltip: 'Refresh',
             onPressed: () => _refresh(),

@@ -156,3 +156,36 @@ class ModelCatalog {
 
   static const fallback = ModelCatalog();
 }
+
+/// GET /v1/models/manage — selected picker + Slave-reported available.
+class ModelManageView {
+  const ModelManageView({
+    this.defaultId = 'auto',
+    this.selected = const [],
+    this.available = const [],
+  });
+
+  final String defaultId;
+  final List<ModelEntry> selected;
+  final List<ModelEntry> available;
+
+  factory ModelManageView.fromJson(Map<String, dynamic> json) {
+    List<ModelEntry> parseList(dynamic raw) {
+      final out = <ModelEntry>[];
+      if (raw is List) {
+        for (final m in raw) {
+          if (m is Map) {
+            out.add(ModelEntry.fromJson(Map<String, dynamic>.from(m)));
+          }
+        }
+      }
+      return out;
+    }
+
+    return ModelManageView(
+      defaultId: json['default'] as String? ?? 'auto',
+      selected: parseList(json['selected']),
+      available: parseList(json['available']),
+    );
+  }
+}

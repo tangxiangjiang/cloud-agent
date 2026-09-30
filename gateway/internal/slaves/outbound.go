@@ -21,6 +21,12 @@ var slaveUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
+// ReportedModel is a Cursor model id reported by Slave (register / models.report).
+type ReportedModel struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
 type slaveClientMsg struct {
 	Type      string          `json:"type"`
 	Token     string          `json:"token"`
@@ -28,6 +34,7 @@ type slaveClientMsg struct {
 	Name      string          `json:"name"`
 	Repos     []Repo          `json:"repos"`
 	Projects  []Project       `json:"projects"`
+	Models    []ReportedModel `json:"models"`
 	TaskID    string          `json:"taskId"`
 	Event     *slaveEventIn   `json:"event"`
 	RequestID string          `json:"requestId"`
@@ -48,6 +55,7 @@ type OutboundHub struct {
 	appHub *ws.Hub
 
 	onProjectSyncResult func(slaveID, requestID, repoID string, payload json.RawMessage) error
+	onModelsReport      func(slaveID string, models []ReportedModel)
 
 	mu    sync.Mutex
 	conns map[string]*slaveConn // slaveId -> connection
@@ -66,6 +74,25 @@ func NewOutboundHub(store *auth.Store, reg *Registry, tasks *task.Store, appHub 
 // SetProjectSyncResultHandler receives Slave WS project.sync.result (optional).
 func (h *OutboundHub) SetProjectSyncResultHandler(fn func(slaveID, requestID, repoID string, payload json.RawMessage) error) {
 	h.onProjectSyncResult = fn
+}
+
+// SetModelsReportHandler receives Cursor model catalog from Slave register / models.report.
+func (h *OutboundHub) SetModelsReportHandler(fn func(slaveID string, models []ReportedModel)) {
+	h.onModelsReport = fn
+}
+
+// RequestModelsRefresh asks one online slave to re-list Cursor models.
+func (h *OutboundHub) RequestModelsRefresh() (slaveID string, ok bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for id, c := range h.conns {
+		if c == nil {
+			continue
+		}
+		c.sendJSON(map[string]any{"type": "models.refresh"})
+		return id, true
+	}
+	return "", false
 }
 
 func (h *OutboundHub) HandleWS(w http.ResponseWriter, r *http.Request) {
@@ -276,11 +303,25 @@ func (c *slaveConn) readPump() {
 			c.hub.conns[msg.SlaveID] = c
 			c.hub.mu.Unlock()
 			c.sendJSON(map[string]any{"type": "registered", "slaveId": msg.SlaveID})
+			if c.hub.onModelsReport != nil && len(msg.Models) > 0 {
+				c.hub.onModelsReport(msg.SlaveID, msg.Models)
+			}
 			// claim queued tasks for this slave
 			if c.hub.tasks != nil {
 				for _, t := range c.hub.tasks.ListQueuedForSlave(msg.SlaveID) {
 					c.sendJSON(map[string]any{"type": "task.assign", "task": t})
 				}
+			}
+		case "models.report":
+			if !c.requireAuth() {
+				continue
+			}
+			slaveID := msg.SlaveID
+			if slaveID == "" {
+				slaveID = c.id
+			}
+			if c.hub.onModelsReport != nil {
+				c.hub.onModelsReport(slaveID, msg.Models)
 			}
 		case "heartbeat":
 			if !c.requireAuth() {

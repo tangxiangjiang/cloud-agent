@@ -16,11 +16,16 @@ projects:
 apiKeyEnv: CURSOR_API_KEY
 
 # Default model when task.model is omitted.
-# auto / auto-smart = Cursor Router (IDE Auto). Use a concrete id if Router is off for your team.
-defaultModel: auto-smart
+# Pro personal: Cursor.models.list often only has `default` (use that).
+# Teams/Enterprise with Router: can use auto-smart.
+defaultModel: default
 
-# Cursor Router optimize_for when resolving auto / auto-smart: cost | balanced | intelligence
-optimizeFor: balanced
+# App/Gateway "auto" preference (catalog may override if preferred id missing).
+# Pro → default; Teams Router → auto-smart.
+autoModelId: default
+
+# Only applied when resolved model is auto-smart: cost | balanced | intelligence
+optimizeFor: cost
 
 # Env var name for Gateway Bearer (from POST /v1/auth/pair). Required to run.
 tokenEnv: GATEWAY_TOKEN

@@ -105,6 +105,17 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_repo
   ON chat_sessions(slave_id, repo_id, updated_at);
+CREATE TABLE IF NOT EXISTS model_selected (
+  id TEXT PRIMARY KEY NOT NULL,
+  label TEXT NOT NULL,
+  pos INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS model_available (
+  id TEXT PRIMARY KEY NOT NULL,
+  label TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL
+);
 `)
 	if err != nil {
 		return err

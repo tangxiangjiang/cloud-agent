@@ -45,10 +45,11 @@ Slave → 工程
 
 | UI | 含义 |
 |----|------|
-| **Auto**（默认） | 传 `auto`；Slave 映射为 Cursor Router：`auto-smart` + `optimize_for`（配置 `optimizeFor`，默认 `balanced`） |
+| **Auto**（默认） | 传 `auto`；Slave 按账号目录解析：Pro 多为 `default`；Teams Router 可为 `auto-smart` + `optimize_for`（见 `autoModelId` / `optimizeFor`） |
 | 具体 id | 如 `composer-2.5`；来自 Gateway 下发的 **允许列表**（避免 App 写死过时列表） |
 
-`GET /v1/models`（Bearer）返回静态可配置目录（`GATEWAY_MODELS` 逗号分隔 id，缺省内置 Auto + 常用 id）：
+`GET /v1/models`（Bearer）返回 **App 选择列表**（可在 App「模型列表」页增删；首启种子来自 `GATEWAY_MODELS` / 内置 Auto+常用 id）。  
+`GET /v1/models/manage` 另含 Slave 上报的 Cursor `available`；Pro 目录可能只有 `default`，可用手动添加 `composer-2.5` 等 id。
 
 ```json
 {
@@ -60,7 +61,7 @@ Slave → 工程
 }
 ```
 
-未知 id 时仍原样传给 SDK；空 model 回退 Slave `defaultModel`。Auto 的 status 事件会带 `resolvedModel: auto-smart` 与 `optimizeFor`。
+未知 id 时仍原样传给 SDK；空 model 回退 Slave `defaultModel`。Auto 按账号解析（Pro 多为 `default`）。
 
 ### Ask / Plan 系统前缀
 
@@ -170,7 +171,8 @@ Gateway 组 prompt（注入 mode 前缀）→ 现有 `task.assign`。
 }
 ```
 
-`model: auto` → Slave 解析为 Cursor Router（`auto-smart` + `optimize_for`，见 `slave/config.yaml` 的 `optimizeFor`）。空 model → `defaultModel`（默认亦为 `auto-smart`）。
+`model: auto` → Slave 启动时 `Cursor.models.list()`，优先用目录里真实存在的 id（Pro 通常只有 `default`；团队版才有 `auto-smart`）。空 model → `defaultModel`（默认 `default`）。  
+硬编码 `auto-smart` 在 Pro 上无效/浪费额度；团队 Router 才设 `autoModelId: auto-smart`，且优先 `optimizeFor: cost`。
 
 ---
 

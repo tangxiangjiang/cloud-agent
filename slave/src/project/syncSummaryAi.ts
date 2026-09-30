@@ -148,6 +148,8 @@ export async function generateSyncSummaryWithAi(opts: {
   apiKey: string;
   model: string;
   optimizeFor?: OptimizeFor;
+  autoModelId?: string;
+  availableModelIds?: ReadonlySet<string> | readonly string[];
   ctx: SyncSummaryContext;
   timeoutMs?: number;
 }): Promise<SyncAiSummaryResult | null> {
@@ -156,11 +158,13 @@ export async function generateSyncSummaryWithAi(opts: {
 
   const createOptions: AgentOptions = {
     apiKey: opts.apiKey,
-    model: resolveModelSelection(
-      opts.model,
-      opts.model,
-      opts.optimizeFor ?? "balanced",
-    ),
+    model: resolveModelSelection(opts.model, opts.model, {
+      optimizeFor: opts.optimizeFor ?? "cost",
+      autoModelId: opts.autoModelId ?? "default",
+      ...(opts.availableModelIds
+        ? { availableModelIds: opts.availableModelIds }
+        : {}),
+    }),
     local: {
       cwd: opts.ctx.cwd,
       settingSources: [],

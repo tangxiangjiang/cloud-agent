@@ -21,7 +21,8 @@ wss://{gateway}/v1/slave/ws
 | type | 字段 | 说明 |
 |------|------|------|
 | `auth` | `token` | 鉴权 |
-| `register` | `slaveId`, `name?`, `repos[{id,name,cwd}]`, `projects?[{id,name,cwd,index,milestones}]` | 登记；`online=true`；`projects` 含工程 milestone 索引；`repos` 为扁平白名单；并领取 queued tasks |
+| `register` | `slaveId`, `name?`, `repos[{id,name,cwd}]`, `projects?[{id,name,cwd,index,milestones}]`, `models?[{id,label}]` | 登记；`online=true`；可选上报 `Cursor.models.list`；并领取 queued tasks |
+| `models.report` | `slaveId?`, `models[{id,label}]` | 刷新后上报 Cursor 模型目录（App 管理页 available） |
 | `heartbeat` | — | 保活 |
 | `ping` | — | 应用层 ping |
 | `task.event` | `taskId`, `event.kind`, `event.payload` | 上报事件；Gateway 赋 `seq` 并 fan-out 到 App WS |
@@ -39,6 +40,7 @@ wss://{gateway}/v1/slave/ws
 | `workflow.assign` | `workflow`（WorkflowRun JSON） | `POST /workflows/{id}/start` 或 approve 后续跑；串行 DAG 调度 |
 | `workflow.revise` | `workflowId`, `nodeId`, `instruction` | App revise；Slave follow-up / 再跑（不写 progress） |
 | `workflow.review` | `workflowId`, `nodeId`, `decision`, `comment?` | `approve` → Slave 写 `progressDoc`；`reject` → 不写 |
+| `models.refresh` | — | App `POST /v1/models/refresh`；Slave 再 list 后回 `models.report` |
 | `error` | `error` | 失败 |
 
 `task.event.kind` 与 App 侧一致：`status` / `assistant.delta` / `tool.*` / `error` / `done`。

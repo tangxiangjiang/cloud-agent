@@ -126,9 +126,14 @@ GET 响应额外字段（对账，不改写节点 status）：
 | POST | `/v1/chats/{id}/messages` | `{text,mode?,model?}` → `202 {taskId,chatId}`；组 mode 前缀 prompt → Task |
 | POST | `/v1/chats/{id}/assistant` | `{taskId?,content}` 截断写入 assistant 摘要（无 tool payload） |
 | POST | `/v1/chats/{id}/stop` | 取消最近一条关联 Task（同 `POST /v1/tasks/{id}/cancel`） |
-| GET | `/v1/models` | 模型目录 `{default,models[{id,label}]}`；`GATEWAY_MODELS` 可覆盖 |
+| GET | `/v1/models` | App 下拉选择列表 `{default,models[{id,label}]}`（可编辑；首启种子来自 `GATEWAY_MODELS` / 内置） |
+| GET | `/v1/models/manage` | `{default,selected[],available[]}`；`available` 来自 Slave `Cursor.models.list` |
+| POST | `/v1/models` | `{id,label?}` 加入选择列表 |
+| DELETE | `/v1/models/{id}` | 移出选择列表（`auto` 不可删） |
+| PUT | `/v1/models/default` | `{id}` 设置默认（须已在 selected） |
+| POST | `/v1/models/refresh` | 请在线 Slave 重新拉取 Cursor 目录 → `models.report` |
 
-Task 可选字段：`chatId`、`mode`、`model`（`auto` → Slave 映射 Cursor Router `auto-smart` + `optimize_for`）。流式仍走 App WS / `GET /v1/tasks/{id}/events`。审计：`chat.create` / `chat.message` / `chat.stop`。
+Task 可选字段：`chatId`、`mode`、`model`（`auto` → Slave 按 `Cursor.models.list()` 解析，Pro 多为 `default`）。流式仍走 App WS / `GET /v1/tasks/{id}/events`。审计：`chat.create` / `chat.message` / `chat.stop`。
 
 ### 创建任务
 

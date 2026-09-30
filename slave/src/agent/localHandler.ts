@@ -19,6 +19,8 @@ export interface LocalAgentHandlerOptions {
   cfg: SlaveConfig;
   /** Cursor API key value (from env named by apiKeyEnv). Never log this. */
   apiKey: string;
+  /** From Cursor.models.list(); empty until setAvailableModels. */
+  availableModelIds?: ReadonlySet<string>;
 }
 
 /**
@@ -29,8 +31,24 @@ export class LocalAgentTaskHandler implements TaskHandlers {
   private readonly cancelled = new Set<string>();
   private readonly activeRuns = new Map<string, Run>();
   private chain: Promise<void> = Promise.resolve();
+  private availableModelIds: ReadonlySet<string>;
 
-  constructor(private readonly opts: LocalAgentHandlerOptions) {}
+  constructor(private readonly opts: LocalAgentHandlerOptions) {
+    this.availableModelIds = opts.availableModelIds ?? new Set();
+  }
+
+  /** Update catalog after startup Cursor.models.list(). */
+  setAvailableModels(ids: ReadonlySet<string>): void {
+    this.availableModelIds = ids;
+  }
+
+  private resolveModel(taskModel: string | null | undefined) {
+    return resolveModelSelection(taskModel, this.opts.cfg.defaultModel, {
+      optimizeFor: this.opts.cfg.optimizeFor,
+      autoModelId: this.opts.cfg.autoModelId,
+      availableModelIds: this.availableModelIds,
+    });
+  }
 
   onAssign(task: AssignedTask, emit: EmitEvent): Promise<void> {
     this.cancelled.delete(task.id);
@@ -101,11 +119,7 @@ export class LocalAgentTaskHandler implements TaskHandlers {
     }
 
     const requested = String(task.model ?? "").trim();
-    const model = resolveModelSelection(
-      task.model,
-      this.opts.cfg.defaultModel,
-      this.opts.cfg.optimizeFor,
-    );
+    const model = this.resolveModel(task.model);
     const modelId = model.id;
 
     // Local-only: whitelist cwd only; never cloud; never settingSources "all".
@@ -119,9 +133,7 @@ export class LocalAgentTaskHandler implements TaskHandlers {
     };
     assertNoCloud(createOptions);
 
-    const optimizeFor =
-      model.params?.find((p) => p.id === "optimize_for")?.value ??
-      this.opts.cfg.optimizeFor;
+    const optimizeFor = model.params?.find((p) => p.id === "optimize_for")?.value;
     emit(task.id, "status", {
       status: "running",
       mode: normalizeChatMode(task.mode),
@@ -129,7 +141,7 @@ export class LocalAgentTaskHandler implements TaskHandlers {
         ? {
             model: requested || "auto",
             resolvedModel: modelId,
-            optimizeFor,
+            ...(optimizeFor ? { optimizeFor } : {}),
           }
         : { model: modelId }),
     });
@@ -284,9 +296,12 @@ export class LocalAgentTaskHandler implements TaskHandlers {
 export function resolveTaskModel(
   taskModel: string | null | undefined,
   defaultModel: string,
-  optimizeFor: OptimizeFor = "balanced",
+  optimizeFor: OptimizeFor = "cost",
 ): string {
-  return resolveModelSelection(taskModel, defaultModel, optimizeFor).id;
+  return resolveModelSelection(taskModel, defaultModel, {
+    optimizeFor,
+    autoModelId: "default",
+  }).id;
 }
 
 /** Compile-time / runtime guard: AgentOptions must not enable cloud. */

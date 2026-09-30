@@ -18,6 +18,8 @@ export async function generateCommitMessageWithAi(opts: {
   apiKey: string;
   model: string;
   optimizeFor?: OptimizeFor;
+  autoModelId?: string;
+  availableModelIds?: ReadonlySet<string> | readonly string[];
   cwd: string;
   status: string;
   diffStat: string;
@@ -53,7 +55,13 @@ Rules:
 
   const createOptions: AgentOptions = {
     apiKey: opts.apiKey,
-    model: resolveModelSelection(opts.model, opts.model, opts.optimizeFor ?? "balanced"),
+    model: resolveModelSelection(opts.model, opts.model, {
+      optimizeFor: opts.optimizeFor ?? "cost",
+      autoModelId: opts.autoModelId ?? "default",
+      ...(opts.availableModelIds
+        ? { availableModelIds: opts.availableModelIds }
+        : {}),
+    }),
     local: {
       cwd: opts.cwd,
       settingSources: [],

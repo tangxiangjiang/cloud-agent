@@ -129,14 +129,15 @@ describe("validateConfig", () => {
     }
   });
 
-  it("defaults defaultModel to auto-smart and optimizeFor to balanced", () => {
+  it("defaults defaultModel/autoModelId to default and optimizeFor to cost", () => {
     const cfg = validateConfig({
       gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
       slaveId: "slave_devpc",
       repos: [{ id: "r1", name: "a", cwd: absA }],
     });
-    assert.equal(cfg.defaultModel, "auto-smart");
-    assert.equal(cfg.optimizeFor, "balanced");
+    assert.equal(cfg.defaultModel, "default");
+    assert.equal(cfg.autoModelId, "default");
+    assert.equal(cfg.optimizeFor, "cost");
   });
 
   it("rejects invalid optimizeFor", () => {

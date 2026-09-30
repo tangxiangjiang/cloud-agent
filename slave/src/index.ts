@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { parseArgs } from "node:util";
+import { listCursorModels } from "./agent/listModels.js";
 import { LocalAgentTaskHandler } from "./agent/localHandler.js";
 import {
   ConfigError,
@@ -95,6 +96,26 @@ async function main(): Promise<void> {
   const syncAiEnabled =
     !values.stub && Boolean(apiKey) && isSyncAiSummaryEnabled(cfg);
 
+  const availableModelIds = new Set<string>();
+  let cursorModels: Awaited<ReturnType<typeof listCursorModels>> = [];
+  if (!values.stub && apiKey) {
+    cursorModels = await listCursorModels(apiKey);
+    for (const m of cursorModels) availableModelIds.add(m.id);
+    if (handlers instanceof LocalAgentTaskHandler) {
+      handlers.setAvailableModels(availableModelIds);
+    }
+    if (
+      availableModelIds.size > 0 &&
+      !availableModelIds.has("auto-smart") &&
+      (cfg.autoModelId === "auto-smart" || cfg.defaultModel === "auto-smart")
+    ) {
+      log.warn(
+        "auto-smart not in Cursor models.list (Pro / Router off); App Auto will use default",
+        { autoModelId: cfg.autoModelId, catalog: [...availableModelIds] },
+      );
+    }
+  }
+
   // Diff needs a local git HEAD; auto-init whitelist projects that lack a repo.
   await ensureAllProjectGitRepos(cfg.projects);
 
@@ -118,6 +139,17 @@ async function main(): Promise<void> {
     slaveId: cfg.slaveId,
     repos: cfg.repos,
     projects,
+    models: cursorModels,
+    onModelsRefresh: async () => {
+      if (!apiKey) return cursorModels;
+      cursorModels = await listCursorModels(apiKey);
+      availableModelIds.clear();
+      for (const m of cursorModels) availableModelIds.add(m.id);
+      if (handlers instanceof LocalAgentTaskHandler) {
+        handlers.setAvailableModels(availableModelIds);
+      }
+      return cursorModels;
+    },
     handlers,
     onWorkflowAssign: (run) => scheduler.enqueue(run),
     onWorkflowRevise: (msg) => scheduler.enqueueRevise(msg),
@@ -135,6 +167,8 @@ async function main(): Promise<void> {
                   apiKey,
                   model: cfg.defaultModel,
                   optimizeFor: cfg.optimizeFor,
+                  autoModelId: cfg.autoModelId,
+                  availableModelIds,
                   ctx,
                 }),
             }
@@ -175,7 +209,13 @@ async function main(): Promise<void> {
 
   const commitAi =
     !values.stub && apiKey
-      ? { apiKey, model: cfg.defaultModel, optimizeFor: cfg.optimizeFor }
+      ? {
+          apiKey,
+          model: cfg.defaultModel,
+          optimizeFor: cfg.optimizeFor,
+          autoModelId: cfg.autoModelId,
+          availableModelIds,
+        }
       : null;
 
   const stateFile =

@@ -52,6 +52,8 @@ export class SerialDagScheduler {
         apiKey: string;
         model: string;
         optimizeFor?: OptimizeFor;
+        autoModelId?: string;
+        availableModelIds?: ReadonlySet<string> | readonly string[];
       } | null;
       /** Persist baselines/agentIds across slave restarts. */
       stateFile?: string;
@@ -316,6 +318,10 @@ export class SerialDagScheduler {
                 apiKey: commitAi.apiKey,
                 model: commitAi.model,
                 optimizeFor: commitAi.optimizeFor ?? this.opts.cfg.optimizeFor,
+                autoModelId: commitAi.autoModelId ?? this.opts.cfg.autoModelId,
+                ...(commitAi.availableModelIds
+                  ? { availableModelIds: commitAi.availableModelIds }
+                  : {}),
                 cwd: repo.cwd,
                 status: ctx.status,
                 diffStat: ctx.diffStat,

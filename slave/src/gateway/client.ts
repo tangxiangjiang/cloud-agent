@@ -10,6 +10,7 @@ import type {
   WorkflowReviseMessage,
   WorkflowRun,
 } from "../workflow/types.js";
+import type { CursorModelEntry } from "../agent/listModels.js";
 import type { AssignedTask, EmitEvent, InboundMessage, TaskHandlers } from "./types.js";
 
 export interface GatewayClientOptions {
@@ -22,6 +23,10 @@ export interface GatewayClientOptions {
   repos: RepoConfig[];
   /** Project catalog with milestone index (preferred register payload). */
   projects?: ProjectCatalog[];
+  /** Cursor.models.list() snapshot for App model manage UI. */
+  models?: CursorModelEntry[];
+  /** Re-fetch Cursor models when Gateway sends models.refresh. */
+  onModelsRefresh?: () => Promise<CursorModelEntry[]> | CursorModelEntry[];
   handlers: TaskHandlers;
   /** Optional DAG scheduler hook for workflow.assign */
   onWorkflowAssign?: (run: WorkflowRun) => void | Promise<void>;
@@ -57,8 +62,10 @@ export class GatewayClient {
   private backoff: number;
   private registered = false;
   private connectGeneration = 0;
+  private models: CursorModelEntry[];
 
   constructor(opts: GatewayClientOptions) {
+    this.models = opts.models ? [...opts.models] : [];
     this.opts = {
       ...opts,
       heartbeatMs: opts.heartbeatMs ?? 15_000,
@@ -172,6 +179,21 @@ export class GatewayClient {
         });
         this.startHeartbeat();
         break;
+      case "models.refresh": {
+        log.info("models.refresh requested");
+        try {
+          const list = this.opts.onModelsRefresh
+            ? await this.opts.onModelsRefresh()
+            : this.models;
+          this.models = list ?? [];
+          this.sendModelsReport(this.models);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          log.warn("models.refresh failed", { error: message });
+          this.sendModelsReport(this.models);
+        }
+        break;
+      }
       case "heartbeat.ok":
       case "pong":
         log.debug(`gateway ${msg.type}`);
@@ -415,7 +437,23 @@ export class GatewayClient {
     if (this.opts.name) {
       body.name = this.opts.name;
     }
+    if (this.models.length > 0) {
+      body.models = this.models;
+    }
     this.send(body);
+  }
+
+  private sendModelsReport(models: CursorModelEntry[]): void {
+    this.send({
+      type: "models.report",
+      slaveId: this.opts.slaveId,
+      models,
+    });
+  }
+
+  /** Update cached catalog (e.g. after startup list). */
+  setModels(models: CursorModelEntry[]): void {
+    this.models = models ? [...models] : [];
   }
 
   private emitEvent(

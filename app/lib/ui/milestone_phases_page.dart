@@ -115,7 +115,7 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
     if (mounted) await _refreshExisting();
   }
 
-  Future<void> _createAndStart({required bool forceNew}) async {
+  Future<void> _createWorkflow({required bool forceNew}) async {
     final ms = widget.milestone;
     if (ms.phases.isEmpty) {
       setState(() => _error = 'Milestone has no phases');
@@ -142,13 +142,13 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
         ),
         nodes: ms.phases.map((p) => p.toWorkflowNodeJson()).toList(),
       );
-      final started = await _api.startWorkflow(created.id);
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _existing = started.workflow;
+        _existing = created;
       });
-      await _openRun(started.workflow);
+      // First phase stays ready — user starts it explicitly on the detail page.
+      await _openRun(created);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -165,7 +165,8 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
         title: const Text('重新开始？'),
         content: const Text(
           '会新建一条 Workflow，之前的进度不会自动延续到新实例。'
-          '已 Approve 的节点仍保留在旧 Workflow 中。',
+          '已 Approve 的节点仍保留在旧 Workflow 中。'
+          '新建后首个任务为就绪，需手动点开始。',
         ),
         actions: [
           TextButton(
@@ -174,12 +175,12 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('新建并开始'),
+            child: const Text('新建'),
           ),
         ],
       ),
     );
-    if (ok == true) await _createAndStart(forceNew: true);
+    if (ok == true) await _createWorkflow(forceNew: true);
   }
 
   String _labelFor(String id) {
@@ -383,22 +384,22 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
                   OutlinedButton(
                     onPressed: _busy
                         ? null
-                        : () => _createAndStart(forceNew: true),
-                    child: Text(_busy ? 'Starting…' : '再开一轮'),
+                        : () => _createWorkflow(forceNew: true),
+                    child: Text(_busy ? 'Creating…' : '再开一轮'),
                   ),
                 ] else
                   FilledButton.icon(
                     onPressed: _busy
                         ? null
-                        : () => _createAndStart(forceNew: false),
+                        : () => _createWorkflow(forceNew: false),
                     icon: _busy
                         ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.play_arrow),
-                    label: Text(_busy ? 'Starting…' : '开始此 Milestone'),
+                        : const Icon(Icons.playlist_add_check),
+                    label: Text(_busy ? 'Creating…' : '创建此 Milestone'),
                   ),
               ],
             ),

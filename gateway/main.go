@@ -15,6 +15,7 @@ import (
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/audit"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/auth"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/chat"
+	"github.com/tangxiangjiang/cloud-agent/gateway/internal/masters"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/models"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/persist"
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/projectsync"
@@ -48,9 +49,10 @@ func main() {
 		log.Fatalf("audit log: %v", err)
 	}
 	auditLog := audit.NewLogger(1000, sink)
-	pairLimit := ratelimit.New(0, 10)   // 10 / min / IP
-	reviseLimit := ratelimit.New(0, 30) // 30 / min / IP
-	chatLimit := ratelimit.New(0, 30)   // 30 / min / IP (chat messages)
+	pairLimit := ratelimit.New(0, 10)    // 10 / min / IP
+	reviseLimit := ratelimit.New(0, 30)  // 30 / min / IP
+	chatLimit := ratelimit.New(0, 30)    // 30 / min / IP (chat messages)
+	masterLimit := ratelimit.New(0, 30)  // 30 / min / IP (master control)
 
 	authStore := auth.NewStore(pairCode)
 	taskStore := task.NewStore()
@@ -119,6 +121,10 @@ func main() {
 	taskStore.SetDispatcher(slaveHub)
 	wfStore.SetStarter(slaveHub)
 
+	masterReg := masters.NewRegistry()
+	masterHub := masters.NewOutboundHub(authStore, masterReg)
+	masterAPI := masters.NewAPI(masterReg, masterHub, slaveReg, taskStore, auditLog)
+
 	syncStore := persist.AsProjectSyncStore(stateStore)
 	syncSvc := projectsync.NewService(slaveReg, slaveHub, syncStore, auditLog)
 	syncSvc.SetWorkflowSource(wfStore)
@@ -186,8 +192,14 @@ func main() {
 	mux.Handle("/v1/chats", chatHandler)
 	mux.Handle("/v1/chats/", chatHandler)
 
+	masterInner := limitMasterControl(masterLimit, masterAPI)
+	masterAPI.Mount(mux, func(h http.Handler) http.Handler {
+		return authStore.Middleware(masterInner(h))
+	})
+
 	mux.HandleFunc("GET /v1/ws", hub.HandleWS)
 	mux.HandleFunc("GET /v1/slave/ws", slaveHub.HandleWS)
+	mux.HandleFunc("GET /v1/master/ws", masterHub.HandleWS)
 
 	if *debug {
 		log.Printf("debug inject enabled: POST /v1/debug/tasks/{id}/events")
@@ -292,6 +304,27 @@ func limitPathSuffix(lim *ratelimit.Limiter, suffix string, next http.Handler) h
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// limitMasterControl rate-limits mutating master fleet operations.
+func limitMasterControl(lim *ratelimit.Limiter, _ *masters.API) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				next.ServeHTTP(w, r)
+				return
+			}
+			key := audit.ClientIP(r)
+			if !lim.Allow(key) {
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				w.Header().Set("Retry-After", "60")
+				w.WriteHeader(http.StatusTooManyRequests)
+				_, _ = w.Write([]byte(`{"error":"rate limit exceeded"}`))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func auditSinkLabel(path string) string {

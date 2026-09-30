@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloud-agent.local/schemas/master-config.schema.json",
+  "title": "SlaveMasterConfig",
+  "description": "slave-master.yaml — one child Slave per project (M11).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["masterId", "gatewayUrl", "slaves"],
+  "properties": {
+    "masterId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_][a-zA-Z0-9_-]{0,63}$"
+    },
+    "name": { "type": "string" },
+    "gatewayUrl": {
+      "type": "string",
+      "description": "Master control WS, e.g. ws://host:8080/v1/master/ws"
+    },
+    "tokenEnv": { "type": "string", "default": "GATEWAY_TOKEN" },
+    "slaveCommand": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "slaveCwd": { "type": "string" },
+    "allowedRoots": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "maxRunningSlaves": { "type": "integer", "minimum": 1, "default": 4 },
+    "maxConcurrentStarts": { "type": "integer", "minimum": 1, "default": 2 },
+    "gracePeriodMs": { "type": "integer", "minimum": 0, "default": 15000 },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiKeyEnv": { "type": "string" },
+        "defaultModel": { "type": "string" },
+        "autoModelId": { "type": "string" },
+        "optimizeFor": { "type": "string", "enum": ["cost", "balanced", "intelligence"] },
+        "slaveGatewayUrl": {
+          "type": "string",
+          "description": "Child data-plane WS; default derived from gateway host + /v1/slave/ws"
+        }
+      }
+    },
+    "slaves": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/slaveEntry" }
+    }
+  },
+  "$defs": {
+    "slaveEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "project"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_][a-zA-Z0-9_-]{0,63}$"
+        },
+        "name": { "type": "string" },
+        "enabled": { "type": "boolean", "default": true },
+        "project": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "name", "cwd"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "name": { "type": "string", "minLength": 1 },
+            "cwd": { "type": "string", "minLength": 1 },
+            "index": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

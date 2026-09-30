@@ -81,6 +81,50 @@ class ChatSession {
   }
 }
 
+/// Cited workspace artifact on a chat message (plan phase for corrections).
+class ChatRef {
+  const ChatRef({
+    required this.kind,
+    required this.id,
+    this.title,
+    this.milestoneId,
+    this.phaseRef,
+  });
+
+  final String kind;
+  final String id;
+  final String? title;
+  final String? milestoneId;
+  final String? phaseRef;
+
+  String get label {
+    final t = title?.trim();
+    if (t != null && t.isNotEmpty) return '$id $t';
+    return id;
+  }
+
+  factory ChatRef.fromJson(Map<String, dynamic> json) {
+    return ChatRef(
+      kind: json['kind'] as String? ?? '',
+      id: json['id'] as String? ?? '',
+      title: json['title'] as String?,
+      milestoneId: json['milestoneId'] as String?,
+      phaseRef: json['phaseRef'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'kind': kind,
+      'id': id,
+      if (title != null && title!.isNotEmpty) 'title': title,
+      if (milestoneId != null && milestoneId!.isNotEmpty)
+        'milestoneId': milestoneId,
+      if (phaseRef != null && phaseRef!.isNotEmpty) 'phaseRef': phaseRef,
+    };
+  }
+}
+
 class ChatMessageSummary {
   const ChatMessageSummary({
     required this.id,
@@ -89,6 +133,7 @@ class ChatMessageSummary {
     this.taskId,
     this.mode,
     this.model,
+    this.refs = const [],
     this.at,
   });
 
@@ -98,9 +143,19 @@ class ChatMessageSummary {
   final String? taskId;
   final String? mode;
   final String? model;
+  final List<ChatRef> refs;
   final String? at;
 
   factory ChatMessageSummary.fromJson(Map<String, dynamic> json) {
+    final rawRefs = json['refs'];
+    final refs = <ChatRef>[];
+    if (rawRefs is List) {
+      for (final r in rawRefs) {
+        if (r is Map) {
+          refs.add(ChatRef.fromJson(Map<String, dynamic>.from(r)));
+        }
+      }
+    }
     return ChatMessageSummary(
       id: json['id'] as String? ?? '',
       role: json['role'] as String? ?? '',
@@ -108,6 +163,7 @@ class ChatMessageSummary {
       taskId: json['taskId'] as String?,
       mode: json['mode'] as String?,
       model: json['model'] as String?,
+      refs: refs,
       at: json['at'] as String?,
     );
   }

@@ -17,15 +17,15 @@ Gateway 接纳 Master 出站连接，镜像配置与运行态；提供 App 用�
 
 ## 完成定义（DoD）
 
-- [ ] Master WS：auth（**与 Slave 同一配对 token**）→ register → heartbeat；`slaves.report`
-- [ ] 控制消息带 `requestId`；HTTP **同步等待** `*.ok`/`*.error`，默认 **30s → 504**
-- [ ] `stop` 编排：对该 `slaveId` **尽力 cancel 进行中 tasks**，再等 Master 完成 grace/kill
-- [ ] 镜像配置 + `process`；GET **合并** `gatewayOnline`
-- [ ] HTTP：`/v1/masters*` CRUD + start/stop/restart；限流；错误码见设计 §14
-- [ ] Master offline → `409`；未送达 → `503`
-- [ ] `models.refresh`：任一 online 子 Slave（取最新 report）
-- [ ] 审计：`master.register` / `slave.config.*` / `slave.control.*`（无密钥）
-- [ ] 单测：register → GET；同步 control；三态；超时 504
+- [x] Master WS：auth（**与 Slave 同一配对 token**）→ register → heartbeat；`slaves.report`
+- [x] 控制消息带 `requestId`；HTTP **同步等待** `*.ok`/`*.error`，默认 **30s → 504**
+- [x] `stop` 编排：对该 `slaveId` **尽力 cancel 进行中 tasks**，再等 Master 完成 grace/kill
+- [x] 镜像配置 + `process`；GET **合并** `gatewayOnline`
+- [x] HTTP：`/v1/masters*` CRUD + start/stop/restart；限流；错误码见设计 §14
+- [x] Master offline → `409`；未送达 → `503`
+- [x] `models.refresh`：任一 online 子 Slave（取最新 report）
+- [x] 审计：`master.register` / `slave.config.*` / `slave.control.*`（无密钥）
+- [x] 单测：register → GET；同步 control；三态；超时 504
 
 ## 禁止事项
 

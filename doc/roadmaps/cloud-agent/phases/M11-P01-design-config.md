@@ -21,7 +21,7 @@
 - [x] **决议**节：共享 token、权威源、三态、串行幂等、配额、stop、收养、slaveId 迁移
 - [x] Master `slaves[]` 与「一 Slave 一 project」约束成文
 - [x] `api-outline` 增加 `/v1/masters*` 与 Master WS 条目（标注 M11）
-- [ ] （可选）`contracts/schemas` 增加 master-config / master WS 消息草案
+- [x] （可选）`contracts/schemas` 增加 master-config / master WS 消息草案
 - [x] architecture 角色表增加 slave-master / 指向本文
 
 ## 禁止事项

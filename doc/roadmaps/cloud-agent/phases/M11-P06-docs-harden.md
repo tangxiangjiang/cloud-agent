@@ -17,12 +17,12 @@
 
 ## 完成定义（DoD）
 
-- [ ] deploy：装 Master、示例配置、拆旧配置、**冷启动需 App Start**、可选 OS 自启 Master
-- [ ] 说明共享 Cursor Key 与 `maxRunningSlaves` 的关系
-- [ ] 审计事件表；错误码表；联调无 Key 进日志
-- [ ] 双工程：停 A 不影响 B；Master 重启收养不双开
-- [ ] roadmap / architecture 指向 M11；旧 multi-project 标 deprecated
-- [ ] mvp-checklist 舰队相关勾选已存在则核对通过
+- [x] deploy：装 Master、示例配置、拆旧配置、**冷启动需 App Start**、可选 OS 自启 Master
+- [x] 说明共享 Cursor Key 与 `maxRunningSlaves` 的关系
+- [x] 审计事件表；错误码表；联调无 Key 进日志
+- [x] 双工程：停 A 不影响 B；Master 重启收养不双开（单测覆盖）
+- [x] roadmap / architecture 指向 M11；旧 multi-project 标 deprecated
+- [x] mvp-checklist 舰队相关勾选已存在则核对通过（见 slave-master / deploy）
 
 ## 禁止事项
 

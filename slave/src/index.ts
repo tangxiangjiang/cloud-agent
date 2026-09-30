@@ -26,9 +26,10 @@ import { writeProgressPhases } from "./workflow/progress.js";
 import { SerialDagScheduler } from "./workflow/scheduler.js";
 
 function usage(): void {
-  console.log(`Usage: slave [--config <path>] [--stub] [--log-level debug|info|warn|error]
+  console.log(`Usage: slave [--config <path>] [--stub] [--legacy-multi-project] [--log-level debug|info|warn|error]
 
 Outbound Local Slave: Gateway WS + Cursor SDK Local Agent + serial DAG scheduler.
+Default: exactly one project (M11). Use slave-master for multiple projects.
 
 Env:
   GATEWAY_TOKEN (or tokenEnv)  — Bearer from POST /v1/auth/pair
@@ -36,6 +37,7 @@ Env:
   SYNC_AI_SUMMARY=0            — disable optional AI summary on project.sync
 
 --stub  use fake status/delta/done (no SDK; for Gateway-only联调)
+--legacy-multi-project  allow projects.length > 1 (deprecated)
 `);
 }
 
@@ -64,6 +66,7 @@ async function main(): Promise<void> {
     options: {
       config: { type: "string", short: "c" },
       stub: { type: "boolean", default: false },
+      "legacy-multi-project": { type: "boolean", default: false },
       "log-level": { type: "string", default: "info" },
       help: { type: "boolean", short: "h", default: false },
     },
@@ -81,8 +84,15 @@ async function main(): Promise<void> {
   }
   setLogLevel(level);
 
+  const legacyMulti = Boolean(values["legacy-multi-project"]);
   const configPath = resolveConfigPath(values.config);
-  const cfg = loadConfigFile(configPath);
+  const cfg = loadConfigFile(configPath, { allowMultiProject: legacyMulti });
+  if (legacyMulti && cfg.projects.length > 1) {
+    log.warn(
+      "deprecated --legacy-multi-project: prefer slave-master (one project per slave)",
+      { projects: cfg.projects.length },
+    );
+  }
 
   log.info("slave config ok", { configPath, ...configSummary(cfg) });
 

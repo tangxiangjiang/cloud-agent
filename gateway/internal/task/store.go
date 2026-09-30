@@ -355,6 +355,38 @@ func (s *Store) ListQueuedForSlave(slaveID string) []*Task {
 	return out
 }
 
+// ListActiveForSlave returns non-terminal tasks for a slave (M11 stop cancel).
+func (s *Store) ListActiveForSlave(slaveID string) []*Task {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []*Task
+	for _, t := range s.tasks {
+		if t.SlaveID == nil || *t.SlaveID != slaveID {
+			continue
+		}
+		switch t.Status {
+		case StatusQueued, StatusRunning, StatusCancelling:
+			out = append(out, cloneTask(t))
+		}
+	}
+	return out
+}
+
+// CancelActiveForSlave best-effort cancels all active tasks for slaveId.
+// Returns how many Cancel calls were made.
+func (s *Store) CancelActiveForSlave(slaveID string) int {
+	active := s.ListActiveForSlave(slaveID)
+	n := 0
+	for _, t := range active {
+		if t == nil {
+			continue
+		}
+		_, _ = s.Cancel(t.ID)
+		n++
+	}
+	return n
+}
+
 // Get returns a clone of the task, or nil if missing.
 func (s *Store) Get(id string) *Task {
 	s.mu.RLock()

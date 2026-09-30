@@ -17,15 +17,15 @@
 
 ## 完成定义（DoD）
 
-- [ ] `slave-master` 可独立启动；**冷启动不自动 start**（`enabled` 只表示允许 Start）
-- [ ] 状态目录在 **`<masterRoot>/.local/slaves/<id>/`**（pid、config、logs）
-- [ ] 按 `slaveId` **串行**；`requestId` 幂等；`maxRunningSlaves` / `maxConcurrentStarts`
-- [ ] `stop`：可回调/请求 Gateway cancel → grace → kill（见设计决议 §6）
-- [ ] pid **收养**；禁止同 id 双开（停新保旧）
-- [ ] `project.id` / `cwd` 唯一校验；错误码对齐设计 §14
-- [ ] CRUD 写盘为权威；手改配置后可全量 report
-- [ ] 单测：冷启动全停；双假进程隔离；收养不重复 spawn
-- [ ] 文档：本机 CLI 用法
+- [x] `slave-master` 可独立启动；**冷启动不自动 start**（`enabled` 只表示允许 Start）
+- [x] 状态目录在 **`<masterRoot>/.local/slaves/<id>/`**（pid、config、logs）
+- [x] 按 `slaveId` **串行**；`requestId` 幂等；`maxRunningSlaves` / `maxConcurrentStarts`
+- [x] `stop`：可回调/请求 Gateway cancel → grace → kill（见设计决议 §6）
+- [x] pid **收养**；禁止同 id 双开（停新保旧）
+- [x] `project.id` / `cwd` 唯一校验；错误码对齐设计 §14
+- [x] CRUD 写盘为权威；手改配置后可全量 report
+- [x] 单测：冷启动全停；双假进程隔离；收养不重复 spawn
+- [x] 文档：本机 CLI 用法（`npm run master -- …`）
 
 ## 禁止事项
 

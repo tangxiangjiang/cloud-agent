@@ -14,15 +14,19 @@ class _Bubble {
     required this.role,
     required this.text,
     this.taskId,
+    this.refs = const [],
     this.streaming = false,
     this.done = false,
+    this.cancelled = false,
   });
 
   final String role;
   String text;
   String? taskId;
+  List<ChatRef> refs;
   bool streaming;
   bool done;
+  bool cancelled;
 }
 
 /// Project chat: modes/models + history drawer (M09-P04).
@@ -65,6 +69,7 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
   bool _loadingHistory = false;
   String? _error;
   String? _activeTaskId;
+  ChatRef? _pendingRef;
 
   TaskLogBuffer? _buffer;
   AppWsClient? _ws;
@@ -139,6 +144,7 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
               role: m.role,
               text: m.content,
               taskId: m.taskId,
+              refs: m.refs,
               done: true,
             ),
           ),
@@ -489,15 +495,23 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
           if (e.kind == 'done' || e.kind == 'error') {
             _running = false;
             _sending = false;
+            final status = e.payload['status']?.toString() ?? '';
+            final wasCancelled = status == 'cancelled';
             for (var i = _bubbles.length - 1; i >= 0; i--) {
               if (_bubbles[i].taskId == taskId) {
                 _bubbles[i].streaming = false;
-                _bubbles[i].done = true;
+                if (wasCancelled || _bubbles[i].cancelled) {
+                  _bubbles[i].cancelled = true;
+                  _bubbles[i].done = false;
+                } else {
+                  _bubbles[i].done = true;
+                  _bubbles[i].cancelled = false;
+                }
                 if (e.kind == 'error' && _bubbles[i].text == '…') {
                   _bubbles[i].text =
                       e.payload['message']?.toString() ?? 'error';
                 }
-                if (!finalized) {
+                if (!finalized && !_bubbles[i].cancelled) {
                   finalized = true;
                   unawaited(_persistAssistant(taskId, _bubbles[i].text));
                 }
@@ -552,14 +566,22 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
       return;
     }
 
+    final cite = _pendingRef;
     setState(() {
       _sending = true;
       _error = null;
-      _bubbles.add(_Bubble(role: 'user', text: text));
+      _bubbles.add(
+        _Bubble(
+          role: 'user',
+          text: text,
+          refs: cite == null ? const [] : [cite],
+        ),
+      );
       _bubbles.add(
         _Bubble(role: 'assistant', text: '…', streaming: true),
       );
       _input.clear();
+      _pendingRef = null;
     });
     _scrollToEnd();
 
@@ -585,6 +607,7 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
         text: text,
         mode: _mode,
         model: _model,
+        refs: cite == null ? null : [cite],
       );
       if (!mounted) return;
       setState(() {
@@ -643,9 +666,10 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
       _running = false;
       _sending = false;
       for (final b in _bubbles) {
-        if (b.streaming) {
+        if (b.streaming || (b.taskId != null && b.taskId == taskId)) {
           b.streaming = false;
-          b.done = true;
+          b.done = false;
+          b.cancelled = true;
         }
       }
     });
@@ -656,6 +680,7 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
     setState(() {
       _bubbles.clear();
       _activeTaskId = null;
+      _pendingRef = null;
       _running = false;
       _sending = false;
       _session = null;
@@ -676,6 +701,207 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
     final sess = _session;
     if (sess == null) return 'New chat · $project';
     return '${sess.displayTitle} · $project';
+  }
+
+  Future<void> _openAttachSheet() async {
+    if (_starting || !_online || _sending || _running) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: Text('Add', style: theme.textTheme.titleMedium),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.account_tree_outlined),
+                title: const Text('Plan'),
+                subtitle: const Text('Cite a milestone phase'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  unawaited(_openPlanPicker());
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openPlanPicker() async {
+    final milestones = widget.project.milestones;
+    final hasPhase = milestones.any((m) => m.phases.isNotEmpty);
+    final selected = await showModalBottomSheet<ChatRef>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          minChildSize: 0.4,
+          maxChildSize: 0.92,
+          builder: (ctx, scroll) {
+            if (!hasPhase) {
+              return Column(
+                children: [
+                  ListTile(
+                    title: Text('Plan', style: theme.textTheme.titleMedium),
+                    subtitle: const Text('Milestone phases'),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        '当前工程无 plan',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }
+            return Column(
+              children: [
+                ListTile(
+                  title: Text('Plan', style: theme.textTheme.titleMedium),
+                  subtitle: const Text('Select a phase to cite'),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scroll,
+                    itemCount: milestones.length,
+                    itemBuilder: (context, mi) {
+                      final ms = milestones[mi];
+                      if (ms.phases.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                            child: Text(
+                              '${ms.id} · ${ms.title}',
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                          ...ms.phases.map((p) {
+                            return ListTile(
+                              leading: const Icon(Icons.description_outlined),
+                              title: Text('${p.id} · ${p.title}'),
+                              subtitle: p.phaseRef.isEmpty
+                                  ? null
+                                  : Text(
+                                      p.phaseRef,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                              onTap: () {
+                                Navigator.pop(
+                                  ctx,
+                                  ChatRef(
+                                    kind: 'phase',
+                                    id: p.id,
+                                    title: p.title,
+                                    milestoneId: ms.id,
+                                    phaseRef: p.phaseRef,
+                                  ),
+                                );
+                              },
+                            );
+                          }),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (selected == null || !mounted) return;
+    setState(() => _pendingRef = selected);
+  }
+
+  Widget _refChip(ChatRef ref, {VoidCallback? onDeleted}) {
+    return InputChip(
+      avatar: const Icon(Icons.account_tree_outlined, size: 16),
+      label: Text(ref.label, overflow: TextOverflow.ellipsis),
+      onDeleted: onDeleted,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+    );
+  }
+
+  Widget _assistantStatusLabel(BuildContext context, _Bubble b) {
+    final theme = Theme.of(context);
+    final style = theme.textTheme.labelSmall;
+    if (b.streaming) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.8,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text('Think', style: style),
+        ],
+      );
+    }
+    if (b.cancelled) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.cancel,
+            size: 14,
+            color: Color(0xFFC62828),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Cancel',
+            style: style?.copyWith(color: const Color(0xFFC62828)),
+          ),
+        ],
+      );
+    }
+    if (b.done) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.check_circle,
+            size: 14,
+            color: Color(0xFF2E7D32),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Done',
+            style: style?.copyWith(color: const Color(0xFF2E7D32)),
+          ),
+        ],
+      );
+    }
+    return Text('Assistant', style: style);
   }
 
   @override
@@ -829,14 +1055,19 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    isUser
-                                        ? 'You'
-                                        : (b.streaming
-                                            ? 'Assistant…'
-                                            : 'Assistant'),
-                                    style: theme.textTheme.labelSmall,
-                                  ),
+                                  isUser
+                                      ? Text('You', style: theme.textTheme.labelSmall)
+                                      : _assistantStatusLabel(context, b),
+                                  if (b.refs.isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      children: [
+                                        for (final r in b.refs) _refChip(r),
+                                      ],
+                                    ),
+                                  ],
                                   const SizedBox(height: 4),
                                   SelectableText(b.text),
                                 ],
@@ -851,39 +1082,66 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
           SafeArea(
             top: false,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
+              padding: const EdgeInsets.fromLTRB(4, 4, 8, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _input,
-                      minLines: 1,
-                      maxLines: 5,
-                      enabled: !_starting && _online,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => unawaited(_send()),
-                      decoration: InputDecoration(
-                        hintText: 'Message ($_modeLabel · $_modelLabel)',
-                        border: const OutlineInputBorder(),
-                        isDense: true,
+                  if (_pendingRef != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 0, 0, 6),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: _refChip(
+                          _pendingRef!,
+                          onDeleted: () => setState(() => _pendingRef = null),
+                        ),
                       ),
                     ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      IconButton(
+                        tooltip: 'Add',
+                        onPressed: !_starting &&
+                                _online &&
+                                !_sending &&
+                                !_running
+                            ? () => unawaited(_openAttachSheet())
+                            : null,
+                        icon: const Icon(Icons.add_circle_outline),
+                      ),
+                      Expanded(
+                        child: TextField(
+                          controller: _input,
+                          minLines: 1,
+                          maxLines: 5,
+                          enabled: !_starting && _online,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) => unawaited(_send()),
+                          decoration: InputDecoration(
+                            hintText: 'Message ($_modeLabel · $_modelLabel)',
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      if (_running || _sending)
+                        IconButton.filled(
+                          tooltip: 'Stop',
+                          onPressed: _stop,
+                          icon: const Icon(Icons.stop),
+                        )
+                      else
+                        IconButton.filled(
+                          tooltip: 'Send',
+                          onPressed: _online && !_starting
+                              ? () => unawaited(_send())
+                              : null,
+                          icon: const Icon(Icons.send),
+                        ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  if (_running || _sending)
-                    IconButton.filled(
-                      tooltip: 'Stop',
-                      onPressed: _stop,
-                      icon: const Icon(Icons.stop),
-                    )
-                  else
-                    IconButton.filled(
-                      tooltip: 'Send',
-                      onPressed:
-                          _online && !_starting ? () => unawaited(_send()) : null,
-                      icon: const Icon(Icons.send),
-                    ),
                 ],
               ),
             ),

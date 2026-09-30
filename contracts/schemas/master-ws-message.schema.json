@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloud-agent.local/schemas/master-ws-message.schema.json",
+  "title": "MasterWsMessage",
+  "description": "Control-plane messages between Gateway and slave-master (M11).",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["type", "masterId"],
+      "properties": {
+        "type": { "const": "master.register" },
+        "masterId": { "type": "string" },
+        "name": { "type": "string" },
+        "slaves": { "type": "array" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "master.heartbeat" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["type", "slaves"],
+      "properties": {
+        "type": { "const": "master.slaves.report" },
+        "slaves": { "type": "array" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["type", "requestId"],
+      "properties": {
+        "type": { "enum": ["master.config.ok", "master.config.error", "master.control.ok", "master.control.error"] },
+        "requestId": { "type": "string" },
+        "error": { "type": "string" },
+        "code": { "type": "string" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["type", "requestId", "slave"],
+      "properties": {
+        "type": { "const": "master.config.upsert" },
+        "requestId": { "type": "string" },
+        "slave": { "type": "object" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["type", "requestId", "slaveId"],
+      "properties": {
+        "type": { "const": "master.config.delete" },
+        "requestId": { "type": "string" },
+        "slaveId": { "type": "string" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["type", "requestId", "slaveId", "action"],
+      "properties": {
+        "type": { "const": "master.control" },
+        "requestId": { "type": "string" },
+        "slaveId": { "type": "string" },
+        "action": { "enum": ["start", "stop", "restart"] }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "master.config.list" },
+        "requestId": { "type": "string" }
+      }
+    }
+  ]
+}

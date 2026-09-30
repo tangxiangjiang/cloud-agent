@@ -17,13 +17,13 @@ Flutter App 展示 Master 与其下 Slave：运行态、Start/Stop/Restart、添
 
 ## 完成定义（DoD）
 
-- [ ] **舰队页**为配置/启停主入口（`/v1/masters`）；不以 `/v1/slaves` 作舰队主列表
-- [ ] Slave 行：**process** + **gatewayOnline** + `lastError`
-- [ ] Start / Stop / Restart；处理 409/503/504 与业务错误码文案
-- [ ] 添加 / 编辑 / 删除（id 只读；repoId/cwd 冲突有提示）
-- [ ] **工程入口**只列出 `running && gatewayOnline`
-- [ ] 写配置/启停以 HTTP 成功 + 再 GET 刷新为准
-- [ ] widget 或 API 单测覆盖解析与至少一条启停/CRUD 路径
+- [x] **舰队页**为配置/启停主入口（`/v1/masters`）；不以 `/v1/slaves` 作舰队主列表
+- [x] Slave 行：**process** + **gatewayOnline** + `lastError`
+- [x] Start / Stop / Restart；处理 409/503/504 与业务错误码文案
+- [x] 添加 / 编辑 / 删除（id 只读；repoId/cwd 冲突有提示）
+- [x] **工程入口**只列出 `running && gatewayOnline`
+- [x] 写配置/启停以 HTTP 成功 + 再 GET 刷新为准
+- [x] widget 或 API 单测覆盖解析与至少一条启停/CRUD 路径
 
 ## 禁止事项
 

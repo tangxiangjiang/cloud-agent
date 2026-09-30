@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Local 联调 / 部署：Gateway + Slave（可选 stub）+ 按 ai/index 启动 DAG。
+"""Local 联调 / 部署：Gateway + slave-master（M11）+ 按 ai/index 启动 DAG。
 
 用法（在仓库根目录）:
   python run.py plans                     # 列出 ai/index.json 中的计划
-  python run.py up                        # stub + 索引 default
-  python run.py up --plan flutter-chat    # 按计划 id 启动
+  python run.py up                        # stub + Master + 索引 default
+  python run.py up --plan flutter-chat    # 按计划 id Start 对应子 Slave
   python run.py up --agent --plan sample-dag
+  python run.py up --legacy-slave         # 旧：单进程 Slave
   python run.py workflow --plan flutter-chat
   python run.py down
   python run.py status
@@ -15,8 +16,9 @@
   python run.py build --ios ./build
   python run.py build --ios --ipa --export-method development ./build
 
+默认走 slave-master（冷启动后对本计划 Start 一个子 Slave）。
 密钥只走环境变量；勿把 token / API key 提交进 git。
-详见 doc/deploy.md、ai/INDEX.md。
+详见 doc/deploy.md、doc/slave-master.md、ai/INDEX.md。
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -47,6 +50,8 @@ PIDS_FILE = LOCAL / "deploy.pids.json"
 TOKEN_FILE = LOCAL / "gateway.token"
 SLAVE_CONFIG = ROOT / "slave" / "config.yaml"
 SLAVE_CONFIG_EXAMPLE = ROOT / "slave" / "config.example.yaml"
+MASTER_CONFIG = ROOT / "slave" / "master.config.yaml"
+MASTER_CONFIG_EXAMPLE = ROOT / "slave" / "master.config.example.yaml"
 AI_INDEX = ROOT / "ai" / "index.json"
 DEFAULT_BUNDLE = ROOT / "examples" / "sample-dag.json"
 STUB_BUNDLE = ROOT / "ai" / "bundles" / "m05-p02-two-node.json"
@@ -289,6 +294,169 @@ def ensure_slave_config() -> None:
     info(f"wrote {SLAVE_CONFIG.relative_to(ROOT)} (cwd={repo_cwd})")
 
 
+def _npx() -> str:
+    return "npx.cmd" if sys.platform == "win32" else "npx"
+
+
+def local_slave_command(*, stub: bool) -> list[str]:
+    """Child spawn argv for Master (ProcessManager appends --config).
+
+    Prefer `node …/tsx/dist/cli.mjs` so Windows does not spawn npx.cmd
+    (which needs a shell and often fails with EINVAL).
+    """
+    node = "node"
+    tsx_cli = ROOT / "slave" / "node_modules" / "tsx" / "dist" / "cli.mjs"
+    if tsx_cli.is_file():
+        # Relative to slaveCwd (.) so paths stay portable in YAML.
+        cmd = [node, "node_modules/tsx/dist/cli.mjs", "src/index.ts"]
+    else:
+        cmd = [_npx(), "tsx", "src/index.ts"]
+    if stub:
+        cmd.append("--stub")
+    return cmd
+
+
+def _yaml_quote(s: str) -> str:
+    """Always JSON-quote list/scalar values written by run.py (safe YAML)."""
+    return json.dumps(s, ensure_ascii=False)
+
+
+def _replace_yaml_list(text: str, key: str, values: list[str]) -> str:
+    """Replace inline or block list for `key:` with a single-line flow list."""
+    rendered = f"{key}: [" + ", ".join(_yaml_quote(v) for v in values) + "]"
+    # Same-line spaces/tabs only after ':' (\s would eat newlines).
+    pat = re.compile(
+        rf"(?m)^{re.escape(key)}:[ \t]*"
+        rf"(?:\[[^\]]*\][^\n]*)?"
+        rf"(?:\n[ \t]+(?:-[ \t][^\n]*|\[[^\]]*\][^\n]*))*",
+    )
+    if pat.search(text):
+        return pat.sub(rendered, text, count=1)
+    # Also fix already-broken `key:[...]` (no space) left by older run.py.
+    pat2 = re.compile(rf"(?m)^{re.escape(key)}:\[[^\]]*\][^\n]*")
+    if pat2.search(text):
+        return pat2.sub(rendered, text, count=1)
+    return text.rstrip() + f"\n{rendered}\n"
+
+
+def _replace_yaml_scalar(text: str, key: str, value: str) -> str:
+    pat = re.compile(rf"(?m)^({re.escape(key)}:\s*).*$")
+    if pat.search(text):
+        return pat.sub(rf"\1{_yaml_quote(value)}", text, count=1)
+    return text.rstrip() + f"\n{key}: {_yaml_quote(value)}\n"
+
+
+def _ws_base(http_base: str) -> str:
+    b = http_base.rstrip("/")
+    if b.startswith("https://"):
+        return "wss://" + b[len("https://") :]
+    if b.startswith("http://"):
+        return "ws://" + b[len("http://") :]
+    return "ws://" + b
+
+
+def ensure_master_config(*, stub: bool, base: str) -> Path:
+    """Ensure slave/master.config.yaml exists and is tuned for local run.py."""
+    ensure_local()
+    if not MASTER_CONFIG.is_file():
+        if SLAVE_CONFIG.is_file():
+            info("migrating slave/config.yaml → master.config.yaml")
+            r = subprocess.run(
+                [
+                    _npm(),
+                    "run",
+                    "master",
+                    "--",
+                    "migrate",
+                    "--from",
+                    str(SLAVE_CONFIG),
+                    "--to",
+                    str(MASTER_CONFIG),
+                ],
+                cwd=ROOT / "slave",
+                capture_output=True,
+                text=True,
+            )
+            if r.returncode != 0:
+                err = (r.stderr or r.stdout or "").strip()
+                die(f"master migrate failed: {err or r.returncode}")
+            if r.stdout.strip():
+                info(r.stdout.strip())
+        elif MASTER_CONFIG_EXAMPLE.is_file():
+            text = MASTER_CONFIG_EXAMPLE.read_text(encoding="utf-8")
+            repo_cwd = cwd_for_yaml(ROOT)
+            allowed = cwd_for_yaml(ROOT.parent)
+            lines: list[str] = []
+            for line in text.splitlines(keepends=True):
+                stripped = line.lstrip()
+                if stripped.startswith("cwd:"):
+                    indent = line[: len(line) - len(stripped)]
+                    lines.append(f"{indent}cwd: {repo_cwd}\n")
+                elif stripped.startswith("- E:/workspace"):
+                    indent = line[: len(line) - len(stripped)]
+                    lines.append(f"{indent}- {allowed}\n")
+                else:
+                    lines.append(line)
+            MASTER_CONFIG.write_text("".join(lines), encoding="utf-8")
+            info(f"wrote {MASTER_CONFIG.relative_to(ROOT)} (cwd={repo_cwd})")
+        else:
+            die(f"missing {MASTER_CONFIG_EXAMPLE} and {SLAVE_CONFIG}")
+
+    text = MASTER_CONFIG.read_text(encoding="utf-8")
+    ws = _ws_base(base)
+    text = _replace_yaml_list(text, "slaveCommand", local_slave_command(stub=stub))
+    text = _replace_yaml_scalar(text, "slaveCwd", ".")
+    text = _replace_yaml_scalar(text, "gatewayUrl", f"{ws}/v1/master/ws")
+    if re.search(r"(?m)^\s*slaveGatewayUrl:\s*", text):
+        text = re.sub(
+            r"(?m)^(\s*slaveGatewayUrl:\s*).*$",
+            rf"\1{_yaml_quote(f'{ws}/v1/slave/ws')}",
+            text,
+            count=1,
+        )
+    MASTER_CONFIG.write_text(text, encoding="utf-8")
+    info(
+        f"master config: {MASTER_CONFIG.relative_to(ROOT)} "
+        f"(slaveCommand stub={stub})"
+    )
+    return MASTER_CONFIG
+
+
+def list_master_slave_ids(config_path: Path) -> list[str]:
+    """Best-effort parse `slaves[].id` from master YAML."""
+    text = config_path.read_text(encoding="utf-8")
+    ids: list[str] = []
+    in_slaves = False
+    for line in text.splitlines():
+        if re.match(r"^slaves:\s*$", line):
+            in_slaves = True
+            continue
+        if in_slaves:
+            if line and not line[0].isspace() and not line.startswith("#"):
+                break
+            m = re.match(r"^\s+-\s+id:\s*(\S+)\s*$", line)
+            if m:
+                ids.append(m.group(1).strip("\"'"))
+    return ids
+
+
+def resolve_start_slave_id(bundle_path: Path | None, master_cfg: Path) -> str:
+    ids = list_master_slave_ids(master_cfg)
+    preferred = "slave_devpc"
+    if bundle_path and bundle_path.is_file():
+        try:
+            bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+            preferred = str(bundle.get("preferredSlaveId") or preferred)
+        except json.JSONDecodeError:
+            pass
+    if preferred in ids:
+        return preferred
+    if ids:
+        info(f"preferred slaveId={preferred!r} not in master config; using {ids[0]!r}")
+        return ids[0]
+    return preferred
+
+
 def start_gateway(base: str, pair_code: str, audit_log: Path | None) -> int:
     addr = base.replace("http://", "").replace("https://", "")
     if not addr.startswith(":"):
@@ -368,7 +536,14 @@ def _flutter() -> str:
     )
 
 
-def start_slave(*, stub: bool, token: str, cursor_key: str | None) -> int:
+def start_slave(
+    *,
+    stub: bool,
+    token: str,
+    cursor_key: str | None,
+    legacy_multi: bool = False,
+) -> int:
+    """Legacy single-process Slave (opt-in via --legacy-slave)."""
     ensure_slave_config()
     env = os.environ.copy()
     env["GATEWAY_TOKEN"] = token
@@ -377,13 +552,15 @@ def start_slave(*, stub: bool, token: str, cursor_key: str | None) -> int:
     ensure_local()
     env["SLAVE_STATE_FILE"] = str(LOCAL / "slave-runtime.json")
     npm = _npm()
+    extra: list[str] = []
+    if legacy_multi:
+        extra.append("--legacy-multi-project")
     if stub:
-        args = [npm, "run", "dev", "--", "--stub"]
+        args = [npm, "run", "dev", "--", "--stub", *extra]
     else:
         if not env.get("CURSOR_API_KEY"):
             die("真 Agent 模式需要环境变量 CURSOR_API_KEY（或 --cursor-key）")
-        # Always tsx/dev — `npm start` uses stale slave/dist and skips approve→git commit.
-        args = [npm, "run", "dev"]
+        args = [npm, "run", "dev", "--", *extra] if extra else [npm, "run", "dev"]
     log_path = LOCAL / "slave.log"
     ensure_local()
     logf = open(log_path, "w", encoding="utf-8")
@@ -399,9 +576,170 @@ def start_slave(*, stub: bool, token: str, cursor_key: str | None) -> int:
         creationflags=creationflags,
     )
     mode = "stub" if stub else "agent"
-    info(f"Slave starting pid={proc.pid} mode={mode} log={log_path.relative_to(ROOT)}")
+    legacy = " legacy-multi" if legacy_multi else ""
+    info(
+        f"Slave starting pid={proc.pid} mode={mode}{legacy} "
+        f"log={log_path.relative_to(ROOT)}"
+    )
     return proc.pid
 
+
+def start_master(*, stub: bool, token: str, cursor_key: str | None, base: str) -> int:
+    cfg = ensure_master_config(stub=stub, base=base)
+    env = os.environ.copy()
+    env["GATEWAY_TOKEN"] = token
+    if cursor_key:
+        env["CURSOR_API_KEY"] = cursor_key
+    if not stub and not env.get("CURSOR_API_KEY"):
+        die("真 Agent 模式需要环境变量 CURSOR_API_KEY（或 --cursor-key）")
+    ensure_local()
+    npm = _npm()
+    args = [
+        npm,
+        "run",
+        "master",
+        "--",
+        "serve",
+        "--config",
+        str(cfg),
+    ]
+    log_path = LOCAL / "master.log"
+    logf = open(log_path, "w", encoding="utf-8")
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+    proc = subprocess.Popen(
+        args,
+        cwd=ROOT / "slave",
+        env=env,
+        stdout=logf,
+        stderr=subprocess.STDOUT,
+        creationflags=creationflags,
+    )
+    mode = "stub" if stub else "agent"
+    info(
+        f"Master starting pid={proc.pid} mode={mode} "
+        f"config={cfg.relative_to(ROOT)} log={log_path.relative_to(ROOT)}"
+    )
+    return proc.pid
+
+
+def read_master_id(config_path: Path = MASTER_CONFIG) -> str:
+    if not config_path.is_file():
+        return "master_devpc"
+    for line in config_path.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^masterId:\s*(\S+)\s*$", line)
+        if m:
+            return m.group(1).strip("\"'")
+    return "master_devpc"
+
+
+def wait_master_online(
+    base: str,
+    token: str,
+    master_id: str,
+    *,
+    timeout: float = 45.0,
+) -> None:
+    """Wait until Master has registered on Gateway control WS."""
+    deadline = time.time() + timeout
+    url = f"{base.rstrip('/')}/v1/masters/{master_id}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+    }
+    last_err = "not yet registered"
+    while time.time() < deadline:
+        try:
+            req = urllib.request.Request(url, headers=headers, method="GET")
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                raw = resp.read()
+                data = json.loads(raw.decode("utf-8")) if raw else {}
+            if isinstance(data, dict) and data.get("online") is True:
+                info(f"master online: {master_id}")
+                return
+            last_err = f"online={data.get('online') if isinstance(data, dict) else data}"
+        except urllib.error.HTTPError as e:
+            last_err = f"HTTP {e.code}"
+        except Exception as e:
+            last_err = str(e)
+        time.sleep(0.5)
+    die(f"Master {master_id} not online within {timeout}s ({last_err})")
+
+
+def master_cli(
+    *cli_args: str,
+    token: str | None = None,
+    cursor_key: str | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    if token:
+        env["GATEWAY_TOKEN"] = token
+    if cursor_key:
+        env["CURSOR_API_KEY"] = cursor_key
+    cmd = [_npm(), "run", "master", "--", *cli_args, "--config", str(MASTER_CONFIG)]
+    r = subprocess.run(
+        cmd,
+        cwd=ROOT / "slave",
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if check and r.returncode != 0:
+        err = (r.stderr or r.stdout or "").strip()
+        die(f"master {' '.join(cli_args)} failed: {err or r.returncode}")
+    return r
+
+
+def master_start_child(
+    slave_id: str,
+    *,
+    base: str,
+    token: str,
+    cursor_key: str | None = None,
+) -> None:
+    """Ask the running Master (via Gateway) to start a child — not a second CLI ProcessManager."""
+    master_id = read_master_id()
+    info(f"waiting for Master register ({master_id})...")
+    wait_master_online(base, token, master_id)
+    info(f"Master start child via Gateway: {master_id}/{slave_id}")
+    url = (
+        f"{base.rstrip('/')}/v1/masters/{master_id}"
+        f"/slaves/{slave_id}/start"
+    )
+    try:
+        data = http_json("POST", url, token=token, timeout=60.0)
+        info(f"child start ok: {json.dumps(data, ensure_ascii=False)[:300]}")
+    except SystemExit:
+        # Fallback: local CLI (unref + process.exit so it should not hang)
+        info("Gateway start failed; falling back to local master CLI start")
+        r = master_cli("start", slave_id, token=token, cursor_key=cursor_key)
+        out = (r.stdout or "").strip()
+        if out:
+            info(out)
+
+
+def master_stop_all(*, base: str | None = None, token: str | None = None) -> None:
+    if not MASTER_CONFIG.is_file():
+        return
+    master_id = read_master_id()
+    base = (base or DEFAULT_BASE).rstrip("/")
+    for sid in list_master_slave_ids(MASTER_CONFIG):
+        info(f"Master stop child slaveId={sid}")
+        if token:
+            try:
+                http_json(
+                    "POST",
+                    f"{base}/v1/masters/{master_id}/slaves/{sid}/stop",
+                    token=token,
+                    timeout=45.0,
+                )
+                continue
+            except SystemExit:
+                pass
+        master_cli("stop", sid, token=token, check=False)
 
 def pair(base: str, pair_code: str) -> str:
     data = http_json(
@@ -415,6 +753,46 @@ def pair(base: str, pair_code: str) -> str:
     save_token(token)
     info(f"paired; token saved to {TOKEN_FILE.relative_to(ROOT)}")
     return token
+
+
+def wait_slave_data_plane(
+    base: str,
+    token: str,
+    slave_id: str,
+    *,
+    timeout: float = 45.0,
+) -> None:
+    """Wait until child Slave has registered on /v1/slave/ws (data plane)."""
+    deadline = time.time() + timeout
+    url = f"{base.rstrip('/')}/v1/slaves"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+    }
+    last_err = "not yet online"
+    while time.time() < deadline:
+        try:
+            req = urllib.request.Request(url, headers=headers, method="GET")
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                raw = resp.read()
+                data = json.loads(raw.decode("utf-8")) if raw else {}
+            slaves = data.get("slaves") if isinstance(data, dict) else None
+            if isinstance(slaves, list):
+                for s in slaves:
+                    if (
+                        isinstance(s, dict)
+                        and s.get("id") == slave_id
+                        and s.get("online") is True
+                    ):
+                        info(f"slave data-plane online: {slave_id}")
+                        return
+                last_err = f"seen {[s.get('id') for s in slaves if isinstance(s, dict)]}"
+            else:
+                last_err = "no slaves list"
+        except Exception as e:
+            last_err = str(e)
+        time.sleep(0.4)
+    die(f"Slave {slave_id} data-plane not online within {timeout}s ({last_err})")
 
 
 def create_and_start_workflow(
@@ -444,12 +822,24 @@ def create_and_start_workflow(
     wid = wf["id"]
     info(f"created workflow id={wid} bundle={body['bundleId']}")
     if start:
-        http_json(
+        out = http_json(
             "POST",
             f"{base.rstrip('/')}/v1/workflows/{wid}/start",
             token=token,
         )
-        info(f"started workflow id={wid}")
+        delivered = bool(out.get("delivered")) if isinstance(out, dict) else False
+        if not delivered:
+            info("workflow assign missed (slave not ready); retrying /continue …")
+            time.sleep(1.0)
+            out = http_json(
+                "POST",
+                f"{base.rstrip('/')}/v1/workflows/{wid}/continue",
+                token=token,
+            )
+            delivered = bool(out.get("delivered")) if isinstance(out, dict) else False
+        info(f"started workflow id={wid} delivered={delivered}")
+        if not delivered:
+            info("warning: workflow not delivered to slave; check slave WS / gatewayOnline")
     return wf
 
 
@@ -479,30 +869,31 @@ def wait_nodes(
 def cmd_up(args: argparse.Namespace) -> None:
     ensure_local()
     existing = load_pids()
-    for name in ("gateway", "slave"):
+    for name in ("gateway", "master", "slave"):
         pid = existing.get(name)
         if isinstance(pid, int) and process_alive(pid):
             die(f"{name} already running (pid={pid}). Run: python run.py down")
 
     stub = not args.agent
+    legacy = bool(getattr(args, "legacy_slave", False))
     pair_code = args.pair_code
     base = args.base.rstrip("/")
     audit = LOCAL / "audit.jsonl" if args.audit else None
 
     gpid = start_gateway(base, pair_code, audit)
-    save_pids({"gateway": gpid, "slave": None, "pairCode": pair_code, "base": base})
+    save_pids(
+        {
+            "gateway": gpid,
+            "master": None,
+            "slave": None,
+            "mode": "legacy-slave" if legacy else "master",
+            "pairCode": pair_code,
+            "base": base,
+        }
+    )
     wait_health(base)
     token = pair(base, pair_code)
     os.environ["GATEWAY_TOKEN"] = token
-
-    spid = start_slave(stub=stub, token=token, cursor_key=args.cursor_key)
-    pids = load_pids()
-    pids["slave"] = spid
-    pids["stub"] = stub
-    save_pids(pids)
-
-    # Give slave a moment to register WS.
-    time.sleep(1.5)
 
     plan_id = getattr(args, "plan", None)
     if args.bundle:
@@ -512,8 +903,55 @@ def cmd_up(args: argparse.Namespace) -> None:
         plan = None
     else:
         bundle, plan = resolve_plan_bundle(plan_id, stub=stub)
+
+    started_slave_id: str | None = None
+    if legacy:
+        spid = start_slave(
+            stub=stub,
+            token=token,
+            cursor_key=args.cursor_key,
+            legacy_multi=bool(getattr(args, "legacy_multi_project", False)),
+        )
+        pids = load_pids()
+        pids["slave"] = spid
+        pids["stub"] = stub
+        save_pids(pids)
+        info("waiting for slave data-plane WS...")
+        wait_slave_data_plane(base, token, "slave_devpc")
+    else:
+        mpid = start_master(
+            stub=stub,
+            token=token,
+            cursor_key=args.cursor_key,
+            base=base,
+        )
+        pids = load_pids()
+        pids["master"] = mpid
+        pids["stub"] = stub
+        save_pids(pids)
+        time.sleep(2.0)
+        started_slave_id = resolve_start_slave_id(
+            None if args.no_workflow else bundle,
+            MASTER_CONFIG,
+        )
+        master_start_child(
+            started_slave_id,
+            base=base,
+            token=token,
+            cursor_key=args.cursor_key,
+        )
+        info(f"waiting for child data-plane WS ({started_slave_id})...")
+        wait_slave_data_plane(base, token, started_slave_id)
+        pids = load_pids()
+        pids["startedSlaveId"] = started_slave_id
+        pids["masterId"] = read_master_id()
+        save_pids(pids)
+
     if plan and plan.get("cwdHint"):
-        info(f"plan {plan.get('id')}: Slave cwd 应为 {plan['cwdHint']} (repoId={plan.get('repoId')})")
+        info(
+            f"plan {plan.get('id')}: Slave cwd 应为 {plan['cwdHint']} "
+            f"(repoId={plan.get('repoId')})"
+        )
     info(f"bundle: {bundle_ref_for(bundle)}")
 
     wf = None
@@ -528,19 +966,30 @@ def cmd_up(args: argparse.Namespace) -> None:
     info(f"  Gateway : {base}")
     info(f"  Pair    : {pair_code}")
     info(f"  Token   : {TOKEN_FILE.relative_to(ROOT)}")
-    info(f"  Slave   : {'stub' if stub else 'agent'}")
+    if legacy:
+        info(f"  Slave   : {'stub' if stub else 'agent'} (legacy single process)")
+        info("  Logs    : .local/gateway.log  .local/slave.log")
+    else:
+        info(f"  Master  : {'stub' if stub else 'agent'} (M11)")
+        if started_slave_id:
+            info(f"  Child   : {started_slave_id} started")
+        info("  Logs    : .local/gateway.log  .local/master.log")
+        info("           slave/.local/slaves/<id>/logs/slave.log")
     if wf:
         info(f"  Workflow: {wf['id']}")
-    info("  App     : cd app && flutter run")
+    info("  App     : cd app && flutter run  （舰队 / 工程）")
     info("           URL http://127.0.0.1:8080  (Android 模拟器用 http://10.0.2.2:8080)")
     info(f"           Pair code {pair_code}")
-    info("  Logs    : .local/gateway.log  .local/slave.log")
     info("  Stop    : python run.py down")
 
 
 def cmd_down(_: argparse.Namespace) -> None:
     pids = load_pids()
-    for name in ("slave", "gateway"):
+    token = load_token()
+    mode = pids.get("mode") or ("master" if pids.get("master") else "legacy-slave")
+    if mode != "legacy-slave" and (pids.get("master") or MASTER_CONFIG.is_file()):
+        master_stop_all(base=str(pids.get("base") or DEFAULT_BASE), token=token)
+    for name in ("slave", "master", "gateway"):
         pid = pids.get(name)
         if isinstance(pid, int):
             info(f"stopping {name} pid={pid}")
@@ -554,13 +1003,17 @@ def cmd_status(args: argparse.Namespace) -> None:
     pids = load_pids()
     base = args.base or pids.get("base") or DEFAULT_BASE
     base = str(base).rstrip("/")
-    for name in ("gateway", "slave"):
+    for name in ("gateway", "master", "slave"):
         pid = pids.get(name)
         if isinstance(pid, int):
             alive = process_alive(pid)
             info(f"{name}: pid={pid} {'alive' if alive else 'dead'}")
         else:
             info(f"{name}: not tracked")
+    if pids.get("startedSlaveId"):
+        info(f"startedSlaveId: {pids['startedSlaveId']}")
+    if pids.get("mode"):
+        info(f"mode: {pids['mode']}")
     try:
         with urllib.request.urlopen(f"{base}/v1/health", timeout=3) as resp:
             info(f"health: HTTP {resp.status} ({base})")
@@ -572,6 +1025,21 @@ def cmd_status(args: argparse.Namespace) -> None:
         info("token: missing (pair first or run up)")
         return
     info(f"token: …{token[-6:]}")
+    try:
+        masters = http_json("GET", f"{base}/v1/masters", token=token)
+        if isinstance(masters, dict) and isinstance(masters.get("masters"), list):
+            for m in masters["masters"]:
+                mid = m.get("masterId")
+                online = m.get("online")
+                slaves = m.get("slaves") or []
+                info(f"master {mid}: online={online} slaves={len(slaves)}")
+                for s in slaves:
+                    info(
+                        f"  - {s.get('id')}: process={s.get('process')} "
+                        f"gatewayOnline={s.get('gatewayOnline')}"
+                    )
+    except SystemExit:
+        pass
     try:
         wfs = http_json("GET", f"{base}/v1/workflows", token=token)
     except SystemExit:
@@ -601,6 +1069,17 @@ def cmd_workflow(args: argparse.Namespace) -> None:
     if plan and plan.get("cwdHint"):
         info(f"plan {plan.get('id')}: Slave cwd 应为 {plan['cwdHint']}")
     info(f"bundle: {bundle_ref_for(bundle)}")
+    pids = load_pids()
+    if (pids.get("mode") or "master") != "legacy-slave" and MASTER_CONFIG.is_file():
+        sid = resolve_start_slave_id(bundle, MASTER_CONFIG)
+        info(f"ensuring child slave started: {sid}")
+        master_start_child(
+            sid,
+            base=base,
+            token=token,
+            cursor_key=os.environ.get("CURSOR_API_KEY"),
+        )
+        time.sleep(1.0)
     wf = create_and_start_workflow(base, token, bundle, start=not args.no_start)
     if args.wait and not args.no_start:
         wait_nodes(base, token, wf["id"], timeout=float(args.wait))
@@ -655,13 +1134,17 @@ def cmd_app(args: argparse.Namespace) -> None:
     info("  Gateway URL (Android 模拟器):      http://10.0.2.2:8080")
     info(f"  Pair code: {pair_code}")
     info("")
+    info("M11 首页:")
+    info("  舰队 — Master 下 Slave 配置 / Start / Stop / Restart")
+    info("  工程 — 仅 process=running 且 Gateway online 的工程可进入")
+    info("")
     info("若模拟器连不上 Gateway，先确认本机健康检查:")
     info("  curl http://127.0.0.1:8080/v1/health")
     info("再试端口转发后用 127.0.0.1:")
     info("  adb reverse tcp:8080 tcp:8080")
     info("  App URL → http://127.0.0.1:8080")
     info("")
-    info("路径: Workflows → 详情 → Start（若未自动）→ Diff / Review / Logs")
+    info("路径: 工程 → Milestone → Chat / Workflow → Diff / Review")
 
 
 def parse_build_target(target: str) -> tuple[str, str]:
@@ -730,7 +1213,13 @@ def build_slave(outdir: Path) -> Path:
     slave_out.mkdir(parents=True, exist_ok=True)
 
     shutil.copytree(dist_src, slave_out / "dist")
-    for name in ("package.json", "package-lock.json", "config.example.yaml", "README.md"):
+    for name in (
+        "package.json",
+        "package-lock.json",
+        "config.example.yaml",
+        "master.config.example.yaml",
+        "README.md",
+    ):
         src = slave_src / name
         if src.is_file():
             shutil.copy2(src, slave_out / name)
@@ -744,14 +1233,27 @@ def build_slave(outdir: Path) -> Path:
     readme.write_text(
         "\n".join(
             [
-                "Slave 为 Node.js 包（不分 GOOS/GOARCH）。",
+                "Slave / slave-master 为 Node.js 包（不分 GOOS/GOARCH）。",
                 "在目标机（Node >= 22.13）:",
                 "  cd slave",
                 "  npm ci --omit=dev",
-                "  cp config.example.yaml config.yaml   # 编辑 projects[].cwd",
+                "",
+                "单工程（可选）:",
+                "  cp config.example.yaml config.yaml   # 编辑唯一 projects[].cwd",
                 "  export GATEWAY_TOKEN=...",
                 "  export CURSOR_API_KEY=...",
                 "  node dist/index.js --config config.yaml",
+                "",
+                "多工程推荐 Master（M11）:",
+                "  cp master.config.example.yaml master.config.yaml",
+                "  # 或: node dist/master/cli.js migrate --from config.yaml --to master.config.yaml",
+                "  # slaveCommand 保持 [\"node\",\"dist/index.js\"]",
+                "  export GATEWAY_TOKEN=...",
+                "  export CURSOR_API_KEY=...",
+                "  node dist/master/cli.js serve --config master.config.yaml",
+                "  # 或: npm run master:dist -- serve --config master.config.yaml",
+                "  # 冷启动不自动拉起子进程；用 App 舰队页或:",
+                "  node dist/master/cli.js start <slaveId> --config master.config.yaml",
                 "",
             ]
         ),
@@ -921,7 +1423,7 @@ def cmd_build(args: argparse.Namespace) -> None:
     info(f"  {outdir}")
     if args.server:
         info("  Gateway: 直接运行 ./gateway（或 gateway.exe）")
-        info("  Slave  : 见 slave/DEPLOY.txt（目标机 npm ci --omit=dev）")
+        info("  Slave  : 见 slave/DEPLOY.txt（单工程或 master serve）")
     if want_ios:
         info("  iOS    : 见 ios/INSTALL.txt")
 
@@ -937,9 +1439,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    up = sub.add_parser("up", help="启动 Gateway + 配对 + Slave，并按计划创建/Start 工作流")
+    up = sub.add_parser(
+        "up",
+        help="启动 Gateway + 配对 + Master（默认）并按计划 Start 子 Slave / 工作流",
+    )
     up.add_argument("--agent", action="store_true", help="真 Local Agent（默认 stub）")
     up.add_argument("--stub", action="store_true", help="显式 stub（默认）")
+    up.add_argument(
+        "--legacy-slave",
+        action="store_true",
+        help="旧模式：单进程 Slave（不启 Master）",
+    )
+    up.add_argument(
+        "--legacy-multi-project",
+        action="store_true",
+        help="与 --legacy-slave 联用：允许多 projects（deprecated）",
+    )
     up.add_argument("--plan", help="ai/index.json 中的计划 id（推荐）")
     up.add_argument("--bundle", help="直接指定 DAG JSON 路径（覆盖 --plan）")
     up.add_argument("--no-workflow", action="store_true", help="不创建工作流")
@@ -949,7 +1464,7 @@ def build_parser() -> argparse.ArgumentParser:
     up.add_argument("--cursor-key", help="写入 CURSOR_API_KEY（仅进程环境，不落盘）")
     up.set_defaults(func=cmd_up)
 
-    down = sub.add_parser("down", help="停止由本脚本启动的 Gateway/Slave")
+    down = sub.add_parser("down", help="停止由本脚本启动的 Gateway / Master / Slave")
     down.set_defaults(func=cmd_down)
 
     st = sub.add_parser("status", help="进程与工作流状态")

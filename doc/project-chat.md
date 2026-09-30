@@ -34,8 +34,11 @@ Slave → 工程
                       ├─ 模式：Agent | Ask | Plan
                       ├─ 模型：Auto | 具体 model id
                       ├─ 消息列表（流式）
-                      └─ 输入框 / 停止 / 新会话
+                      └─ `+` 引用 Plan phase / 输入框 / 停止 / 新会话
 ```
+
+`+` → **Plan**：从工程 `milestones[].phases` 选一条最细粒度执行单元（如 `M11-P06`）作为引用。  
+与顶栏模式 **Plan**（出方案）无关：引用是给 Agent 指明要修正的 phase 文件（`phaseRef`）。
 
 ---
 
@@ -111,7 +114,7 @@ ChatSession
 
 ### 消息截断策略（防爆库）
 
-落库只保留 **摘要文本**（`role` / `content` / 可选 `taskId`），**禁止**持久化 tool 原始 payload、密钥、cwd。
+落库只保留 **摘要文本**（`role` / `content` / 可选 `taskId` / 可选 `refs`），**禁止**持久化 tool 原始 payload、密钥、cwd。
 
 | 限制 | 值 | 行为 |
 |------|-----|------|
@@ -152,12 +155,22 @@ App：**进入对话页先 `GET /v1/chats` 打开最近一条**；无历史则�
 {
   "text": "给登录页加个 loading",
   "mode": "agent",
-  "model": "auto"
+  "model": "auto",
+  "refs": [
+    {
+      "kind": "phase",
+      "id": "M11-P06",
+      "title": "文档硬化",
+      "milestoneId": "M11",
+      "phaseRef": "doc/roadmaps/cloud-agent/phases/M11-P06-docs-harden.md"
+    }
+  ]
 }
 ```
 
 → `202 { "taskId": "tsk_…", "chatId": "chat_…" }`  
-Gateway 组 prompt（注入 mode 前缀）→ 现有 `task.assign`。  
+Gateway 组 prompt（注入 mode 前缀；若有 `refs` 再追加 `[Referenced plan phase]` + `phaseRef`，便于 Agent 按该文件修正 plan）→ 现有 `task.assign`。  
+`refs` 落在用户消息上（`messages_json`），历史回放可还原 chip；v1 只保留一条有效 `kind=phase` 引用。
 首条用户消息：写入临时 `title`（截断原文），并向在线 Slave 发 `chat.autotitle`；Slave 用短 Local Agent 取名后 `PATCH` 回写。  
 
 **中途退页：** Gateway 在 `task.event` 上累计 `assistant.delta`，`done`/`error` 时写入会话摘要（不依赖 App 停留）；App `POST /assistant` 按 `taskId` 幂等。重进若 `status=running` 则重新订阅该 `taskId` 流式续看。
@@ -200,8 +213,8 @@ Gateway 组 prompt（注入 mode 前缀）→ 现有 `task.assign`。
 | 区域 | 行为 |
 |------|------|
 | AppBar | 会话标题 · 工程名（点标题或编辑可改名）；模式 Segmented：Agent / Ask / Plan；模型下拉（默认 Auto） |
-| 消息区 | 用户气泡 + assistant 流式；tool 可折叠一行；无会话时提示「发送以开始」 |
-| 底栏 | 多行输入、发送、停止（running 时） |
+| 消息区 | 用户气泡 + assistant 流式；用户气泡可带 Plan phase chip；tool 可折叠一行；无会话时提示「发送以开始」 |
+| 底栏 | `+`（微信式附件：Plan phase 引用）→ chip；多行输入、发送、停止（running 时） |
 | 会话 | 进入恢复最近会话；右上「历史」列表（显示 title）+「新对话」（清空本地，首条再创建） |
 
 **与审核关系：** Agent 模式改代码**不强制**走 `awaiting_review`（自由对话）；若需「对话里改完也要审」，P3 再加「提交审核」生成临时单节点 Workflow（非首版）。

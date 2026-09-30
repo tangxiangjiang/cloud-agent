@@ -252,6 +252,7 @@ class ChatApi {
     required String text,
     String? mode,
     String? model,
+    List<ChatRef>? refs,
   }) async {
     final res = await _post(
       _uri('/v1/chats/${Uri.encodeComponent(chatId)}/messages'),
@@ -263,6 +264,8 @@ class ChatApi {
         'text': text,
         if (mode != null && mode.isNotEmpty) 'mode': mode,
         if (model != null && model.isNotEmpty) 'model': model,
+        if (refs != null && refs.isNotEmpty)
+          'refs': refs.map((r) => r.toJson()).toList(growable: false),
       }),
     );
     _throwIfBad(res, 'Send message');

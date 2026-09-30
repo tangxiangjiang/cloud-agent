@@ -7,9 +7,12 @@
 
 | 进程 | 目录 | 作用 |
 |------|------|------|
-| Gateway | `gateway/` | HTTP + App WS + Slave 出站 WS |
-| Slave | `slave/` | Local Agent + DAG 调度 |
-| App | `app/` | 配对、工作流、日志、diff、审核 |
+| Gateway | `gateway/` | HTTP + App WS + Slave / Master 出站 WS |
+| slave-master | `slave/` | 守护：配置与启停多个 1:1 子 Slave（M11） |
+| Slave | `slave/` | Local Agent + DAG（一工程一进程） |
+| App | `app/` | 舰队管理、工程入口、工作流、Chat |
+
+一键联调：`python run.py up`（默认 Master；`--legacy-slave` 为旧单进程）。
 
 ## 环境变量
 
@@ -41,9 +44,13 @@ curl -s -X POST http://127.0.0.1:8080/v1/auth/pair \
 # → { "token": "...", "expiresAt": "..." }
 ```
 
-### 3. Slave
+### 3. Slave（单工程）或 slave-master（推荐多工程）
 
-编辑 `slave/config.yaml`（从 `config.example.yaml` 复制）：`projects[].cwd` 必须是**本仓库绝对路径**，`index` 指向工程内 `ai/milestones.json`；`slaveId` 与创建工作流时一致。
+**默认（M11）：一个 Slave 进程只绑一个 `projects[]` 条目。** 多工程请用 Master。
+
+#### 3a. 单工程直接启动（仍可用）
+
+编辑 `slave/config.yaml`（从 `config.example.yaml` 复制）：恰好 **一个** project；`cwd` 为绝对路径；`slaveId` 与创建工作流时一致。
 
 ```bash
 cd slave
@@ -52,7 +59,36 @@ $env:GATEWAY_TOKEN="<token>"
 $env:CURSOR_API_KEY="<cursor-key>"
 npm start
 # 或 stub 联调（不调 SDK）: npm run dev -- --stub
+# 旧多工程逃逸（deprecated）: npm start -- --legacy-multi-project
 ```
+
+#### 3b. slave-master（多工程 / 舰队）
+
+1. 从旧配置迁移（主工程保留原 `slaveId`）：
+
+```bash
+cd slave
+npm run master -- migrate --from config.yaml --to master.config.yaml
+```
+
+2. 编辑 `master.config.example.yaml` → `master.config.yaml`：核对 `allowedRoots`、`maxRunningSlaves`、`defaults.slaveGatewayUrl`（子进程数据面）、`gatewayUrl`（Master 控制面 `/v1/master/ws`）。
+
+3. **冷启动不拉起子进程**（`enabled=true` 只表示允许 Start）。本机守护：
+
+```bash
+$env:GATEWAY_TOKEN="<token>"
+$env:CURSOR_API_KEY="<cursor-key>"
+npm run master -- serve
+```
+
+4. 本地 CLI（无需 Gateway）：`npm run master -- status|start|stop|restart <slaveId>`。  
+   状态目录：`<masterRoot>/.local/slaves/<slaveId>/`（勿放进业务仓库）。
+
+5. App **舰队**页 Start 子 Slave；**工程**页仅显示 `process=running` 且 Gateway 数据面 online 的条目。
+
+共享同一 `CURSOR_API_KEY` / `GATEWAY_TOKEN`；用 `maxRunningSlaves` 约束同时跑的 Agent 进程数（账单/限流）。
+
+可选：用 OS 服务/计划任务自启 `npm run master -- serve`，**不要**配置成自动 Start 全部子进程。
 
 ### 4. App
 

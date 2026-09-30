@@ -1,0 +1,36 @@
+# Copy to master.config.yaml (gitignored). Secrets stay in env vars.
+
+masterId: master_devpc
+name: 台式机 Master
+# Control plane (M11-P04). Until then Master CLI works offline.
+gatewayUrl: ws://127.0.0.1:8080/v1/master/ws
+tokenEnv: GATEWAY_TOKEN
+
+# Child process command (relative to slaveCwd).
+slaveCommand: ["node", "dist/index.js"]
+slaveCwd: .
+
+allowedRoots:
+  - E:/workspace
+maxRunningSlaves: 4
+maxConcurrentStarts: 2
+gracePeriodMs: 15000
+
+defaults:
+  apiKeyEnv: CURSOR_API_KEY
+  # Child data-plane WS (inner LAN hostname/IP OK).
+  slaveGatewayUrl: ws://127.0.0.1:8080/v1/slave/ws
+  defaultModel: default
+  autoModelId: default
+  optimizeFor: cost
+
+# Cold start: all stopped. enabled=true only allows Start.
+slaves:
+  - id: slave_devpc
+    name: cloud-agent
+    enabled: true
+    project:
+      id: r_cloud_agent
+      name: cloud-agent
+      cwd: E:/workspace/cloud-agent
+      index: ai/milestones.json

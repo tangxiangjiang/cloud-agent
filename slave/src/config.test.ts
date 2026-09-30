@@ -166,4 +166,35 @@ describe("validateConfig", () => {
       (e: unknown) => e instanceof ConfigError && /relative path/.test(e.message),
     );
   });
+
+  it("rejects multi-project without allowMultiProject", () => {
+    assert.throws(
+      () =>
+        validateConfig({
+          gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
+          slaveId: "slave_devpc",
+          projects: [
+            { id: "r1", name: "a", cwd: absA },
+            { id: "r2", name: "b", cwd: absB },
+          ],
+        }),
+      (e: unknown) =>
+        e instanceof ConfigError && /exactly one entry/.test(e.message),
+    );
+  });
+
+  it("allows multi-project with allowMultiProject", () => {
+    const cfg = validateConfig(
+      {
+        gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
+        slaveId: "slave_devpc",
+        projects: [
+          { id: "r1", name: "a", cwd: absA },
+          { id: "r2", name: "b", cwd: absB },
+        ],
+      },
+      { allowMultiProject: true },
+    );
+    assert.equal(cfg.projects.length, 2);
+  });
 });

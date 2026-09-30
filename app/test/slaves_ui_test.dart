@@ -5,7 +5,6 @@ import 'package:cloud_agent_app/slaves/models.dart';
 import 'package:cloud_agent_app/slaves/slaves_api.dart';
 import 'package:cloud_agent_app/ui/milestone_list_page.dart';
 import 'package:cloud_agent_app/ui/milestone_phases_page.dart';
-import 'package:cloud_agent_app/ui/project_list_page.dart';
 import 'package:cloud_agent_app/ui/slave_list_page.dart';
 import 'package:cloud_agent_app/workflow/models.dart';
 import 'package:flutter/material.dart';
@@ -111,11 +110,7 @@ void main() {
     await tester.tap(find.text('Dev PC'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(ProjectListPage), findsOneWidget);
-    expect(find.text('cloud-agent'), findsOneWidget);
-    await tester.tap(find.text('cloud-agent'));
-    await tester.pumpAndSettle();
-
+    // M11 1:1 — skip project list, land on milestones.
     expect(find.byType(MilestoneListPage), findsOneWidget);
     expect(find.textContaining('M07'), findsOneWidget);
   });

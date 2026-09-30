@@ -35,15 +35,25 @@ const (
 	MaxMessageChars       = 4000
 )
 
+// ChatRef is a cited workspace artifact (plan phase for chat corrections).
+type ChatRef struct {
+	Kind        string `json:"kind"`
+	ID          string `json:"id"`
+	Title       string `json:"title,omitempty"`
+	MilestoneID string `json:"milestoneId,omitempty"`
+	PhaseRef    string `json:"phaseRef,omitempty"`
+}
+
 // Message is a short transcript entry (full stream stays on task events).
 type Message struct {
-	ID      string  `json:"id"`
-	Role    string  `json:"role"`
-	Content string  `json:"content"`
-	TaskID  *string `json:"taskId,omitempty"`
-	Mode    string  `json:"mode,omitempty"`
-	Model   string  `json:"model,omitempty"`
-	At      string  `json:"at"`
+	ID      string    `json:"id"`
+	Role    string    `json:"role"`
+	Content string    `json:"content"`
+	TaskID  *string   `json:"taskId,omitempty"`
+	Mode    string    `json:"mode,omitempty"`
+	Model   string    `json:"model,omitempty"`
+	Refs    []ChatRef `json:"refs,omitempty"`
+	At      string    `json:"at"`
 }
 
 // Session binds a project chat to slave/repo.
@@ -73,9 +83,10 @@ type createSessionRequest struct {
 }
 
 type postMessageRequest struct {
-	Text  string `json:"text"`
-	Mode  string `json:"mode"`
-	Model string `json:"model"`
+	Text  string    `json:"text"`
+	Mode  string    `json:"mode"`
+	Model string    `json:"model"`
+	Refs  []ChatRef `json:"refs"`
 }
 
 type assistantSummaryRequest struct {
@@ -224,17 +235,76 @@ func normalizeModel(m string) string {
 	return v
 }
 
-// BuildPrompt injects mode guidance; never includes secrets / cwd from App.
-func BuildPrompt(mode, userText string) string {
+// NormalizeRefs keeps valid phase refs only (max one for v1).
+func NormalizeRefs(refs []ChatRef) []ChatRef {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]ChatRef, 0, 1)
+	for _, r := range refs {
+		kind := strings.TrimSpace(r.Kind)
+		id := strings.TrimSpace(r.ID)
+		phaseRef := strings.TrimSpace(r.PhaseRef)
+		if kind != "phase" || id == "" || phaseRef == "" {
+			continue
+		}
+		out = append(out, ChatRef{
+			Kind:        "phase",
+			ID:          id,
+			Title:       strings.TrimSpace(r.Title),
+			MilestoneID: strings.TrimSpace(r.MilestoneID),
+			PhaseRef:    phaseRef,
+		})
+		break // single phase cite
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func formatRefsBlock(refs []ChatRef) string {
+	if len(refs) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range refs {
+		b.WriteString("\n\n[Referenced plan phase]\n")
+		b.WriteString("id: ")
+		b.WriteString(r.ID)
+		b.WriteByte('\n')
+		if r.Title != "" {
+			b.WriteString("title: ")
+			b.WriteString(r.Title)
+			b.WriteByte('\n')
+		}
+		if r.MilestoneID != "" {
+			b.WriteString("milestoneId: ")
+			b.WriteString(r.MilestoneID)
+			b.WriteByte('\n')
+		}
+		b.WriteString("phaseRef: ")
+		b.WriteString(r.PhaseRef)
+		b.WriteByte('\n')
+		b.WriteString("If the user asks to fix or adjust this plan, edit that phase file (and related milestone catalog entry only if needed). Do not invent a different phase path.")
+	}
+	return b.String()
+}
+
+// BuildPrompt injects mode guidance and optional plan-phase refs; never includes secrets / cwd from App.
+func BuildPrompt(mode, userText string, refs ...ChatRef) string {
 	text := strings.TrimSpace(userText)
+	norm := NormalizeRefs(refs)
+	var body string
 	switch normalizeMode(mode) {
 	case ModeAsk:
-		return "[Mode: Ask — READ-ONLY. Do not write, edit, delete, or create files; do not run mutating git commands; answer from inspection only.]\n\n" + text
+		body = "[Mode: Ask — READ-ONLY. Do not write, edit, delete, or create files; do not run mutating git commands; answer from inspection only.]\n\n" + text
 	case ModePlan:
-		return "[Mode: Plan — Produce a structured plan with clear steps. Prefer not to modify the workspace unless the user explicitly asks to execute the plan.]\n\n" + text
+		body = "[Mode: Plan — Produce a structured plan with clear steps. Prefer not to modify the workspace unless the user explicitly asks to execute the plan.]\n\n" + text
 	default:
-		return text
+		body = text
 	}
+	return body + formatRefsBlock(norm)
 }
 
 // TruncateContent cuts to MaxMessageChars on rune boundaries.
@@ -378,7 +448,8 @@ func (s *Store) handleMessage(w http.ResponseWriter, r *http.Request) {
 		model = normalizeModel(req.Model)
 		sess.Model = model
 	}
-	prompt := BuildPrompt(mode, text)
+	refs := NormalizeRefs(req.Refs)
+	prompt := BuildPrompt(mode, text, refs...)
 	msgID, err := newID("msg")
 	if err != nil {
 		s.mu.Unlock()
@@ -403,6 +474,7 @@ func (s *Store) handleMessage(w http.ResponseWriter, r *http.Request) {
 		Content: text,
 		Mode:    mode,
 		Model:   model,
+		Refs:    refs,
 		At:      now,
 	})
 	sess.Messages = truncateMessages(sess.Messages)
@@ -633,6 +705,9 @@ func cloneSession(c *Session, withMessages bool) *Session {
 				if c.Messages[i].TaskID != nil {
 					v := *c.Messages[i].TaskID
 					cp.Messages[i].TaskID = &v
+				}
+				if c.Messages[i].Refs != nil {
+					cp.Messages[i].Refs = append([]ChatRef(nil), c.Messages[i].Refs...)
 				}
 			}
 		} else {

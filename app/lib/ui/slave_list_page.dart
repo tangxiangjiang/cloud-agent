@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import '../auth/session.dart';
 import '../slaves/models.dart';
 import '../slaves/slaves_api.dart';
+import 'milestone_list_page.dart';
 import 'models_page.dart';
-import 'project_list_page.dart';
 
 /// Step 1: Slave 列表 → 工程列表.
 class SlaveListPage extends StatefulWidget {
@@ -170,15 +170,22 @@ class _SlaveListPageState extends State<SlaveListPage> {
           title: Text(s.name.isNotEmpty ? s.name : s.id),
           subtitle: Text(
             '${s.id} · ${s.online ? 'online' : 'offline'}'
-            ' · ${projects.length} project${projects.length == 1 ? '' : 's'}',
+            '${projects.isNotEmpty ? ' · ${projects.first.name.isNotEmpty ? projects.first.name : projects.first.id}' : ''}',
           ),
           trailing: const Icon(Icons.chevron_right),
           onTap: () {
+            if (projects.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('该 Slave 无绑定工程')),
+              );
+              return;
+            }
             Navigator.of(context).push<void>(
               MaterialPageRoute(
-                builder: (_) => ProjectListPage(
+                builder: (_) => MilestoneListPage(
                   session: widget.session,
                   slave: s,
+                  project: projects.first,
                 ),
               ),
             );

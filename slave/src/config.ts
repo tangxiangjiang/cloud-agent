@@ -100,7 +100,10 @@ export function resolveConfigPath(cliPath?: string): string {
   return path.resolve(chosen);
 }
 
-export function loadConfigFile(filePath: string): SlaveConfig {
+export function loadConfigFile(
+  filePath: string,
+  opts?: ValidateConfigOptions,
+): SlaveConfig {
   let text: string;
   try {
     text = readFileSync(filePath, "utf8");
@@ -115,7 +118,7 @@ export function loadConfigFile(filePath: string): SlaveConfig {
     const msg = err instanceof Error ? err.message : String(err);
     throw new ConfigError(`invalid YAML in ${filePath}: ${msg}`);
   }
-  return validateConfig(raw);
+  return validateConfig(raw, opts);
 }
 
 function parseProjectList(raw: unknown, field: string): ProjectConfig[] {
@@ -158,13 +161,25 @@ function parseProjectList(raw: unknown, field: string): ProjectConfig[] {
   return projects;
 }
 
+export type ValidateConfigOptions = {
+  /**
+   * Allow projects.length > 1 (deprecated multi-project single process).
+   * Default false: one Slave ↔ one project (M11).
+   */
+  allowMultiProject?: boolean;
+};
+
 /**
  * Validate and normalize slave config.
  * - projects[].cwd must be absolute paths (whitelist)
  * - prefers `projects`; falls back to legacy `repos`
  * - rejects cloud / Cloud Agent defaults
+ * - by default requires exactly one project (use allowMultiProject / --legacy-multi-project)
  */
-export function validateConfig(raw: unknown): SlaveConfig {
+export function validateConfig(
+  raw: unknown,
+  opts?: ValidateConfigOptions,
+): SlaveConfig {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
     throw new ConfigError("config root must be a mapping");
   }
@@ -231,6 +246,13 @@ export function validateConfig(raw: unknown): SlaveConfig {
     projects = parseProjectList(obj.repos, "repos");
   } else {
     throw new ConfigError("projects (or legacy repos) must be a non-empty array");
+  }
+
+  if (projects.length !== 1 && !opts?.allowMultiProject) {
+    throw new ConfigError(
+      `projects must have exactly one entry (got ${projects.length}); ` +
+        "use slave-master for multiple projects, or pass --legacy-multi-project (deprecated)",
+    );
   }
 
   const cfg: SlaveConfig = {

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:cloud_agent_app/auth/session.dart';
 import 'package:cloud_agent_app/chat/chat_api.dart';
+import 'package:cloud_agent_app/chat/models.dart';
 import 'package:cloud_agent_app/slaves/models.dart';
 import 'package:cloud_agent_app/sync/project_sync_api.dart';
 import 'package:cloud_agent_app/ui/milestone_list_page.dart';
@@ -16,7 +17,8 @@ const _session = Session(
   token: 'tok_chat_test_xxxx',
 );
 
-SlaveInfo _slave({bool online = true}) => SlaveInfo.fromJson({
+SlaveInfo _slave({bool online = true, bool withPlans = false}) =>
+    SlaveInfo.fromJson({
       'id': 'slave_devpc',
       'name': 'Dev PC',
       'online': online,
@@ -25,7 +27,23 @@ SlaveInfo _slave({bool online = true}) => SlaveInfo.fromJson({
           'id': 'r_cloud_agent',
           'name': 'cloud-agent',
           'cwd': 'E:/workspace/cloud-agent',
-          'milestones': <Map<String, dynamic>>[],
+          'milestones': withPlans
+              ? [
+                  {
+                    'id': 'M11',
+                    'title': 'Slave Master',
+                    'phases': [
+                      {
+                        'id': 'M11-P06',
+                        'title': '文档硬化',
+                        'phaseRef':
+                            'doc/roadmaps/cloud-agent/phases/M11-P06-docs-harden.md',
+                        'dependsOn': <String>[],
+                      },
+                    ],
+                  },
+                ]
+              : <Map<String, dynamic>>[],
         },
       ],
     });
@@ -136,6 +154,46 @@ void main() {
     expect(posts, 2);
     expect(gets, 1);
     expect(patches, 1);
+  });
+
+  test('ChatApi sendMessage includes refs', () async {
+    Map? sentBody;
+    final api = ChatApi(
+      session: _session,
+      post: (uri, {headers, body}) async {
+        expect(uri.path.endsWith('/messages'), isTrue);
+        sentBody = jsonDecode(body as String) as Map;
+        return http.Response(
+          jsonEncode({
+            'taskId': 'tsk_ref',
+            'chatId': 'chat_1',
+            'mode': 'agent',
+            'model': 'auto',
+          }),
+          202,
+        );
+      },
+    );
+    await api.sendMessage(
+      chatId: 'chat_1',
+      text: 'fix DoD',
+      mode: 'agent',
+      refs: const [
+        ChatRef(
+          kind: 'phase',
+          id: 'M11-P06',
+          title: '文档硬化',
+          milestoneId: 'M11',
+          phaseRef: 'doc/roadmaps/cloud-agent/phases/M11-P06-docs-harden.md',
+        ),
+      ],
+    );
+    expect(sentBody?['text'], 'fix DoD');
+    final refs = sentBody?['refs'] as List?;
+    expect(refs, isNotNull);
+    expect(refs!.length, 1);
+    expect((refs.first as Map)['id'], 'M11-P06');
+    expect((refs.first as Map)['phaseRef'], contains('M11-P06'));
   });
 
   testWidgets('project page has Chat entry', (tester) async {
@@ -484,9 +542,116 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    // Running reattach shows Think + spinner (infinite animation → no pumpAndSettle).
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
 
     expect(find.text('keep going'), findsOneWidget);
+    expect(find.text('Think'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsWidgets);
     expect(wsAttached, isTrue);
+  });
+
+  testWidgets('plus panel cites plan phase and sends refs', (tester) async {
+    final slave = _slave(withPlans: true);
+    final project = slave.effectiveProjects.first;
+    Map? sentBody;
+    final api = ChatApi(
+      session: _session,
+      get: (uri, {headers}) async {
+        if (uri.path == '/v1/models') {
+          return http.Response(
+            jsonEncode({
+              'default': 'auto',
+              'models': [
+                {'id': 'auto', 'label': 'Auto'},
+              ],
+            }),
+            200,
+          );
+        }
+        if (uri.path == '/v1/chats') {
+          return http.Response(jsonEncode({'chats': <dynamic>[]}), 200);
+        }
+        return http.Response('{}', 404);
+      },
+      post: (uri, {headers, body}) async {
+        if (uri.path == '/v1/chats') {
+          return http.Response(
+            jsonEncode({
+              'id': 'chat_cite',
+              'slaveId': 'slave_devpc',
+              'repoId': 'r_cloud_agent',
+              'mode': 'agent',
+              'model': 'auto',
+              'status': 'idle',
+              'messages': <dynamic>[],
+            }),
+            201,
+          );
+        }
+        if (uri.path.endsWith('/messages')) {
+          sentBody = jsonDecode(body as String) as Map;
+          return http.Response(
+            jsonEncode({
+              'taskId': 'tsk_cite',
+              'chatId': 'chat_cite',
+              'mode': 'agent',
+              'model': 'auto',
+            }),
+            202,
+          );
+        }
+        return http.Response('{}', 404);
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProjectChatPage(
+          session: _session,
+          slave: slave,
+          project: project,
+          api: api,
+          wsFactory: (buf, taskId) {
+            return AppWsClient(
+              session: _session,
+              buffer: buf,
+              taskId: taskId,
+              connect: (_) => throw StateError('no ws in test'),
+              reconnectDelay: const Duration(days: 1),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Add'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cite a milestone phase'), findsOneWidget);
+
+    await tester.tap(find.text('Cite a milestone phase'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('M11-P06'), findsWidgets);
+
+    await tester.tap(find.text('M11-P06 · 文档硬化'));
+    await tester.pumpAndSettle();
+    expect(find.text('M11-P06 文档硬化'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'fix this plan DoD');
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(sentBody, isNotNull);
+    final refs = sentBody!['refs'] as List?;
+    expect(refs, isNotNull);
+    expect((refs!.first as Map)['id'], 'M11-P06');
+    expect(find.text('fix this plan DoD'), findsWidgets);
+    expect(find.text('M11-P06 文档硬化'), findsWidgets);
+
+    // Flush delayed title-refresh timers from first send.
+    await tester.pump(const Duration(seconds: 9));
   });
 }

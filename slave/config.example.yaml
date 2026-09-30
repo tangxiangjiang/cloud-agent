@@ -5,7 +5,9 @@ gatewayUrl: ws://127.0.0.1:8080/v1/slave/ws
 slaveId: slave_devpc
 name: 台式机
 
-# Whitelist projects. cwd = absolute path; index = milestone JSON relative to cwd.
+# Exactly one project per Slave process (M11). For multiple projects use
+# master.config.yaml + `npm run master`. Escape hatch: --legacy-multi-project.
+# cwd = absolute path; index = milestone JSON relative to cwd.
 projects:
   - id: r_cloud_agent
     name: cloud-agent

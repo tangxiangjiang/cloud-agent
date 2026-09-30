@@ -18,6 +18,7 @@ void main() {
   testWidgets('execute plan shows default policy off and posts defaults',
       (tester) async {
     Map<String, dynamic>? createBody;
+    var startCalled = false;
     final slave = SlaveInfo.fromJson({
       'id': 'slave_devpc',
       'name': 'Dev',
@@ -84,6 +85,7 @@ void main() {
           );
         }
         if (uri.path.endsWith('/start')) {
+          startCalled = true;
           return http.Response(
             jsonEncode({
               'delivered': true,
@@ -165,12 +167,13 @@ void main() {
     await tester.tap(find.text('Composer 2.5').last);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('开始此 Milestone'));
+    await tester.tap(find.text('创建此 Milestone'));
     await tester.pumpAndSettle();
 
     expect(createBody, isNotNull);
     expect(createBody!['defaultModel'], 'composer-2.5');
     expect(createBody!['defaultPolicy']['autoApprove'], isFalse);
     expect(createBody!['defaultPolicy']['autoStartNext'], isTrue);
+    expect(startCalled, isFalse);
   });
 }

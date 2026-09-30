@@ -17,13 +17,13 @@
 
 ## 完成定义（DoD）
 
-- [ ] 子模式：`projects.length !== 1` → 明确报错退出（或 `--legacy-multi-project` 才允许多个，并打 deprecated 日志）
-- [ ] Master 生成的子配置始终为单 project；**无**每条独立 `tokenEnv`（共享 Master `tokenEnv`）
-- [ ] 迁移脚本/文档：**主工程（或指定 primary）继承旧 `slaveId`**；其余 `slave_<repoId>`；输出映射表
-- [ ] 迁移结果满足同 Master 下 **repoId / cwd 唯一**
-- [ ] 验收说明：迁移后主工程既有 Workflow 的 `slaveId` 仍能命中
-- [ ] example 配置展示 1:1 形态（含 `allowedRoots` / `maxRunningSlaves` / `maxConcurrentStarts`）
-- [ ] 单测：多 project 无 legacy 标志时拒绝加载
+- [x] 子模式：`projects.length !== 1` → 明确报错退出（或 `--legacy-multi-project` 才允许多个，并打 deprecated 日志）
+- [x] Master 生成的子配置始终为单 project；**无**每条独立 `tokenEnv`（共享 Master `tokenEnv`）
+- [x] 迁移脚本/文档：**主工程（或指定 primary）继承旧 `slaveId`**；其余 `slave_<repoId>`；输出映射表
+- [x] 迁移结果满足同 Master 下 **repoId / cwd 唯一**
+- [x] 验收说明：迁移后主工程既有 Workflow 的 `slaveId` 仍能命中
+- [x] example 配置展示 1:1 形态（含 `allowedRoots` / `maxRunningSlaves` / `maxConcurrentStarts`）
+- [x] 单测：多 project 无 legacy 标志时拒绝加载
 
 ## 禁止事项
 

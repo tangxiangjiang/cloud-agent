@@ -101,6 +101,104 @@ func TestBuildPromptModes(t *testing.T) {
 	}
 }
 
+func TestBuildPromptWithPhaseRef(t *testing.T) {
+	got := chat.BuildPrompt("agent", "fix the DoD", chat.ChatRef{
+		Kind:        "phase",
+		ID:          "M11-P06",
+		Title:       "文档硬化",
+		MilestoneID: "M11",
+		PhaseRef:    "doc/roadmaps/cloud-agent/phases/M11-P06-docs-harden.md",
+	})
+	if !strings.Contains(got, "fix the DoD") {
+		t.Fatalf("missing user text: %s", got)
+	}
+	if !strings.Contains(got, "[Referenced plan phase]") {
+		t.Fatalf("missing ref block: %s", got)
+	}
+	if !strings.Contains(got, "phaseRef: doc/roadmaps/cloud-agent/phases/M11-P06-docs-harden.md") {
+		t.Fatalf("missing phaseRef: %s", got)
+	}
+	if !strings.Contains(got, "id: M11-P06") {
+		t.Fatalf("missing id: %s", got)
+	}
+	// invalid refs dropped
+	empty := chat.BuildPrompt("agent", "hi", chat.ChatRef{Kind: "phase", ID: "x"})
+	if empty != "hi" {
+		t.Fatalf("invalid ref should be ignored: %q", empty)
+	}
+}
+
+func TestMessageRefsRoundTrip(t *testing.T) {
+	tasks := task.NewStore()
+	chats := chat.NewStore(tasks)
+	h := chats.Handler()
+
+	createBody := `{"slaveId":"slave_devpc","repoId":"r_cloud_agent","mode":"agent","model":"auto"}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/chats", strings.NewReader(createBody)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create chat status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var sess chat.Session
+	if err := json.Unmarshal(rec.Body.Bytes(), &sess); err != nil {
+		t.Fatal(err)
+	}
+
+	msgBody := `{
+		"text":"这段 DoD 不一致，帮我改 plan",
+		"mode":"agent",
+		"refs":[{
+			"kind":"phase",
+			"id":"M11-P06",
+			"title":"文档硬化",
+			"milestoneId":"M11",
+			"phaseRef":"doc/roadmaps/cloud-agent/phases/M11-P06-docs-harden.md"
+		}]
+	}`
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, httptest.NewRequest(
+		http.MethodPost,
+		"/v1/chats/"+sess.ID+"/messages",
+		bytes.NewReader([]byte(msgBody)),
+	))
+	if rec2.Code != http.StatusAccepted {
+		t.Fatalf("message status=%d body=%s", rec2.Code, rec2.Body.String())
+	}
+	var out struct {
+		TaskID string `json:"taskId"`
+	}
+	if err := json.Unmarshal(rec2.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+
+	getRec := httptest.NewRecorder()
+	h.ServeHTTP(getRec, httptest.NewRequest(http.MethodGet, "/v1/chats/"+sess.ID, nil))
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("get chat status=%d", getRec.Code)
+	}
+	var loaded chat.Session
+	if err := json.Unmarshal(getRec.Body.Bytes(), &loaded); err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Messages) == 0 || len(loaded.Messages[0].Refs) != 1 {
+		t.Fatalf("expected refs on user message: %+v", loaded.Messages)
+	}
+	ref := loaded.Messages[0].Refs[0]
+	if ref.Kind != "phase" || ref.ID != "M11-P06" || ref.PhaseRef == "" {
+		t.Fatalf("ref: %+v", ref)
+	}
+
+	taskRec := httptest.NewRecorder()
+	tasks.Handler().ServeHTTP(taskRec, httptest.NewRequest(http.MethodGet, "/v1/tasks/"+out.TaskID, nil))
+	var tsk task.Task
+	if err := json.Unmarshal(taskRec.Body.Bytes(), &tsk); err != nil {
+		t.Fatal(err)
+	}
+	if tsk.Prompt == nil || !strings.Contains(*tsk.Prompt, "phaseRef: doc/roadmaps/cloud-agent/phases/M11-P06-docs-harden.md") {
+		t.Fatalf("task prompt missing phaseRef: %v", tsk.Prompt)
+	}
+}
+
 func TestTruncateContent(t *testing.T) {
 	short := chat.TruncateContent("hi")
 	if short != "hi" {

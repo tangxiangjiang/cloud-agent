@@ -27,6 +27,8 @@ node_modules/
 slave/dist/
 slave/build/
 slave/config.yaml
+slave/master.config.yaml
+slave/.local/
 slave/config.local.yaml
 *.tsbuildinfo
 npm-debug.log*

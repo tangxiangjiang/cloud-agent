@@ -109,7 +109,7 @@ ChatSession
 | 每会话 messages | ≤ **80** 条 | 丢弃最旧，保留最近 |
 | 列表 API | 不含 messages 正文 | 返回 `preview`（最近 user 摘要）+ `messageCount` |
 
-Assistant 摘要由 App 在 turn 结束后 `POST /v1/chats/{id}/assistant` 上报；流式 delta 仍只走 Task events。
+Assistant 摘要优先由 Gateway 在 task `done`/`error` 时落库；App 仍可 `POST /v1/chats/{id}/assistant`（按 taskId 幂等）。流式 delta 仍走 Task events。
 
 持久化：`GATEWAY_STATE_FILE` SQLite 表 `chat_sessions`（无 state-file 时进程内 Memory，重启丢失）。
 
@@ -148,7 +148,9 @@ App：**进入对话页先 `GET /v1/chats` 打开最近一条**；无历史则�
 
 → `202 { "taskId": "tsk_…", "chatId": "chat_…" }`  
 Gateway 组 prompt（注入 mode 前缀）→ 现有 `task.assign`。  
-首条用户消息：写入临时 `title`（截断原文），并向在线 Slave 发 `chat.autotitle`；Slave 用短 Local Agent 取名后 `PATCH` 回写。
+首条用户消息：写入临时 `title`（截断原文），并向在线 Slave 发 `chat.autotitle`；Slave 用短 Local Agent 取名后 `PATCH` 回写。  
+
+**中途退页：** Gateway 在 `task.event` 上累计 `assistant.delta`，`done`/`error` 时写入会话摘要（不依赖 App 停留）；App `POST /assistant` 按 `taskId` 幂等。重进若 `status=running` 则重新订阅该 `taskId` 流式续看。
 
 ### 改名
 

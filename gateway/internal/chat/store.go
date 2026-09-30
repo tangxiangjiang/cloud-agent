@@ -87,6 +87,7 @@ type assistantSummaryRequest struct {
 type Store struct {
 	mu        sync.RWMutex
 	chats     map[string]*Session
+	turns     map[string]*turnAccum // taskID → in-flight assistant text
 	now       func() time.Time
 	tasks     *task.Store
 	persist   persist.ChatSessionStore
@@ -103,9 +104,61 @@ func (s *Store) SetAutotitle(fn AutotitleFunc) {
 func NewStore(tasks *task.Store) *Store {
 	return &Store{
 		chats: map[string]*Session{},
+		turns: map[string]*turnAccum{},
 		now:   func() time.Time { return time.Now().UTC() },
 		tasks: tasks,
 	}
+}
+
+// RecordAssistant appends a truncated assistant summary (idempotent per taskId).
+// Safe to call from App POST and from Gateway task-done observer.
+func (s *Store) RecordAssistant(chatID, taskID, content string) (*Session, bool) {
+	content = TruncateContent(content)
+	if content == "" {
+		return nil, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.chats[chatID]
+	if !ok {
+		return nil, false
+	}
+	tid := strings.TrimSpace(taskID)
+	if tid != "" {
+		for _, m := range sess.Messages {
+			if m.Role == "assistant" && m.TaskID != nil && *m.TaskID == tid {
+				sess.Status = StatusIdle
+				sess.UpdatedAt = s.now().Format(time.RFC3339Nano)
+				out := cloneSession(sess, true)
+				s.persistLocked(sess)
+				return out, true
+			}
+		}
+	}
+	msgID, err := newID("msg")
+	if err != nil {
+		return nil, false
+	}
+	now := s.now().Format(time.RFC3339Nano)
+	var tidPtr *string
+	if tid != "" {
+		tidPtr = &tid
+	}
+	sess.Messages = append(sess.Messages, Message{
+		ID:      msgID,
+		Role:    "assistant",
+		Content: content,
+		TaskID:  tidPtr,
+		Mode:    sess.Mode,
+		Model:   sess.Model,
+		At:      now,
+	})
+	sess.Messages = truncateMessages(sess.Messages)
+	sess.Status = StatusIdle
+	sess.UpdatedAt = now
+	out := cloneSession(sess, true)
+	s.persistLocked(sess)
+	return out, true
 }
 
 // SetPersist wires durable storage (SQLite or memory).
@@ -449,6 +502,7 @@ func (s *Store) handlePatch(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAssistant records a truncated assistant summary after a turn (no tool payloads).
+// Prefer Gateway ObserveTaskEvent on task done; this endpoint stays for App compat / race.
 func (s *Store) handleAssistant(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req assistantSummaryRequest
@@ -456,44 +510,22 @@ func (s *Store) handleAssistant(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
-	content := TruncateContent(req.Content)
-	if content == "" {
+	if TruncateContent(req.Content) == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "content required"})
 		return
 	}
-	s.mu.Lock()
-	sess, ok := s.chats[id]
-	if !ok {
-		s.mu.Unlock()
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+	out, ok := s.RecordAssistant(id, req.TaskID, req.Content)
+	if !ok || out == nil {
+		s.mu.RLock()
+		_, exists := s.chats[id]
+		s.mu.RUnlock()
+		if !exists {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "record failed"})
 		return
 	}
-	msgID, err := newID("msg")
-	if err != nil {
-		s.mu.Unlock()
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "id generation failed"})
-		return
-	}
-	now := s.now().Format(time.RFC3339Nano)
-	var tid *string
-	if v := strings.TrimSpace(req.TaskID); v != "" {
-		tid = &v
-	}
-	sess.Messages = append(sess.Messages, Message{
-		ID:      msgID,
-		Role:    "assistant",
-		Content: content,
-		TaskID:  tid,
-		Mode:    sess.Mode,
-		Model:   sess.Model,
-		At:      now,
-	})
-	sess.Messages = truncateMessages(sess.Messages)
-	sess.Status = StatusIdle
-	sess.UpdatedAt = now
-	out := cloneSession(sess, true)
-	s.persistLocked(sess)
-	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, out)
 }
 

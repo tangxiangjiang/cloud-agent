@@ -130,6 +130,7 @@ func main() {
 			log.Printf("chat autotitle: slave %s offline for %s", slaveID, chatID)
 		}
 	})
+	slaveHub.SetChatTaskEventHandler(chatStore.ObserveTaskEvent)
 
 	log.Printf("pair code: %s (use POST /v1/auth/pair)", authStore.PairCode())
 

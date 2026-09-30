@@ -175,6 +175,7 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
         _starting = false;
       });
       _scrollToEnd();
+      _maybeResumeInFlight();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -394,6 +395,7 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
         _starting = false;
       });
       _scrollToEnd();
+      _maybeResumeInFlight();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -401,6 +403,43 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
         _error = e.toString();
       });
     }
+  }
+
+  /// If Gateway still has status=running, re-subscribe to the pending task stream.
+  void _maybeResumeInFlight() {
+    final sess = _session;
+    if (sess == null || sess.status != 'running') return;
+    final assisted = <String>{};
+    for (final m in sess.messages) {
+      final tid = m.taskId;
+      if (m.role == 'assistant' && tid != null && tid.isNotEmpty) {
+        assisted.add(tid);
+      }
+    }
+    String? pending;
+    for (var i = sess.messages.length - 1; i >= 0; i--) {
+      final m = sess.messages[i];
+      final tid = m.taskId;
+      if (m.role == 'user' && tid != null && tid.isNotEmpty) {
+        if (!assisted.contains(tid)) pending = tid;
+        break;
+      }
+    }
+    if (pending == null) return;
+    final taskId = pending;
+    setState(() {
+      _activeTaskId = taskId;
+      _running = true;
+      final hasBubble = _bubbles.any(
+        (b) => b.role == 'assistant' && b.taskId == taskId,
+      );
+      if (!hasBubble) {
+        _bubbles.add(
+          _Bubble(role: 'assistant', text: '…', streaming: true, taskId: taskId),
+        );
+      }
+    });
+    unawaited(_attachStream(taskId));
   }
 
   Future<void> _detachStream() async {

@@ -56,6 +56,7 @@ type OutboundHub struct {
 
 	onProjectSyncResult func(slaveID, requestID, repoID string, payload json.RawMessage) error
 	onModelsReport      func(slaveID string, models []ReportedModel)
+	onChatTaskEvent     func(taskID, kind string, payload map[string]any)
 
 	mu    sync.Mutex
 	conns map[string]*slaveConn // slaveId -> connection
@@ -79,6 +80,11 @@ func (h *OutboundHub) SetProjectSyncResultHandler(fn func(slaveID, requestID, re
 // SetModelsReportHandler receives Cursor model catalog from Slave register / models.report.
 func (h *OutboundHub) SetModelsReportHandler(fn func(slaveID string, models []ReportedModel)) {
 	h.onModelsReport = fn
+}
+
+// SetChatTaskEventHandler lets chat store persist assistant text when App is gone.
+func (h *OutboundHub) SetChatTaskEventHandler(fn func(taskID, kind string, payload map[string]any)) {
+	h.onChatTaskEvent = fn
 }
 
 // RequestModelsRefresh asks one online slave to re-list Cursor models.
@@ -361,6 +367,9 @@ func (c *slaveConn) readPump() {
 			}
 			if c.hub.tasks != nil {
 				c.hub.tasks.ApplySlaveEvent(msg.TaskID, msg.Event.Kind, payload)
+			}
+			if c.hub.onChatTaskEvent != nil {
+				c.hub.onChatTaskEvent(msg.TaskID, msg.Event.Kind, payload)
 			}
 			if c.hub.appHub != nil {
 				c.hub.appHub.Publish(msg.TaskID, msg.Event.Kind, payload)

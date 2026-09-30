@@ -396,4 +396,97 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Earlier topic'), findsWidgets);
   });
+
+  testWidgets('reopen running chat reattaches stream', (tester) async {
+    final slave = _slave();
+    final project = slave.effectiveProjects.first;
+    var wsAttached = false;
+    final api = ChatApi(
+      session: _session,
+      get: (uri, {headers}) async {
+        if (uri.path == '/v1/models') {
+          return http.Response(
+            jsonEncode({
+              'default': 'auto',
+              'models': [
+                {'id': 'auto', 'label': 'Auto'},
+              ],
+            }),
+            200,
+          );
+        }
+        if (uri.path == '/v1/chats') {
+          return http.Response(
+            jsonEncode({
+              'chats': [
+                {
+                  'id': 'chat_run',
+                  'slaveId': 'slave_devpc',
+                  'repoId': 'r_cloud_agent',
+                  'mode': 'agent',
+                  'model': 'auto',
+                  'title': 'In flight',
+                  'status': 'running',
+                  'preview': 'keep going',
+                  'messageCount': 1,
+                  'updatedAt': '2026-09-29T02:00:00Z',
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (uri.path.endsWith('/chat_run')) {
+          return http.Response(
+            jsonEncode({
+              'id': 'chat_run',
+              'slaveId': 'slave_devpc',
+              'repoId': 'r_cloud_agent',
+              'mode': 'agent',
+              'model': 'auto',
+              'title': 'In flight',
+              'status': 'running',
+              'messages': [
+                {
+                  'id': 'm1',
+                  'role': 'user',
+                  'content': 'keep going',
+                  'taskId': 'tsk_inflight',
+                  'at': '2026-09-29T02:00:00Z',
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        return http.Response('{}', 404);
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProjectChatPage(
+          session: _session,
+          slave: slave,
+          project: project,
+          api: api,
+          wsFactory: (buf, taskId) {
+            wsAttached = true;
+            expect(taskId, 'tsk_inflight');
+            return AppWsClient(
+              session: _session,
+              buffer: buf,
+              taskId: taskId,
+              connect: (_) => throw StateError('no ws in test'),
+              reconnectDelay: const Duration(days: 1),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('keep going'), findsOneWidget);
+    expect(wsAttached, isTrue);
+  });
 }

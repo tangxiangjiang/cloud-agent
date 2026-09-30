@@ -202,6 +202,74 @@ func TestPersistRoundTripAndList(t *testing.T) {
 	}
 }
 
+func TestObserveTaskEventPersistsWithoutApp(t *testing.T) {
+	tasks := task.NewStore()
+	chats := chat.NewStore(tasks)
+	h := chats.Handler()
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(
+		http.MethodPost, "/v1/chats",
+		strings.NewReader(`{"slaveId":"slave_devpc","repoId":"r1"}`),
+	))
+	var sess chat.Session
+	_ = json.Unmarshal(rec.Body.Bytes(), &sess)
+
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, httptest.NewRequest(
+		http.MethodPost, "/v1/chats/"+sess.ID+"/messages",
+		strings.NewReader(`{"text":"leave mid reply"}`),
+	))
+	var msgOut struct {
+		TaskID string `json:"taskId"`
+	}
+	_ = json.Unmarshal(rec2.Body.Bytes(), &msgOut)
+	if msgOut.TaskID == "" {
+		t.Fatal("expected taskId")
+	}
+
+	// Simulate App leaving: no POST /assistant; Gateway observes Slave events.
+	chats.ObserveTaskEvent(msgOut.TaskID, "assistant.delta", map[string]any{"text": "partial "})
+	chats.ObserveTaskEvent(msgOut.TaskID, "assistant.delta", map[string]any{"text": "answer"})
+	chats.ObserveTaskEvent(msgOut.TaskID, "done", map[string]any{"status": "finished"})
+
+	getRec := httptest.NewRecorder()
+	h.ServeHTTP(getRec, httptest.NewRequest(http.MethodGet, "/v1/chats/"+sess.ID, nil))
+	var loaded chat.Session
+	_ = json.Unmarshal(getRec.Body.Bytes(), &loaded)
+	if loaded.Status != chat.StatusIdle {
+		t.Fatalf("status=%q", loaded.Status)
+	}
+	if len(loaded.Messages) < 2 || loaded.Messages[1].Role != "assistant" {
+		t.Fatalf("messages: %+v", loaded.Messages)
+	}
+	if loaded.Messages[1].Content != "partial answer" {
+		t.Fatalf("assistant content: %q", loaded.Messages[1].Content)
+	}
+
+	// App late POST must be idempotent (no duplicate).
+	rec3 := httptest.NewRecorder()
+	h.ServeHTTP(rec3, httptest.NewRequest(
+		http.MethodPost, "/v1/chats/"+sess.ID+"/assistant",
+		strings.NewReader(`{"taskId":"`+msgOut.TaskID+`","content":"partial answer"}`),
+	))
+	if rec3.Code != http.StatusOK {
+		t.Fatalf("assistant=%d %s", rec3.Code, rec3.Body.String())
+	}
+	getRec2 := httptest.NewRecorder()
+	h.ServeHTTP(getRec2, httptest.NewRequest(http.MethodGet, "/v1/chats/"+sess.ID, nil))
+	_ = json.Unmarshal(getRec2.Body.Bytes(), &loaded)
+	asstCount := 0
+	for _, m := range loaded.Messages {
+		if m.Role == "assistant" {
+			asstCount++
+		}
+	}
+	if asstCount != 1 {
+		t.Fatalf("expected 1 assistant msg, got %d: %+v", asstCount, loaded.Messages)
+	}
+}
+
 func TestSuggestTitleAndPatch(t *testing.T) {
 	if got := chat.SuggestTitle("  fix login loading  "); got != "fix login loading" {
 		t.Fatalf("suggest: %q", got)

@@ -355,6 +355,17 @@ func (s *Store) ListQueuedForSlave(slaveID string) []*Task {
 	return out
 }
 
+// Get returns a clone of the task, or nil if missing.
+func (s *Store) Get(id string) *Task {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return nil
+	}
+	return cloneTask(t)
+}
+
 // ApplySlaveEvent updates task status from a slave-reported event kind/payload.
 func (s *Store) ApplySlaveEvent(taskID, kind string, payload map[string]any) {
 	s.mu.Lock()

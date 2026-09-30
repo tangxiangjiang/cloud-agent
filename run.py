@@ -3,7 +3,8 @@
 
 用法（在仓库根目录）:
   python run.py plans                     # 列出 ai/index.json 中的计划
-  python run.py up                        # stub + Master + 索引 default
+  python run.py up                        # stub + Master + 自动 Start 一个子 Slave
+  python run.py up --no-slave-start --no-workflow   # 只起 Master，子 Slave 在 App 舰队页 Start
   python run.py up --plan flutter-chat    # 按计划 id Start 对应子 Slave
   python run.py up --agent --plan sample-dag
   python run.py up --legacy-slave         # 旧：单进程 Slave
@@ -16,7 +17,7 @@
   python run.py build --ios ./build
   python run.py build --ios --ipa --export-method development ./build
 
-默认走 slave-master（冷启动后对本计划 Start 一个子 Slave）。
+默认走 slave-master；默认会 Start 一个子 Slave。App 自管启停时加 --no-slave-start。
 密钥只走环境变量；勿把 token / API key 提交进 git。
 详见 doc/deploy.md、doc/slave-master.md、ai/INDEX.md。
 """
@@ -930,22 +931,29 @@ def cmd_up(args: argparse.Namespace) -> None:
         pids["stub"] = stub
         save_pids(pids)
         time.sleep(2.0)
-        started_slave_id = resolve_start_slave_id(
-            None if args.no_workflow else bundle,
-            MASTER_CONFIG,
-        )
-        master_start_child(
-            started_slave_id,
-            base=base,
-            token=token,
-            cursor_key=args.cursor_key,
-        )
-        info(f"waiting for child data-plane WS ({started_slave_id})...")
-        wait_slave_data_plane(base, token, started_slave_id)
-        pids = load_pids()
-        pids["startedSlaveId"] = started_slave_id
-        pids["masterId"] = read_master_id()
-        save_pids(pids)
+        no_slave_start = bool(getattr(args, "no_slave_start", False))
+        if no_slave_start:
+            info("skip child Slave start (--no-slave-start); use App 舰队页 Start")
+            pids = load_pids()
+            pids["masterId"] = read_master_id()
+            save_pids(pids)
+        else:
+            started_slave_id = resolve_start_slave_id(
+                None if args.no_workflow else bundle,
+                MASTER_CONFIG,
+            )
+            master_start_child(
+                started_slave_id,
+                base=base,
+                token=token,
+                cursor_key=args.cursor_key,
+            )
+            info(f"waiting for child data-plane WS ({started_slave_id})...")
+            wait_slave_data_plane(base, token, started_slave_id)
+            pids = load_pids()
+            pids["startedSlaveId"] = started_slave_id
+            pids["masterId"] = read_master_id()
+            save_pids(pids)
 
     if plan and plan.get("cwdHint"):
         info(
@@ -973,6 +981,8 @@ def cmd_up(args: argparse.Namespace) -> None:
         info(f"  Master  : {'stub' if stub else 'agent'} (M11)")
         if started_slave_id:
             info(f"  Child   : {started_slave_id} started")
+        elif not legacy and bool(getattr(args, "no_slave_start", False)):
+            info("  Child   : (none — App 舰队页 Start)")
         info("  Logs    : .local/gateway.log  .local/master.log")
         info("           slave/.local/slaves/<id>/logs/slave.log")
     if wf:
@@ -1219,10 +1229,15 @@ def build_slave(outdir: Path) -> Path:
         "config.example.yaml",
         "master.config.example.yaml",
         "README.md",
+        "start-master.sh",
     ):
         src = slave_src / name
         if src.is_file():
             shutil.copy2(src, slave_out / name)
+            if name.endswith(".sh"):
+                raw = (slave_out / name).read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+                (slave_out / name).write_bytes(raw)
+                (slave_out / name).chmod(0o755)
 
     fixtures = slave_src / "fixtures"
     if fixtures.is_dir():
@@ -1244,20 +1259,18 @@ def build_slave(outdir: Path) -> Path:
                 "  export CURSOR_API_KEY=...",
                 "  node dist/index.js --config config.yaml",
                 "",
-                "多工程推荐 Master（M11）:",
-                "  cp master.config.example.yaml master.config.yaml",
-                "  # 或: node dist/master/cli.js migrate --from config.yaml --to master.config.yaml",
-                "  # slaveCommand 保持 [\"node\",\"dist/index.js\"]",
-                "  export GATEWAY_TOKEN=...",
+                "多工程推荐 Master（M11）— 本机终端常驻（关 Cursor 也还在）:",
+                "  cp master.config.example.yaml master.config.yaml  # 编辑 slaves[]",
                 "  export CURSOR_API_KEY=...",
-                "  node dist/master/cli.js serve --config master.config.yaml",
-                "  # 或: npm run master:dist -- serve --config master.config.yaml",
-                "  # 冷启动不自动拉起子进程；用 App 舰队页或:",
-                "  node dist/master/cli.js start <slaveId> --config master.config.yaml",
+                "  ./start-master.sh          # nohup; 不自动起子 Slave",
+                "  ./start-master.sh status|stop",
+                "  # 或: node dist/master/cli.js serve --config master.config.yaml",
+                "  # 子 Slave 用 App 舰队页 Start",
                 "",
             ]
         ),
         encoding="utf-8",
+        newline="\n",
     )
     info(f"slave  → {slave_out.relative_to(ROOT) if slave_out.is_relative_to(ROOT) else slave_out} (Node/JS)")
     return slave_out
@@ -1454,6 +1467,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--legacy-multi-project",
         action="store_true",
         help="与 --legacy-slave 联用：允许多 projects（deprecated）",
+    )
+    up.add_argument(
+        "--no-slave-start",
+        action="store_true",
+        help="只启 Master，不自动 Start 子 Slave（由 App 舰队页启停）",
     )
     up.add_argument("--plan", help="ai/index.json 中的计划 id（推荐）")
     up.add_argument("--bundle", help="直接指定 DAG JSON 路径（覆盖 --plan）")

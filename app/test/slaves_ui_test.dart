@@ -151,6 +151,64 @@ void main() {
     expect(hit?.nodes.first.status, 'approved');
   });
 
+  test('findMilestoneRun falls back across slaveId remap', () {
+    final runs = [
+      WorkflowRun.fromJson({
+        'id': 'wf_m11',
+        'bundleId': 'milestone:M11',
+        'repoId': 'r_nyralang',
+        'slaveId': 'slave_devpc',
+        'status': 'completed',
+        'nodes': [
+          {'id': 'P01', 'status': 'approved', 'dependsOn': []},
+        ],
+        'createdAt': '2026-09-29T17:00:00Z',
+      }),
+    ];
+    final hit = findMilestoneRun(
+      runs,
+      bundleId: 'milestone:M11',
+      repoId: 'r_nyralang',
+      slaveId: 'slave_nyralang',
+    );
+    expect(hit?.id, 'wf_m11');
+    expect(hit?.status, 'completed');
+  });
+
+  test('findMilestoneRun prefers exact slaveId when both exist', () {
+    final runs = [
+      WorkflowRun.fromJson({
+        'id': 'wf_old_slave',
+        'bundleId': 'milestone:M11',
+        'repoId': 'r_nyralang',
+        'slaveId': 'slave_devpc',
+        'status': 'completed',
+        'nodes': [
+          {'id': 'P01', 'status': 'approved', 'dependsOn': []},
+        ],
+        'createdAt': '2026-09-29T18:00:00Z',
+      }),
+      WorkflowRun.fromJson({
+        'id': 'wf_new_slave',
+        'bundleId': 'milestone:M11',
+        'repoId': 'r_nyralang',
+        'slaveId': 'slave_nyralang',
+        'status': 'failed',
+        'nodes': [
+          {'id': 'P01', 'status': 'failed', 'dependsOn': []},
+        ],
+        'createdAt': '2026-09-29T17:00:00Z',
+      }),
+    ];
+    final hit = findMilestoneRun(
+      runs,
+      bundleId: 'milestone:M11',
+      repoId: 'r_nyralang',
+      slaveId: 'slave_nyralang',
+    );
+    expect(hit?.id, 'wf_new_slave');
+  });
+
   test('phase toWorkflowNodeJson includes prompt', () {
     final p = MilestonePhaseInfo.fromJson({
       'id': 'M07-P01',

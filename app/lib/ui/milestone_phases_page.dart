@@ -190,13 +190,28 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
     return id;
   }
 
+  String _existingSubtitle(WorkflowRun existing) {
+    switch (existing.status) {
+      case 'completed':
+        return 'status=completed · 本 Milestone 已全部通过';
+      case 'failed':
+      case 'cancelled':
+        return 'status=${existing.status} · 可查看详情或再开一轮';
+      default:
+        return 'status=${existing.status} · 返回后请点「继续」勿重复新建';
+    }
+  }
+
   Widget _defaultsCard(ThemeData theme) {
     final modelIds = _catalog.models.map((m) => m.id).toList();
     if (!modelIds.contains(_defaultModel)) {
       modelIds.insert(0, _defaultModel);
     }
+    // Defaults only matter when creating / restarting — not for a completed run.
     final canEdit = !_busy &&
-        (_existing == null || !_existing!.isActive);
+        (_existing == null ||
+            _existing!.status == 'failed' ||
+            _existing!.status == 'cancelled');
 
     return Card(
       child: Padding(
@@ -312,16 +327,18 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
                   Card(
                     child: ListTile(
                       title: Text('当前: ${existing.id}'),
-                      subtitle: Text(
-                        'status=${existing.status} · 返回后请点「继续」勿重复新建',
-                      ),
+                      subtitle: Text(_existingSubtitle(existing)),
                       trailing: WorkflowStatusChip(status: existing.status),
                       onTap: _busy ? null : () => _openRun(existing),
                     ),
                   ),
                 ],
-                const SizedBox(height: 12),
-                _defaultsCard(theme),
+                if (existing == null ||
+                    existing.status == 'failed' ||
+                    existing.status == 'cancelled') ...[
+                  const SizedBox(height: 12),
+                  _defaultsCard(theme),
+                ],
                 const SizedBox(height: 16),
                 Text('Phases', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 8),
@@ -380,13 +397,16 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
                     icon: const Icon(Icons.visibility),
                     label: const Text('查看上次结果'),
                   ),
-                  const SizedBox(height: 8),
-                  OutlinedButton(
-                    onPressed: _busy
-                        ? null
-                        : () => _createWorkflow(forceNew: true),
-                    child: Text(_busy ? 'Creating…' : '再开一轮'),
-                  ),
+                  // Completed = done; only failed/cancelled offer another round.
+                  if (existing.status != 'completed') ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: _busy
+                          ? null
+                          : () => _createWorkflow(forceNew: true),
+                      child: Text(_busy ? 'Creating…' : '再开一轮'),
+                    ),
+                  ],
                 ] else
                   FilledButton.icon(
                     onPressed: _busy
@@ -408,6 +428,10 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
 }
 
 /// Prefer newest active run for this milestone; else newest matching run.
+///
+/// Same [repoId]+[bundleId] wins even if [slaveId] changed (e.g. M11 1:1
+/// remapping `slave_devpc` → `slave_nyralang`). Prefer exact slave match when
+/// present; otherwise fall back so completed history is not lost.
 @visibleForTesting
 WorkflowRun? findMilestoneRun(
   List<WorkflowRun> list, {
@@ -415,13 +439,21 @@ WorkflowRun? findMilestoneRun(
   required String repoId,
   required String slaveId,
 }) {
-  final matched = list.where((w) {
+  final sameRepo = list.where((w) {
     if (w.bundleId != bundleId) return false;
     if (w.repoId != repoId) return false;
-    if (slaveId.isNotEmpty && (w.slaveId ?? '') != slaveId) return false;
     return true;
   }).toList();
-  if (matched.isEmpty) return null;
+  if (sameRepo.isEmpty) return null;
+
+  List<WorkflowRun> matched = sameRepo;
+  if (slaveId.isNotEmpty) {
+    final sameSlave = sameRepo
+        .where((w) => (w.slaveId ?? '') == slaveId)
+        .toList();
+    if (sameSlave.isNotEmpty) matched = sameSlave;
+  }
+
   matched.sort((a, b) => b.createdAt.compareTo(a.createdAt));
   for (final w in matched) {
     if (w.isActive) return w;

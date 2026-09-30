@@ -1,4 +1,6 @@
 /// Models for project sync GET/POST (M08).
+import '../slaves/models.dart';
+
 class SyncWarning {
   const SyncWarning({
     required this.code,
@@ -177,6 +179,21 @@ class ProjectSyncSnapshot {
       warnings: warnings,
       report: report,
     );
+  }
+
+  /// Milestones from the latest disk index (prefer over register-time catalog).
+  List<MilestoneInfo>? get milestonesFromIndex {
+    final idx = payload['milestonesIndex'];
+    if (idx is! Map) return null;
+    final raw = idx['milestones'];
+    if (raw is! List || raw.isEmpty) return null;
+    final out = <MilestoneInfo>[];
+    for (final m in raw) {
+      if (m is Map) {
+        out.add(MilestoneInfo.fromJson(Map<String, dynamic>.from(m)));
+      }
+    }
+    return out.isEmpty ? null : out;
   }
 }
 

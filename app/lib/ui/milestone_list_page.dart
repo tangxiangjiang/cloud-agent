@@ -204,7 +204,10 @@ class _MilestoneListPageState extends State<MilestoneListPage> {
 
   @override
   Widget build(BuildContext context) {
-    final milestones = widget.project.milestones;
+    // Prefer latest disk index from sync; register catalog can be stale
+    // until Slave restart (e.g. M11 → M12 while process still running).
+    final milestones =
+        _snapshot?.milestonesFromIndex ?? widget.project.milestones;
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -317,12 +320,19 @@ class _MilestoneListPageState extends State<MilestoneListPage> {
                 ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
+                  final project = ProjectInfo(
+                    id: widget.project.id,
+                    name: widget.project.name,
+                    cwd: widget.project.cwd,
+                    index: widget.project.index,
+                    milestones: milestones,
+                  );
                   Navigator.of(context).push<void>(
                     MaterialPageRoute(
                       builder: (_) => MilestonePhasesPage(
                         session: widget.session,
                         slave: widget.slave,
-                        project: widget.project,
+                        project: project,
                         milestone: m,
                       ),
                     ),

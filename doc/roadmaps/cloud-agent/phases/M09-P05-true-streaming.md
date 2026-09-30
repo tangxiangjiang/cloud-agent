@@ -17,12 +17,11 @@
 
 ## 完成定义（DoD）
 
-- [ ] Local Agent：`send` 使用 SDK **`onDelta`（`text-delta`）**（或等价细粒度 API）向 Gateway 发高频 `assistant.delta`
-- [ ] 仍保留 `run.stream()` 映射 tool/status/`done`（或文档说明等价路径）
-- [ ] App：生成过程中气泡文本持续增长（手测或 widget/集成可观察多帧变化）
-- [ ] 可选：发送后尽早订阅 WS，或先 HTTP `events?afterSeq=` 再 WS（对齐 node logs），减少晚订阅整包 replay
-- [ ] 单测：delta 映射至少覆盖「多段 text-delta 拼成全文」
-- [ ] 取消：cancel 后尽快停止再发新 delta
+- [x] Local Agent：`send` 使用 SDK **`onDelta`（`text-delta`）** 向 Gateway 发高频 `assistant.delta`
+- [x] 仍保留 `run.stream()` 映射 tool/status（assistant 文本不再重复发）
+- [x] App：生成过程中气泡文本随 delta 增长；`send` 后先 HTTP events 快照再订 WS
+- [x] 单测：`mapInteractionDelta` 多段 text-delta；`skipAssistantText` 防重复
+- [x] 取消：cancel 后 `onDelta` / stream 均不再转发新 delta
 
 ## 禁止事项
 

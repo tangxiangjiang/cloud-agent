@@ -515,6 +515,16 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
     _buffer = buf;
     _bufferListener = onBuf;
 
+    // HTTP snapshot first so late WS subscribe does not miss early deltas.
+    try {
+      final snap = await _api.getTaskEvents(taskId, afterSeq: 0);
+      for (final m in snap.events) {
+        buf.ingest(TaskLogEvent.fromJson(m));
+      }
+    } catch (_) {
+      // Best-effort; WS replay still covers history when available.
+    }
+
     final ws = widget.wsFactory?.call(buf, taskId) ??
         AppWsClient(session: widget.session, buffer: buf);
     _ws = ws;

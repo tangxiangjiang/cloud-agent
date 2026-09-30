@@ -294,6 +294,31 @@ class ChatApi {
     _throwIfBad(res, 'Cancel task');
   }
 
+  /// HTTP event snapshot (align node logs) before / with WS subscribe.
+  Future<({List<Map<String, dynamic>> events, int latestSeq})> getTaskEvents(
+    String taskId, {
+    int afterSeq = 0,
+  }) async {
+    final res = await _get(
+      _uri(
+        '/v1/tasks/${Uri.encodeComponent(taskId)}/events',
+        {'afterSeq': '$afterSeq'},
+      ),
+      headers: _headers,
+    );
+    _throwIfBad(res, 'Get task events');
+    final body = _decodeMap(res.body);
+    final raw = body['events'];
+    final list = <Map<String, dynamic>>[];
+    if (raw is List) {
+      for (final e in raw) {
+        if (e is Map) list.add(Map<String, dynamic>.from(e));
+      }
+    }
+    final latest = (body['latestSeq'] as num?)?.toInt() ?? 0;
+    return (events: list, latestSeq: latest);
+  }
+
   Map<String, dynamic> _decodeMap(String raw) {
     try {
       final v = jsonDecode(raw);

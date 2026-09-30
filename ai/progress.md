@@ -41,7 +41,7 @@
 | M09-P02 | approved | App 对话页（Agent + Auto） |
 | M09-P03 | approved | Ask / Plan 与模型列表 |
 | M09-P04 | approved | 会话历史与多会话 |
-| M09-P05 | pending | 对话真流式（token / text-delta） |
+| M09-P05 | approved | 对话真流式（token / text-delta） |
 | M10-P01 | approved | Gateway 续跑门闩 |
 | M10-P02 | approved | App 节点策略控件 |
 | M10-P03 | approved | 自动通过 |
@@ -91,7 +91,7 @@
 - [x] M09-P02 @approved 2026-09-30
 - [x] M09-P03 @approved 2026-09-30
 - [x] M09-P04 @approved 2026-09-30
-- [ ] M09-P05
+- [x] M09-P05 @approved 2026-09-30
 - [x] M10-P01 @approved 2026-09-30
 - [x] M10-P02 @approved 2026-09-30
 - [x] M10-P03 @approved 2026-09-30

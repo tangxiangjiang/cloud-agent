@@ -10,7 +10,7 @@
 | M06 Flutter App MVP | done | M06-P01～P05 已完成 |
 | M07 硬化与收尾 | done | M07-P01～P03 已完成 |
 | M08 工程状态同步 | done | M08-P01～P05 已完成 |
-| M09 工程 AI 对话 | pending | P01～P04 已完成；**P05 真流式**待做 |
+| M09 工程 AI 对话 | done | M09-P01～P05（含真流式） |
 | M10 节点执行策略 | done | M10-P01～P04 已完成 |
 | M11 Slave-Master | pending | 设计见 [slave-master.md](../../slave-master.md) |
 
@@ -54,7 +54,7 @@
 - [x] M09-P02 @approved 2026-09-30
 - [x] M09-P03 @approved 2026-09-30
 - [x] M09-P04 @approved 2026-09-30
-- [ ] M09-P05
+- [x] M09-P05 @approved 2026-09-30
 - [x] M10-P01 @approved 2026-09-30
 - [x] M10-P02 @approved 2026-09-30
 - [x] M10-P03 @approved 2026-09-30

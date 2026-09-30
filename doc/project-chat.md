@@ -1,6 +1,6 @@
 # 工程 AI 对话（Project Chat）
 
-**状态：工程对话（Ask/Plan、模型、历史）已落地（M09-P01～P04）；真流式见 M09-P05**  
+**状态：工程对话已落地（M09-P01～P05，含真流式）**  
 入口：App **Slave → 工程 → 对话**（与 Milestone / 同步并列）。  
 体验对齐 Cursor 对话：**Agent / Ask / Plan** + **模型选择**（默认 **Auto**）。
 
@@ -10,16 +10,15 @@
 - 执行只在工程白名单 `cwd`（Local Agent）  
 - 流式输出走现有 App WS（`assistant.delta` / tool / status）  
 
-### 流式现状与缺口（M09-P05）
+### 流式（M09-P05）
 
-| 层 | 现状 | 问题 |
-|----|------|------|
-| Slave | `agent.send` + `run.stream()`，把整段 `assistant` 文本映射成 `assistant.delta` | **粒度粗**（非 token）；看起来像「生成完才出字」 |
-| SDK | 细粒度应用 `send({ onDelta })` / `text-delta` | **尚未接线** |
-| App | `sendMessage` 返回后才订 WS；Gateway 可 replay 缓冲 | 晚订阅时可能**一坨刷出** |
-| Gateway / App UI | 每条 delta 即推即改气泡；**不**等 `done` 才显示 | 协议侧已支持流式 |
+| 层 | 行为 |
+|----|------|
+| Slave | `agent.send({ onDelta })`：`text-delta` → 高频 `assistant.delta`；`run.stream()` 仍映射 tool/status（assistant 全文不再重复发） |
+| App | `sendMessage` 后先 `GET .../tasks/{id}/events` 快照，再订 WS（对齐 node logs） |
+| Gateway / UI | 每条 delta 即推即改气泡 |
 
-目标：Slave 发高频 `assistant.delta`；App 气泡边收边长。
+目标：气泡边生成边长，而不是整段生成完才显示。
 
 相关：自由任务雏形见 [api-outline.md](./api-outline.md) `POST /v1/tasks`；审核闸门见 [workflow.md](./workflow.md)。本功能是**会话式**自由任务，不替代 Milestone DAG。
 

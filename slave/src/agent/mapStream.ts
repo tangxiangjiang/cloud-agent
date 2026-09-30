@@ -20,10 +20,18 @@ function summarizeArgs(args: unknown): string | undefined {
 /**
  * Map Cursor SDK stream messages → cloud-agent task.event kinds.
  * Best-effort for tool events; ignores thinking/usage/request noise.
+ *
+ * When `skipAssistantText` is true (token deltas already emitted via onDelta),
+ * do not re-emit full assistant text blocks (avoids duplicate bubbles).
  */
-export function mapSdkMessage(event: SDKMessage, emit: MappedEmit): void {
+export function mapSdkMessage(
+  event: SDKMessage,
+  emit: MappedEmit,
+  opts?: { skipAssistantText?: boolean },
+): void {
   switch (event.type) {
     case "assistant":
+      if (opts?.skipAssistantText) break;
       for (const block of event.message.content) {
         if (block.type === "text" && block.text) {
           emit("assistant.delta", { text: block.text });
@@ -54,5 +62,18 @@ export function mapSdkMessage(event: SDKMessage, emit: MappedEmit): void {
       break;
     default:
       break;
+  }
+}
+
+/**
+ * Map raw SDK InteractionUpdate (onDelta) → task.event.
+ * Prefer text-delta for true token streaming.
+ */
+export function mapInteractionDelta(
+  update: { type?: string; text?: string },
+  emit: MappedEmit,
+): void {
+  if (update.type === "text-delta" && typeof update.text === "string" && update.text) {
+    emit("assistant.delta", { text: update.text });
   }
 }

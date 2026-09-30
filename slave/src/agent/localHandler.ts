@@ -8,7 +8,7 @@ import { log } from "../log.js";
 import { attemptRunCancel } from "../safety/cancel.js";
 import { resolveAssignedRepo } from "../safety/repo.js";
 import { applyChatModePrefix, normalizeChatMode } from "./chatMode.js";
-import { mapSdkMessage } from "./mapStream.js";
+import { mapInteractionDelta, mapSdkMessage } from "./mapStream.js";
 import {
   isAutoModelId,
   resolveModelSelection,
@@ -192,7 +192,14 @@ export class LocalAgentTaskHandler implements TaskHandlers {
         return;
       }
 
-      const run = await agent.send(prompt);
+      const run = await agent.send(prompt, {
+        onDelta: ({ update }) => {
+          if (this.cancelled.has(task.id)) return;
+          mapInteractionDelta(update as { type?: string; text?: string }, (kind, payload) =>
+            emit(task.id, kind, payload),
+          );
+        },
+      });
       this.activeRuns.set(task.id, run);
       log.info("local run started", {
         taskId: task.id,
@@ -222,7 +229,10 @@ export class LocalAgentTaskHandler implements TaskHandlers {
             // DoD: stop relaying new tool/assistant events ASAP after cancel.
             continue;
           }
-          mapSdkMessage(event, (kind, payload) => emit(task.id, kind, payload));
+          // Text already streamed via onDelta; stream() still carries tools/status.
+          mapSdkMessage(event, (kind, payload) => emit(task.id, kind, payload), {
+            skipAssistantText: true,
+          });
         }
       } catch (streamErr) {
         const message = streamErr instanceof Error ? streamErr.message : String(streamErr);

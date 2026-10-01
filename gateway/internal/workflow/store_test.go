@@ -957,3 +957,80 @@ func TestResetRunningNode(t *testing.T) {
 	}
 }
 
+func TestCatchUpFromProgress(t *testing.T) {
+	store := workflow.NewStore()
+	h := store.Handler()
+	body := `{
+		"bundleId":"milestone:M12",
+		"repoId":"r1",
+		"slaveId":"slave_x",
+		"nodes":[
+			{"id":"M12-P00","dependsOn":[]},
+			{"id":"M12-P01","dependsOn":["M12-P00"]}
+		]
+	}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/M12-P00",
+		strings.NewReader(`{"status":"approved"}`)))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/M12-P01",
+		strings.NewReader(`{"status":"ready"}`)))
+
+	n, ids := store.CatchUpFromProgress("slave_x", "r1", []string{"M12-P00", "M12-P01"})
+	if n != 1 {
+		t.Fatalf("approved want 1 (P01 only), got %d ids=%v", n, ids)
+	}
+	getRec := httptest.NewRecorder()
+	h.ServeHTTP(getRec, httptest.NewRequest(http.MethodGet, "/v1/workflows/"+run.ID, nil))
+	var after workflow.Run
+	_ = json.NewDecoder(getRec.Body).Decode(&after)
+	if after.Nodes[1].Status != workflow.NodeApproved {
+		t.Fatalf("P01 want approved, got %s", after.Nodes[1].Status)
+	}
+	if after.Status != workflow.StatusCompleted {
+		t.Fatalf("workflow want completed, got %s", after.Status)
+	}
+}
+
+func TestCreateMilestoneForcesSerialDependsOn(t *testing.T) {
+	store := workflow.NewStore()
+	h := store.Handler()
+	// Fan-out / empty roots in payload — milestone: must rewrite to a chain.
+	body := `{
+		"bundleId":"milestone:M05",
+		"repoId":"r1",
+		"slaveId":"s1",
+		"nodes":[
+			{"id":"M05-P00","dependsOn":[]},
+			{"id":"M05-P01","dependsOn":[]},
+			{"id":"M05-P02","dependsOn":["M05-P01"]},
+			{"id":"M05-P03","dependsOn":["M05-P01"]}
+		]
+	}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	var run workflow.Run
+	_ = json.NewDecoder(rec.Body).Decode(&run)
+	if len(run.Nodes) != 4 {
+		t.Fatalf("nodes %d", len(run.Nodes))
+	}
+	if run.Nodes[0].Status != workflow.NodeReady || len(run.Nodes[0].DependsOn) != 0 {
+		t.Fatalf("P00 want ready root, got status=%s deps=%v", run.Nodes[0].Status, run.Nodes[0].DependsOn)
+	}
+	for i := 1; i < 4; i++ {
+		wantDep := run.Nodes[i-1].ID
+		if len(run.Nodes[i].DependsOn) != 1 || run.Nodes[i].DependsOn[0] != wantDep {
+			t.Fatalf("node %s deps=%v want [%s]", run.Nodes[i].ID, run.Nodes[i].DependsOn, wantDep)
+		}
+		if run.Nodes[i].Status != workflow.NodePending {
+			t.Fatalf("node %s want pending, got %s", run.Nodes[i].ID, run.Nodes[i].Status)
+		}
+	}
+}
+

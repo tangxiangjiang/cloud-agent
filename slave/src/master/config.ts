@@ -8,6 +8,10 @@ import {
   parseOptimizeFor,
   type OptimizeFor,
 } from "../agent/modelSelection.js";
+import {
+  DEFAULT_IDLE_TIMEOUT_MS,
+  DEFAULT_TASK_TIMEOUT_MS,
+} from "../config.js";
 import type {
   MasterConfig,
   MasterDefaults,
@@ -42,6 +46,8 @@ type RawDefaults = {
   autoModelId?: unknown;
   optimizeFor?: unknown;
   slaveGatewayUrl?: unknown;
+  taskTimeoutMs?: unknown;
+  idleTimeoutMs?: unknown;
 };
 
 type RawMaster = {
@@ -201,6 +207,16 @@ function parseDefaults(
     slaveGatewayUrl:
       optionalString(r.slaveGatewayUrl, "defaults.slaveGatewayUrl") ??
       deriveSlaveGatewayUrl(masterGatewayUrl),
+    taskTimeoutMs: requireNonNegInt(
+      r.taskTimeoutMs,
+      "defaults.taskTimeoutMs",
+      DEFAULT_TASK_TIMEOUT_MS,
+    ),
+    idleTimeoutMs: requireNonNegInt(
+      r.idleTimeoutMs,
+      "defaults.idleTimeoutMs",
+      DEFAULT_IDLE_TIMEOUT_MS,
+    ),
   };
 }
 
@@ -364,6 +380,8 @@ export function masterConfigToPlain(cfg: MasterConfig): Record<string, unknown> 
       autoModelId: cfg.defaults.autoModelId,
       optimizeFor: cfg.defaults.optimizeFor,
       slaveGatewayUrl: cfg.defaults.slaveGatewayUrl,
+      taskTimeoutMs: cfg.defaults.taskTimeoutMs,
+      idleTimeoutMs: cfg.defaults.idleTimeoutMs,
     },
     slaves: cfg.slaves.map((s) => ({
       id: s.id,

@@ -415,7 +415,7 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
           Text(
             'Model + switches PATCH to Gateway (defaults off). '
             'Ready: 开始；失败/拒绝/取消/卡住的 running: 重新跑（只重置该节点）；'
-            'Approve 后无自动下个: Continue。',
+            'Approve 后无自动续跑: Continue。',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -430,19 +430,11 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
               onModelChanged: n.policyEditable
                   ? (model) => unawaited(_patchPolicy(n, model: model))
                   : null,
-              onAutoApproveChanged: n.policyEditable
+              onAutoContinueChanged: n.policyEditable
                   ? (v) => unawaited(
                         _patchPolicy(
                           n,
-                          policy: n.policy.copyWith(autoApprove: v),
-                        ),
-                      )
-                  : null,
-              onAutoStartNextChanged: n.policyEditable
-                  ? (v) => unawaited(
-                        _patchPolicy(
-                          n,
-                          policy: n.policy.copyWith(autoStartNext: v),
+                          policy: n.policy.withAutoContinue(v),
                         ),
                       )
                   : null,
@@ -515,8 +507,7 @@ class _NodeTile extends StatelessWidget {
     required this.patching,
     required this.busy,
     this.onModelChanged,
-    this.onAutoApproveChanged,
-    this.onAutoStartNextChanged,
+    this.onAutoContinueChanged,
     this.onStartNode,
     this.onResetNode,
     this.onOpenLogs,
@@ -529,8 +520,7 @@ class _NodeTile extends StatelessWidget {
   final bool patching;
   final bool busy;
   final ValueChanged<String>? onModelChanged;
-  final ValueChanged<bool>? onAutoApproveChanged;
-  final ValueChanged<bool>? onAutoStartNextChanged;
+  final ValueChanged<bool>? onAutoContinueChanged;
   final VoidCallback? onStartNode;
   final VoidCallback? onResetNode;
   final VoidCallback? onOpenLogs;
@@ -647,22 +637,11 @@ class _NodeTile extends StatelessWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('自动通过', style: Theme.of(context).textTheme.bodySmall),
+                    Text('自动续跑', style: Theme.of(context).textTheme.bodySmall),
                     Switch(
-                      key: ValueKey('autoApprove-${node.id}'),
-                      value: node.policy.autoApprove,
-                      onChanged: editable ? onAutoApproveChanged : null,
-                    ),
-                  ],
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('自动下个', style: Theme.of(context).textTheme.bodySmall),
-                    Switch(
-                      key: ValueKey('autoStartNext-${node.id}'),
-                      value: node.policy.autoStartNext,
-                      onChanged: editable ? onAutoStartNextChanged : null,
+                      key: ValueKey('autoContinue-${node.id}'),
+                      value: node.policy.autoContinue,
+                      onChanged: editable ? onAutoContinueChanged : null,
                     ),
                   ],
                 ),

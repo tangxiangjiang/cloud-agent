@@ -138,6 +138,33 @@ describe("validateConfig", () => {
     assert.equal(cfg.defaultModel, "default");
     assert.equal(cfg.autoModelId, "default");
     assert.equal(cfg.optimizeFor, "cost");
+    assert.equal(cfg.taskTimeoutMs, 3_600_000);
+    assert.equal(cfg.idleTimeoutMs, 600_000);
+  });
+
+  it("accepts hang timeouts including 0 to disable", () => {
+    const cfg = validateConfig({
+      gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
+      slaveId: "slave_devpc",
+      taskTimeoutMs: 0,
+      idleTimeoutMs: 120_000,
+      repos: [{ id: "r1", name: "a", cwd: absA }],
+    });
+    assert.equal(cfg.taskTimeoutMs, 0);
+    assert.equal(cfg.idleTimeoutMs, 120_000);
+  });
+
+  it("rejects negative hang timeouts", () => {
+    assert.throws(
+      () =>
+        validateConfig({
+          gatewayUrl: "ws://127.0.0.1:8080/v1/slave/ws",
+          slaveId: "slave_devpc",
+          taskTimeoutMs: -1,
+          repos: [{ id: "r1", name: "a", cwd: absA }],
+        }),
+      (e: unknown) => e instanceof ConfigError && /taskTimeoutMs/.test(e.message),
+    );
   });
 
   it("rejects invalid optimizeFor", () => {

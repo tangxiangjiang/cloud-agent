@@ -8,7 +8,12 @@ import { log } from "../log.js";
 import { attemptRunCancel } from "../safety/cancel.js";
 import { resolveAssignedRepo } from "../safety/repo.js";
 import { applyChatModePrefix, normalizeChatMode } from "./chatMode.js";
-import { mapInteractionDelta, mapSdkMessage } from "./mapStream.js";
+import {
+  HangTimeoutWatch,
+  hangTimeoutMessage,
+  type HangTimeoutReason,
+} from "./hangTimeout.js";
+import { mapInteractionDelta, mapSdkMessage, type InteractionPhaseState } from "./mapStream.js";
 import {
   isAutoModelId,
   resolveModelSelection,
@@ -147,6 +152,57 @@ export class LocalAgentTaskHandler implements TaskHandlers {
     });
 
     let agent: Awaited<ReturnType<typeof Agent.create>> | undefined;
+    let hangReason: HangTimeoutReason | null = null;
+    const taskTimeoutMs = this.opts.cfg.taskTimeoutMs;
+    const idleTimeoutMs = this.opts.cfg.idleTimeoutMs;
+    const hang = new HangTimeoutWatch({
+      taskTimeoutMs,
+      idleTimeoutMs,
+      onTimeout: (reason) => {
+        if (this.cancelled.has(task.id)) return;
+        this.cancelled.add(task.id);
+        hangReason = reason;
+        const message = hangTimeoutMessage(reason, taskTimeoutMs, idleTimeoutMs);
+        log.warn("local agent hang timeout", {
+          taskId: task.id,
+          reason,
+          taskTimeoutMs,
+          idleTimeoutMs,
+        });
+        emit(task.id, "status", { status: "cancelling" });
+        emit(task.id, "error", {
+          message,
+          code: reason,
+          phase: "run",
+        });
+        const run = this.activeRuns.get(task.id);
+        if (!run) {
+          log.info("hang timeout: no active run yet", { taskId: task.id, reason });
+          return;
+        }
+        void attemptRunCancel(run)
+          .then((attempt) => {
+            if (attempt.supported) {
+              log.info("hang timeout: run.cancel requested", {
+                taskId: task.id,
+                runId: run.id,
+                reason,
+              });
+            } else {
+              log.warn("hang timeout: cancel unsupported; stopping stream relay", {
+                taskId: task.id,
+                runId: run.id,
+                reason: attempt.reason,
+              });
+            }
+          })
+          .catch((err) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            log.warn("hang timeout: cancel failed", { taskId: task.id, error: msg });
+          });
+      },
+    });
+    hang.start();
     try {
       const resumeId = (task.resumeAgentId ?? "").trim();
       if (resumeId) {
@@ -159,6 +215,7 @@ export class LocalAgentTaskHandler implements TaskHandlers {
               settingSources: [],
             },
           });
+          hang.touch();
           log.info("local agent resumed (revise follow-up)", {
             taskId: task.id,
             agentId: agent.agentId,
@@ -178,6 +235,7 @@ export class LocalAgentTaskHandler implements TaskHandlers {
       }
       if (!agent) {
         agent = await Agent.create(createOptions);
+        hang.touch();
         log.info("local agent created", {
           taskId: task.id,
           agentId: agent.agentId,
@@ -188,28 +246,54 @@ export class LocalAgentTaskHandler implements TaskHandlers {
       }
 
       if (this.cancelled.has(task.id)) {
-        emit(task.id, "done", { status: "cancelled" });
+        emit(task.id, "done", {
+          status: "cancelled",
+          ...(hangReason ? { reason: hangReason } : {}),
+        });
         return;
       }
 
+      const phaseState: InteractionPhaseState = {};
       const run = await agent.send(prompt, {
         onDelta: ({ update }) => {
+          hang.touch();
           if (this.cancelled.has(task.id)) return;
-          mapInteractionDelta(update as { type?: string; text?: string }, (kind, payload) =>
-            emit(task.id, kind, payload),
+          mapInteractionDelta(
+            update as {
+              type?: string;
+              text?: string;
+              callId?: string;
+              toolCall?: { type?: string; args?: unknown; result?: { status?: string } };
+            },
+            (kind, payload) => emit(task.id, kind, payload),
+            phaseState,
           );
         },
       });
       this.activeRuns.set(task.id, run);
+      hang.touch();
       log.info("local run started", {
         taskId: task.id,
         runId: run.id,
         agentId: run.agentId,
       });
 
+      if (this.cancelled.has(task.id)) {
+        try {
+          await attemptRunCancel(run);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          log.warn("cancel after hang before stream failed", {
+            taskId: task.id,
+            error: message,
+          });
+        }
+      }
+
       let cancelAttempted = false;
       try {
         for await (const event of run.stream()) {
+          hang.touch();
           if (this.cancelled.has(task.id)) {
             if (!cancelAttempted) {
               cancelAttempted = true;
@@ -229,9 +313,10 @@ export class LocalAgentTaskHandler implements TaskHandlers {
             // DoD: stop relaying new tool/assistant events ASAP after cancel.
             continue;
           }
-          // Text already streamed via onDelta; stream() still carries tools/status.
+          // Text already streamed via onDelta; stream() still carries tools/status/thinking.
           mapSdkMessage(event, (kind, payload) => emit(task.id, kind, payload), {
             skipAssistantText: true,
+            phaseState,
           });
         }
       } catch (streamErr) {
@@ -251,7 +336,11 @@ export class LocalAgentTaskHandler implements TaskHandlers {
 
       const agentId = agent.agentId ?? run.agentId;
       if (result.status === "cancelled" || this.cancelled.has(task.id)) {
-        emit(task.id, "done", { status: "cancelled", agentId });
+        emit(task.id, "done", {
+          status: "cancelled",
+          agentId,
+          ...(hangReason ? { reason: hangReason } : {}),
+        });
         return;
       }
       if (result.status === "error") {
@@ -286,6 +375,7 @@ export class LocalAgentTaskHandler implements TaskHandlers {
       emit(task.id, "error", { message, phase: "unknown" });
       emit(task.id, "done", { status: "error" });
     } finally {
+      hang.stop();
       this.activeRuns.delete(task.id);
       if (agent) {
         try {

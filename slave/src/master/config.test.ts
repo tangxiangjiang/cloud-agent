@@ -34,7 +34,19 @@ describe("validateMasterConfig", () => {
     assert.equal(cfg.masterId, "master_dev");
     assert.equal(cfg.maxRunningSlaves, 4);
     assert.equal(cfg.defaults.slaveGatewayUrl, "ws://127.0.0.1:8080/v1/slave/ws");
+    assert.equal(cfg.defaults.taskTimeoutMs, 3_600_000);
+    assert.equal(cfg.defaults.idleTimeoutMs, 600_000);
     assert.equal(cfg.slaves[0]?.enabled, true);
+  });
+
+  it("honors defaults hang timeouts including 0", () => {
+    const cfg = validateMasterConfig(
+      baseRaw({
+        defaults: { taskTimeoutMs: 0, idleTimeoutMs: 0 },
+      }),
+    );
+    assert.equal(cfg.defaults.taskTimeoutMs, 0);
+    assert.equal(cfg.defaults.idleTimeoutMs, 0);
   });
 
   it("rejects duplicate project id", () => {

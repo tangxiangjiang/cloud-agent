@@ -1,6 +1,9 @@
 /// Workflow / node models matching Gateway JSON (contracts/schemas).
 
 /// Per-node execution policy (M10). Defaults are all off.
+///
+/// App exposes a single「自动续跑」switch that sets both flags together;
+/// Gateway still stores the two fields for compatibility.
 class NodePolicy {
   const NodePolicy({
     this.autoApprove = false,
@@ -11,6 +14,9 @@ class NodePolicy {
   final bool autoStartNext;
 
   static const defaults = NodePolicy();
+
+  /// UI combined switch: on when either flag is set (legacy split state).
+  bool get autoContinue => autoApprove || autoStartNext;
 
   factory NodePolicy.fromJson(Map<String, dynamic>? json) {
     if (json == null) return defaults;
@@ -31,6 +37,12 @@ class NodePolicy {
       autoStartNext: autoStartNext ?? this.autoStartNext,
     );
   }
+
+  /// Set both autoApprove and autoStartNext to the same value.
+  NodePolicy withAutoContinue(bool enabled) => NodePolicy(
+        autoApprove: enabled,
+        autoStartNext: enabled,
+      );
 }
 
 class WorkflowNode {

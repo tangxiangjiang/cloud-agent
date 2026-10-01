@@ -542,12 +542,12 @@ void main() {
         ),
       ),
     );
-    // Running reattach shows Think + spinner (infinite animation → no pumpAndSettle).
+    // Running reattach shows phase label + spinner (infinite animation → no pumpAndSettle).
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(find.text('keep going'), findsOneWidget);
-    expect(find.text('Think'), findsOneWidget);
+    expect(find.text('处理中'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsWidgets);
     expect(wsAttached, isTrue);
   });

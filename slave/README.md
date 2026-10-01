@@ -90,6 +90,8 @@ Diff：[docs/diff-baseline.md](./docs/diff-baseline.md) · Approve 写进度：[
 | `defaultModel` | task 未带 model 时使用（默认 `default`；Pro 常用） |
 | `autoModelId` | App「Auto」优先映射目标（默认 `default`；团队 Router 可设 `auto-smart`） |
 | `optimizeFor` | 仅当解析到 `auto-smart` 时生效：`cost` \| `balanced` \| `intelligence`（默认 `cost`） |
+| `taskTimeoutMs` | Local Agent 主任务墙钟 TTL（默认 `3600000` = 60 分钟；`0` 关闭） |
+| `idleTimeoutMs` | 无 stream/onDelta 事件的空闲超时（默认 `600000` = 10 分钟；`0` 关闭） |
 
 工程 milestone 索引约定见仓库根 [`ai/milestones.md`](../ai/milestones.md)。
 

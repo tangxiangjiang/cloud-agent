@@ -31,6 +31,14 @@ export type MasterDefaults = {
   optimizeFor: OptimizeFor;
   /** Child Slave data-plane WS URL. */
   slaveGatewayUrl: string;
+  /**
+   * Wall-clock TTL for Local Agent main tasks (ms). Default 60min; `0` disables.
+   */
+  taskTimeoutMs: number;
+  /**
+   * Idle timeout with no stream events (ms). Default 10min; `0` disables.
+   */
+  idleTimeoutMs: number;
 };
 
 export type MasterConfig = {

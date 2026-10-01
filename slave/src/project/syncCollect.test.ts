@@ -45,6 +45,8 @@ describe("collectProjectSync", () => {
       autoModelId: "default",
       optimizeFor: "cost",
       syncAiSummary: true,
+      taskTimeoutMs: 3_600_000,
+      idleTimeoutMs: 600_000,
     };
   }
 

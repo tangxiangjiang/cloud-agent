@@ -174,15 +174,11 @@ void main() {
 
     expect(find.text('待审核'), findsWidgets);
     expect(find.text('Start'), findsOneWidget);
-    // Policy switches default off.
-    final autoApprove = tester.widget<Switch>(
-      find.byKey(const ValueKey('autoApprove-A')),
+    // Combined auto-continue switch defaults off.
+    final autoContinue = tester.widget<Switch>(
+      find.byKey(const ValueKey('autoContinue-A')),
     );
-    final autoNext = tester.widget<Switch>(
-      find.byKey(const ValueKey('autoStartNext-A')),
-    );
-    expect(autoApprove.value, isFalse);
-    expect(autoNext.value, isFalse);
+    expect(autoContinue.value, isFalse);
     expect(find.text('Auto'), findsWidgets);
 
     await tester.tap(find.text('Start'));
@@ -306,6 +302,7 @@ void main() {
       patch: (uri, {headers, body}) async {
         patched = true;
         final map = jsonDecode(body as String) as Map;
+        expect(map['policy']['autoApprove'], isTrue);
         expect(map['policy']['autoStartNext'], isTrue);
         return http.Response(
           jsonEncode({
@@ -327,7 +324,7 @@ void main() {
                 'status': 'ready',
                 'dependsOn': ['A'],
                 'model': 'auto',
-                'policy': {'autoApprove': false, 'autoStartNext': true},
+                'policy': {'autoApprove': true, 'autoStartNext': true},
               },
             ],
             'createdAt': '2026-09-28T00:00:00Z',
@@ -353,12 +350,12 @@ void main() {
     expect(find.text('Continue'), findsOneWidget);
     expect(find.byKey(const ValueKey('startNode-B')), findsOneWidget);
 
-    // Toggle autoStartNext on B → PATCH
-    await tester.tap(find.byKey(const ValueKey('autoStartNext-B')));
+    // Toggle autoContinue on B → PATCH both flags
+    await tester.tap(find.byKey(const ValueKey('autoContinue-B')));
     await tester.pumpAndSettle();
     expect(patched, isTrue);
     final sw = tester.widget<Switch>(
-      find.byKey(const ValueKey('autoStartNext-B')),
+      find.byKey(const ValueKey('autoContinue-B')),
     );
     expect(sw.value, isTrue);
 

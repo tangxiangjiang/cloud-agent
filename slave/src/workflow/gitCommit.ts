@@ -46,7 +46,34 @@ export function sanitizeCommitMessage(raw: string, fallback: string): string {
     /(?:^|\n)(?:commit message|message)\s*:\s*\n?([\s\S]+)$/i,
   );
   if (labeled?.[1]) s = labeled[1].trim();
-  // Reject if it looks like the model refused or ran tools narrative.
+
+  // Agent often narrates (CN/EN) then emits a conventional subject — keep the
+  // last conventional-looking line and any body after it.
+  const convRe =
+    /(?:^|[\n。．.!？?！；;])\s*((?:approve|feat|fix|docs|refactor|chore|test|perf|style|ci|build|revert)(?:\([^)\n]*\))?:\s*[^\n]+)/gi;
+  let lastConv: { index: number; text: string } | null = null;
+  for (const m of s.matchAll(convRe)) {
+    const captured = m[1];
+    if (!captured) continue;
+    const text = captured.trim();
+    if (!text) continue;
+    const abs = (m.index ?? 0) + m[0].indexOf(captured);
+    lastConv = { index: abs, text };
+  }
+  if (lastConv) {
+    s = s.slice(lastConv.index).trim();
+  }
+
+  // Reject leftover tool/thinking narration without a conventional subject.
+  const subject = (s.split("\n")[0] ?? "").trim();
+  const looksConventional =
+    /^(?:approve|feat|fix|docs|refactor|chore|test|perf|style|ci|build|revert)(?:\([^)]*\))?:/i.test(
+      subject,
+    );
+  if (!looksConventional) return fallback;
+  // Subject must not still start with CJK chatter glued before type.
+  if (/^[\u4e00-\u9fff]/.test(subject)) return fallback;
+
   if (s.length < 3) return fallback;
   if (s.length > 4000) s = s.slice(0, 4000).trimEnd();
   // Subject line soft-cap for readability (keep body).
@@ -133,7 +160,7 @@ export async function commitOnApprove(opts: {
   }
 
   const ctx = await collectCommitContext(opts.repoCwd);
-    let message = fallback;
+  let message = fallback;
   let ai = false;
   if (opts.generateMessage) {
     try {

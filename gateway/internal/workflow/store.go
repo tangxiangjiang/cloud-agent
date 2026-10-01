@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"path"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -215,6 +217,7 @@ func (s *Store) handleCreate(w http.ResponseWriter, r *http.Request) {
 		defPol.AutoApprove = req.DefaultPolicy.AutoApprove
 		defPol.AutoStartNext = req.DefaultPolicy.AutoStartNext
 	}
+	milestoneSerial := strings.HasPrefix(req.BundleID, "milestone:")
 	for _, n := range req.Nodes {
 		id := strings.TrimSpace(n.ID)
 		if id == "" {
@@ -226,7 +229,7 @@ func (s *Store) handleCreate(w http.ResponseWriter, r *http.Request) {
 		node := Node{
 			ID:        id,
 			DependsOn: deps,
-			Status:    InitialNodeStatus(deps),
+			Status:    NodePending, // set after optional serial rewrite
 			TaskID:    nil,
 			UnitID:    nil,
 		}
@@ -264,6 +267,13 @@ func (s *Store) handleCreate(w http.ResponseWriter, r *http.Request) {
 			node.Prompt = &cp
 		}
 		nodes = append(nodes, node)
+	}
+
+	if milestoneSerial {
+		EnforceSerialDependsOn(nodes)
+	}
+	for i := range nodes {
+		nodes[i].Status = InitialNodeStatus(nodes[i].DependsOn)
 	}
 
 	if err := ValidateDAG(nodes); err != nil {
@@ -353,30 +363,40 @@ func IsMilestoneBundle(bundleID string) bool {
 }
 
 // ListMilestoneRuns returns milestone:* workflows for slave+repo, newest first.
+// Prefer exact slaveId match; if none, fall back to same repoId (M11 remap).
 func (s *Store) ListMilestoneRuns(slaveID, repoID string) []*Run {
 	slaveID = strings.TrimSpace(slaveID)
 	repoID = strings.TrimSpace(repoID)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]*Run, 0)
-	for _, run := range s.runs {
-		if !IsMilestoneBundle(run.BundleID) {
-			continue
-		}
-		if repoID != "" && run.RepoID != repoID {
-			continue
-		}
-		if slaveID != "" {
-			if run.SlaveID == nil || *run.SlaveID != slaveID {
+
+	collect := func(requireSlave bool) []*Run {
+		out := make([]*Run, 0)
+		for _, run := range s.runs {
+			if !IsMilestoneBundle(run.BundleID) {
 				continue
 			}
+			if repoID != "" && run.RepoID != repoID {
+				continue
+			}
+			if requireSlave && slaveID != "" {
+				if run.SlaveID == nil || *run.SlaveID != slaveID {
+					continue
+				}
+			}
+			out = append(out, cloneRun(run))
 		}
-		out = append(out, cloneRun(run))
+		sort.Slice(out, func(i, j int) bool {
+			return out[i].CreatedAt > out[j].CreatedAt
+		})
+		return out
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].CreatedAt > out[j].CreatedAt
-	})
-	return out
+
+	exact := collect(true)
+	if len(exact) > 0 || slaveID == "" || repoID == "" {
+		return exact
+	}
+	return collect(false)
 }
 
 // FindLatestMilestoneRun prefers newest active milestone:* run; else newest matching.
@@ -392,6 +412,106 @@ func (s *Store) FindLatestMilestoneRun(slaveID, repoID string) (run *Run, active
 		}
 	}
 	return list[0], false
+}
+
+// CatchUpFromProgress marks nodes approved on active milestone runs when local
+// progress.md already lists those phases as done (progress_ahead recovery).
+// Clears taskId; recomputes ready/workflow status. Returns how many nodes changed.
+func (s *Store) CatchUpFromProgress(slaveID, repoID string, donePhases []string) (approved int, workflowIDs []string) {
+	slaveID = strings.TrimSpace(slaveID)
+	repoID = strings.TrimSpace(repoID)
+	done := map[string]struct{}{}
+	for _, p := range donePhases {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			done[p] = struct{}{}
+		}
+	}
+	if len(done) == 0 {
+		return 0, nil
+	}
+
+	s.mu.Lock()
+	wfSeen := map[string]struct{}{}
+	u := s.now().Format(time.RFC3339Nano)
+	for _, run := range s.runs {
+		if !IsMilestoneBundle(run.BundleID) {
+			continue
+		}
+		if !IsActiveRun(run.Status) {
+			continue
+		}
+		if repoID != "" && run.RepoID != repoID {
+			continue
+		}
+		if slaveID != "" {
+			if run.SlaveID == nil || *run.SlaveID != slaveID {
+				continue
+			}
+		}
+		changed := false
+		for i := range run.Nodes {
+			key := phaseKeyFromNode(run.Nodes[i])
+			if key == "" {
+				continue
+			}
+			if _, ok := done[key]; !ok {
+				continue
+			}
+			st := run.Nodes[i].Status
+			switch st {
+			case NodePending, NodeReady, NodeRunning, NodeAwaitingReview,
+				NodeFailed, NodeRejected, NodeCancelled:
+				run.Nodes[i].Status = NodeApproved
+				run.Nodes[i].TaskID = nil
+				changed = true
+				approved++
+			}
+		}
+		if changed {
+			run.UpdatedAt = &u
+			syncWorkflowStatusAfterNodes(run)
+			wfSeen[run.ID] = struct{}{}
+		}
+	}
+	s.mu.Unlock()
+	if approved > 0 {
+		s.notifyChange()
+	}
+	workflowIDs = make([]string, 0, len(wfSeen))
+	for id := range wfSeen {
+		workflowIDs = append(workflowIDs, id)
+	}
+	sort.Strings(workflowIDs)
+	return approved, workflowIDs
+}
+
+var (
+	phaseIDExact = regexp.MustCompile(`^M\d{2}-P\d{2}$`)
+	phaseIDAny   = regexp.MustCompile(`M\d{2}-P\d{2}`)
+)
+
+func phaseKeyFromNode(n Node) string {
+	id := strings.TrimSpace(n.ID)
+	if phaseIDExact.MatchString(id) {
+		return id
+	}
+	if n.UnitID != nil {
+		u := strings.TrimSpace(*n.UnitID)
+		if phaseIDExact.MatchString(u) {
+			return u
+		}
+	}
+	if n.PhaseRef != nil {
+		base := path.Base(strings.TrimSpace(*n.PhaseRef))
+		if m := phaseIDAny.FindString(base); m != "" {
+			return m
+		}
+	}
+	if m := phaseIDAny.FindString(id); m != "" {
+		return m
+	}
+	return ""
 }
 
 func (s *Store) handleGet(w http.ResponseWriter, r *http.Request) {

@@ -82,6 +82,16 @@ export function loadProjectMilestones(
   }
 }
 
+/** Force phase[i] to depend only on phase[i-1] (list order). */
+export function enforceSerialDependsOn(
+  phases: MilestonePhase[],
+): MilestonePhase[] {
+  return phases.map((p, i) => ({
+    ...p,
+    dependsOn: i === 0 ? [] : [phases[i - 1]!.id],
+  }));
+}
+
 export function parseMilestones(raw: unknown): Milestone[] {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
     throw new MilestoneIndexError("index root must be an object");
@@ -143,7 +153,11 @@ export function parseMilestones(raw: unknown): Milestone[] {
       }
       phases.push(phase);
     }
-    const milestone: Milestone = { id, title, phases };
+    // Milestone phases are serial in practice (scheduler runs one node at a
+    // time). Rewrite dependsOn to a linear chain by index so empty/fan-out
+    // roots cannot all show as ready at once.
+    const serialPhases = enforceSerialDependsOn(phases);
+    const milestone: Milestone = { id, title, phases: serialPhases };
     if (typeof mm.progressDoc === "string" && mm.progressDoc.trim()) {
       milestone.progressDoc = mm.progressDoc.trim();
     }

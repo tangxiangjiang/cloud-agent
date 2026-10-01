@@ -51,6 +51,19 @@ class MilestonePhaseInfo {
   }
 }
 
+/// Milestone phases run one-at-a-time; rewrite dependsOn to a linear chain.
+List<Map<String, dynamic>> serialWorkflowNodesFromPhases(
+  List<MilestonePhaseInfo> phases,
+) {
+  return [
+    for (var i = 0; i < phases.length; i++)
+      {
+        ...phases[i].toWorkflowNodeJson(),
+        'dependsOn': i == 0 ? <String>[] : <String>[phases[i - 1].id],
+      },
+  ];
+}
+
 class MilestoneInfo {
   const MilestoneInfo({
     required this.id,

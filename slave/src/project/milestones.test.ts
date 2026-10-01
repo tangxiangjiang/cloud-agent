@@ -32,6 +32,39 @@ describe("parseMilestones", () => {
     assert.equal(ms[0]?.id, "M01");
     assert.equal(ms[0]?.phases[0]?.prompt?.mode, "phase_file");
   });
+
+  it("forces serial dependsOn by phase order", () => {
+    const ms = parseMilestones({
+      schemaVersion: 1,
+      milestones: [
+        {
+          id: "M05",
+          title: "Five",
+          phases: [
+            { id: "M05-P00", title: "a", phaseRef: "a.md", dependsOn: [] },
+            { id: "M05-P01", title: "b", phaseRef: "b.md", dependsOn: [] },
+            {
+              id: "M05-P02",
+              title: "c",
+              phaseRef: "c.md",
+              dependsOn: ["M05-P01"],
+            },
+            {
+              id: "M05-P03",
+              title: "d",
+              phaseRef: "d.md",
+              dependsOn: ["M05-P01"],
+            },
+          ],
+        },
+      ],
+    });
+    const phases = ms[0]!.phases;
+    assert.deepEqual(phases[0]!.dependsOn, []);
+    assert.deepEqual(phases[1]!.dependsOn, ["M05-P00"]);
+    assert.deepEqual(phases[2]!.dependsOn, ["M05-P01"]);
+    assert.deepEqual(phases[3]!.dependsOn, ["M05-P02"]);
+  });
 });
 
 describe("loadProjectMilestones", () => {

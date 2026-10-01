@@ -69,6 +69,8 @@ export function buildChildSlaveConfig(
     defaultModel: master.defaults.defaultModel,
     autoModelId: master.defaults.autoModelId,
     optimizeFor: master.defaults.optimizeFor,
+    taskTimeoutMs: master.defaults.taskTimeoutMs,
+    idleTimeoutMs: master.defaults.idleTimeoutMs,
     projects: [project],
   };
 }

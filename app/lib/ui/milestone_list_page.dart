@@ -202,6 +202,54 @@ class _MilestoneListPageState extends State<MilestoneListPage> {
     }
   }
 
+  Future<void> _alignWorkflow() async {
+    setState(() {
+      _syncing = true;
+      _error = null;
+    });
+    try {
+      final snap = await _syncApi.alignWorkflowAndSync(
+        slaveId: widget.slave.id,
+        repoId: widget.project.id,
+        timeout: widget.syncTimeout,
+        interval: widget.pollAfterSync,
+      );
+      if (!mounted) return;
+      setState(() {
+        _snapshot = snap;
+        _syncing = false;
+      });
+      final n = snap.warnings.where((w) => w.canAlignWorkflow).length;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            n == 0
+                ? 'Gateway aligned from progress'
+                : 'Gateway aligned — $n progress_ahead left',
+          ),
+        ),
+      );
+    } on ProjectSyncApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _syncing = false;
+        _error = e.message;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Align Gateway failed: ${e.message}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _syncing = false;
+        _error = e.toString();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Align Gateway failed: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Prefer latest disk index from sync; register catalog can be stale
@@ -276,6 +324,7 @@ class _MilestoneListPageState extends State<MilestoneListPage> {
             onRefresh: _online ? _runSync : null,
             onContinueWorkflow: _openWorkflow,
             onAlignProgress: _online ? _alignProgress : null,
+            onAlignWorkflow: _alignWorkflow,
           ),
           const Divider(height: 1),
           ListTile(
@@ -354,6 +403,7 @@ class _SyncResultPanel extends StatelessWidget {
     this.onRefresh,
     required this.onContinueWorkflow,
     this.onAlignProgress,
+    this.onAlignWorkflow,
   });
 
   final bool loading;
@@ -362,6 +412,7 @@ class _SyncResultPanel extends StatelessWidget {
   final VoidCallback? onRefresh;
   final void Function(String workflowId) onContinueWorkflow;
   final VoidCallback? onAlignProgress;
+  final VoidCallback? onAlignWorkflow;
 
   @override
   Widget build(BuildContext context) {
@@ -441,6 +492,12 @@ class _SyncResultPanel extends StatelessWidget {
                     style: theme.textTheme.titleSmall,
                   ),
                 ),
+                if (onAlignWorkflow != null &&
+                    snap.warnings.any((w) => w.canAlignWorkflow))
+                  TextButton(
+                    onPressed: syncing ? null : onAlignWorkflow,
+                    child: const Text('同步 Gateway'),
+                  ),
                 if (onAlignProgress != null &&
                     snap.warnings.any((w) => w.canAlignProgress))
                   TextButton(
@@ -451,14 +508,14 @@ class _SyncResultPanel extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             ...snap.warnings.map((w) {
-              final wfId = w.canContinueWorkflow
-                  ? w.workflowId
-                  : (w.suggestion == 'continue_workflow' ||
-                          w.code == 'progress_ahead'
-                      ? snap.report?.workflowId
-                      : null);
+              final wfId = w.canContinueWorkflow ? w.workflowId : null;
               Widget? trailing;
-              if (w.canAlignProgress && onAlignProgress != null) {
+              if (w.canAlignWorkflow && onAlignWorkflow != null) {
+                trailing = TextButton(
+                  onPressed: syncing ? null : onAlignWorkflow,
+                  child: const Text('同步'),
+                );
+              } else if (w.canAlignProgress && onAlignProgress != null) {
                 trailing = TextButton(
                   onPressed: syncing ? null : onAlignProgress,
                   child: const Text('Align'),

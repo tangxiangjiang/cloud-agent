@@ -14,31 +14,29 @@
 | 控件 | 类型 | 默认 | 含义 |
 |------|------|------|------|
 | **模型** | 下拉 | **Auto** | 本节点 Local Agent 模型；`auto` → Slave 按账号解析（Pro=`default`，团队 Router=`auto-smart`） |
-| **自动通过** | Switch | **关** | 节点进入 `awaiting_review` 后是否**不经人手**直接 Approve |
-| **自动开始下个任务** | Switch | **关** | 本节点 Approve 后，是否自动 `assign` 续跑下游 ready 节点 |
+| **自动续跑** | Switch | **关** | 合并「自动通过 + 自动开始下个」：跑完自动 Approve，并自动开跑下游 ready 节点 |
 
 示意（任务行右侧 / 展开区）：
 
 ```text
-M01-P01  消息模型 …     [Auto ▾]  自动通过 ○──  自动下个 ○──
-M01-P02  气泡 …         [Auto ▾]  自动通过 ○──  自动下个 ●──  (开)
+M01-P01  消息模型 …     [Auto ▾]  自动续跑 ○──
+M01-P02  气泡 …         [Auto ▾]  自动续跑 ●──  (开)
 ```
 
-- Switch **默认全部关闭**（安全默认：人工审核 + 人工点续跑）。  
+- Switch **默认关闭**（安全默认：人工审核 + 人工点续跑）。  
 - 可在 **创建 Workflow 时**带上每节点策略；也可在详情页修改（PATCH），对**尚未 running** 的节点立即生效；已 running 的 model 以下发时快照为准。
+- 协议仍存 `autoApprove` / `autoStartNext` 两字段；App 开关会**同时写入**二者。
 
 ---
 
-## 行为矩阵
+## 行为
 
-| 自动通过 | 自动下个 | 行为 |
-|----------|----------|------|
-| 关 | 关 | Agent 跑完 → `awaiting_review` → 人 Approve → 下游变 `ready`，**不**自动 assign；用户点「开始该节点」或全局「继续」 |
-| 关 | 开 | 人 Approve 后，若有 ready 下游 → **自动** `AssignWorkflow`（等同现网） |
-| 开 | 关 | 跑完后自动 Approve（写 progress + commit）→ 下游 ready，**停住**等人工开始下一个 |
-| 开 | 开 | 全自动串行（适合信任度高的长链；仍审计） |
+| 自动续跑 | 行为 |
+|----------|------|
+| 关 | Agent 跑完 → `awaiting_review` → 人 Approve → 下游变 `ready`，**不**自动 assign；用户点「开始该节点」或全局「继续」 |
+| 开 | 跑完后自动 Approve（写 progress + commit）→ 自动 `AssignWorkflow` 续跑下游（全自动串行；仍审计） |
 
-**Reject** 不受「自动通过」影响；驳回后不自动续跑。
+**Reject** 不受「自动续跑」影响；驳回后不自动续跑。
 
 ---
 

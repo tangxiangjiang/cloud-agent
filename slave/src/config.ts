@@ -51,7 +51,22 @@ export interface SlaveConfig {
    * if API key is present. Disable via config or env SYNC_AI_SUMMARY=0.
    */
   syncAiSummary: boolean;
+  /**
+   * Wall-clock TTL for a Local Agent main task (chat/workflow run).
+   * Default 60 minutes. `0` disables.
+   */
+  taskTimeoutMs: number;
+  /**
+   * Idle timeout: no stream/onDelta events for this long cancels the run.
+   * Default 10 minutes. `0` disables.
+   */
+  idleTimeoutMs: number;
 }
+
+/** Default wall-clock TTL for Local Agent main tasks (60 minutes). */
+export const DEFAULT_TASK_TIMEOUT_MS = 60 * 60 * 1000;
+/** Default idle timeout with no stream events (10 minutes). */
+export const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
 export class ConfigError extends Error {
   constructor(message: string) {
@@ -79,6 +94,8 @@ type RawConfig = {
   autoModelId?: unknown;
   optimizeFor?: unknown;
   syncAiSummary?: unknown;
+  taskTimeoutMs?: unknown;
+  idleTimeoutMs?: unknown;
   /** Forbidden: secrets must come from env named by apiKeyEnv. */
   apiKey?: unknown;
   cursorApiKey?: unknown;
@@ -91,6 +108,19 @@ function requireString(value: unknown, field: string): string {
     throw new ConfigError(`${field} must be a non-empty string`);
   }
   return value.trim();
+}
+
+/** Non-negative integer ms; `0` allowed (disable). */
+function parseTimeoutMs(
+  value: unknown,
+  field: string,
+  fallback: number,
+): number {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new ConfigError(`${field} must be an integer >= 0 (0 disables)`);
+  }
+  return value;
 }
 
 /** Resolve config path: CLI arg, SLAVE_CONFIG, or ./config.yaml. */
@@ -239,6 +269,17 @@ export function validateConfig(
     syncAiSummary = obj.syncAiSummary;
   }
 
+  const taskTimeoutMs = parseTimeoutMs(
+    obj.taskTimeoutMs,
+    "taskTimeoutMs",
+    DEFAULT_TASK_TIMEOUT_MS,
+  );
+  const idleTimeoutMs = parseTimeoutMs(
+    obj.idleTimeoutMs,
+    "idleTimeoutMs",
+    DEFAULT_IDLE_TIMEOUT_MS,
+  );
+
   let projects: ProjectConfig[];
   if (obj.projects !== undefined && obj.projects !== null) {
     projects = parseProjectList(obj.projects, "projects");
@@ -266,6 +307,8 @@ export function validateConfig(
     autoModelId,
     optimizeFor,
     syncAiSummary,
+    taskTimeoutMs,
+    idleTimeoutMs,
   };
   if (name !== undefined) {
     cfg.name = name;
@@ -313,6 +356,8 @@ export function configSummary(cfg: SlaveConfig): Record<string, unknown> {
     autoModelId: cfg.autoModelId,
     optimizeFor: cfg.optimizeFor,
     syncAiSummary: cfg.syncAiSummary,
+    taskTimeoutMs: cfg.taskTimeoutMs,
+    idleTimeoutMs: cfg.idleTimeoutMs,
     apiKeyPresent: Boolean(process.env[cfg.apiKeyEnv]),
     tokenPresent: Boolean(process.env[cfg.tokenEnv]),
     projects: cfg.projects.map((r) => ({

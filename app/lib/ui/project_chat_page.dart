@@ -18,6 +18,7 @@ class _Bubble {
     this.streaming = false,
     this.done = false,
     this.cancelled = false,
+    this.activity = const TaskActivity(),
   });
 
   final String role;
@@ -27,6 +28,7 @@ class _Bubble {
   bool streaming;
   bool done;
   bool cancelled;
+  TaskActivity activity;
 }
 
 /// Project chat: modes/models + history drawer (M09-P04).
@@ -484,10 +486,12 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
     void onBuf() {
       if (!mounted) return;
       final text = buf.assistant.toString();
+      final activity = buf.activity;
       setState(() {
         for (var i = _bubbles.length - 1; i >= 0; i--) {
           if (_bubbles[i].role == 'assistant' && _bubbles[i].taskId == taskId) {
             _bubbles[i].text = text.isEmpty ? '…' : text;
+            _bubbles[i].activity = activity;
             break;
           }
         }
@@ -500,6 +504,7 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
             for (var i = _bubbles.length - 1; i >= 0; i--) {
               if (_bubbles[i].taskId == taskId) {
                 _bubbles[i].streaming = false;
+                _bubbles[i].activity = activity;
                 if (wasCancelled || _bubbles[i].cancelled) {
                   _bubbles[i].cancelled = true;
                   _bubbles[i].done = false;
@@ -863,7 +868,14 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
             ),
           ),
           const SizedBox(width: 6),
-          Text('Think', style: style),
+          Flexible(
+            child: Text(
+              b.activity.phaseLabel,
+              style: style,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       );
     }
@@ -878,13 +890,14 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
           ),
           const SizedBox(width: 4),
           Text(
-            'Cancel',
+            '已取消',
             style: style?.copyWith(color: const Color(0xFFC62828)),
           ),
         ],
       );
     }
     if (b.done) {
+      final n = b.activity.tools.length;
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -895,13 +908,67 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
           ),
           const SizedBox(width: 4),
           Text(
-            'Done',
+            n > 0 ? '已完成 · $n 步工具' : '已完成',
             style: style?.copyWith(color: const Color(0xFF2E7D32)),
           ),
         ],
       );
     }
     return Text('Assistant', style: style);
+  }
+
+  Widget _toolTrail(BuildContext context, _Bubble b) {
+    final tools = b.activity.tools;
+    if (tools.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final show = tools.length > 8 ? tools.sublist(tools.length - 8) : tools;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final t in show)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    t.done
+                        ? (t.ok ? Icons.check : Icons.close)
+                        : Icons.play_arrow,
+                    size: 14,
+                    color: t.done
+                        ? (t.ok
+                            ? const Color(0xFF2E7D32)
+                            : theme.colorScheme.error)
+                        : theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      t.label,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontFamily: 'monospace',
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (tools.length > show.length)
+            Text(
+              '…另有 ${tools.length - show.length} 步',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -1070,6 +1137,7 @@ class _ProjectChatPageState extends State<ProjectChatPage> {
                                   ],
                                   const SizedBox(height: 4),
                                   SelectableText(b.text),
+                                  if (!isUser) _toolTrail(context, b),
                                 ],
                               ),
                             ),

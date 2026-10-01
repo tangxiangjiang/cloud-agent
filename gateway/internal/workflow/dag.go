@@ -74,6 +74,19 @@ func detectCycle(nodes []Node) error {
 	return nil
 }
 
+// EnforceSerialDependsOn rewrites DependsOn so node[i] depends only on
+// node[i-1] (request order). Milestone workflows cannot run phases in
+// parallel; empty/fan-out roots would otherwise all show as ready.
+func EnforceSerialDependsOn(nodes []Node) {
+	for i := range nodes {
+		if i == 0 {
+			nodes[i].DependsOn = nil
+			continue
+		}
+		nodes[i].DependsOn = []string{nodes[i-1].ID}
+	}
+}
+
 // InitialNodeStatus returns ready when all dependsOn are empty (roots), else pending.
 func InitialNodeStatus(dependsOn []string) string {
 	if len(dependsOn) == 0 {

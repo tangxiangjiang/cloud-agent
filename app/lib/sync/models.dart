@@ -21,12 +21,15 @@ class SyncWarning {
       workflowId!.isNotEmpty &&
       (suggestion == 'continue_workflow' ||
           suggestion == 'resume_or_create' ||
-          code == 'progress_ahead' ||
           code == 'no_active_workflow');
 
   /// Gateway approved but local progress.md still pending — catch-up write.
   bool get canAlignProgress =>
       code == 'gateway_ahead' || suggestion == 'align_progress';
+
+  /// Local progress ahead of Gateway nodes — mark Gateway approved.
+  bool get canAlignWorkflow =>
+      code == 'progress_ahead' || suggestion == 'align_workflow';
 
   factory SyncWarning.fromJson(Map<String, dynamic> json) {
     return SyncWarning(

@@ -23,6 +23,9 @@ defaults:
   defaultModel: default
   autoModelId: default
   optimizeFor: cost
+  # Hang timeouts for child Local Agent main tasks (0 disables).
+  # taskTimeoutMs: 3600000   # 60min wall-clock TTL
+  # idleTimeoutMs: 600000    # 10min no stream events
 
 # Cold start: all stopped. enabled=true only allows Start.
 slaves:

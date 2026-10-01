@@ -47,6 +47,33 @@ describe("gitCommit helpers", () => {
     );
     assert.equal(out, "feat(M01-P01): add shell\n\nbody");
   });
+
+  it("strips Chinese agent narration before conventional subject", () => {
+    const out = sanitizeCommitMessage(
+      "查看变更内容以起草准确的提交信息。approve(M12-P03): Kernel allocators",
+      "fallback",
+    );
+    assert.equal(out, "approve(M12-P03): Kernel allocators");
+  });
+
+  it("strips multi-sentence CN preamble and keeps last conventional line", () => {
+    const out = sanitizeCommitMessage(
+      "先看一下具体 diff，再按常规提交格式写出提交说明。approve(M12-P01): Platform ABI + heap + link\n\nDetails.",
+      "fallback",
+    );
+    assert.equal(
+      out,
+      "approve(M12-P01): Platform ABI + heap + link\n\nDetails.",
+    );
+  });
+
+  it("falls back when AI output is pure narration", () => {
+    const out = sanitizeCommitMessage(
+      "查看变更内容以便写准确的提交说明。工作区状态与节点描述不一致。",
+      "approve(M12-P02): fallback title",
+    );
+    assert.equal(out, "approve(M12-P02): fallback title");
+  });
 });
 
 describe("commitOnApprove", () => {

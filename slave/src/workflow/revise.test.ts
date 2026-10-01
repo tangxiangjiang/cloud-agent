@@ -55,6 +55,8 @@ describe("SerialDagScheduler.enqueueRevise", () => {
       autoModelId: "default",
       optimizeFor: "cost",
       syncAiSummary: true,
+      taskTimeoutMs: 3_600_000,
+      idleTimeoutMs: 600_000,
       projects: [{ id: "r1", name: "t", cwd }],
       repos: [{ id: "r1", name: "t", cwd }],
     };

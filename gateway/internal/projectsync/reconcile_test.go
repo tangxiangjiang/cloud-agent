@@ -50,6 +50,9 @@ func TestReconcileProgressAheadAndGatewayAhead(t *testing.T) {
 		if w.Code == "gateway_ahead" && w.Suggestion != "align_progress" {
 			t.Fatalf("gateway_ahead suggestion=%q want align_progress", w.Suggestion)
 		}
+		if w.Code == "progress_ahead" && w.Suggestion != "align_workflow" {
+			t.Fatalf("progress_ahead suggestion=%q want align_workflow", w.Suggestion)
+		}
 	}
 	keys := projectsync.ApprovedPhaseKeys([]*workflow.Run{run})
 	if len(keys) != 1 || keys[0] != "M01-P02" {
@@ -122,6 +125,56 @@ func TestReconcileCleanAligned(t *testing.T) {
 	warnings, _ := projectsync.Reconcile(payload, []*workflow.Run{run}, run, true)
 	if len(warnings) != 0 {
 		t.Fatalf("expected no warnings: %#v", warnings)
+	}
+}
+
+func TestReconcileCompletedApprovedBeatsNewerActiveReady(t *testing.T) {
+	payload, _ := json.Marshal(map[string]any{
+		"dirty": false,
+		"phases": []map[string]any{
+			{"id": "M12-P06", "progressStatus": "approved"},
+		},
+	})
+	completed := &workflow.Run{
+		ID:        "wf_done",
+		BundleID:  "milestone:M12",
+		RepoID:    "r1",
+		Status:    workflow.StatusCompleted,
+		CreatedAt: "2026-09-30T00:00:00Z",
+		Nodes: []workflow.Node{
+			{ID: "M12-P06", Status: workflow.NodeApproved, DependsOn: []string{}},
+		},
+	}
+	newerActive := &workflow.Run{
+		ID:        "wf_new",
+		BundleID:  "milestone:M12",
+		RepoID:    "r1",
+		Status:    workflow.StatusRunning,
+		CreatedAt: "2026-10-01T00:00:00Z",
+		Nodes: []workflow.Node{
+			{ID: "M12-P06", Status: workflow.NodeReady, DependsOn: []string{}},
+		},
+	}
+	// newest-first order as ListMilestoneRuns
+	warnings, report := projectsync.Reconcile(
+		payload,
+		[]*workflow.Run{newerActive, completed},
+		newerActive,
+		true,
+	)
+	for _, w := range warnings {
+		if w.Code == "progress_ahead" {
+			t.Fatalf("should not warn progress_ahead when a completed run already approved: %#v", warnings)
+		}
+	}
+	var row *projectsync.PhaseRow
+	for i := range report.Phases {
+		if report.Phases[i].ID == "M12-P06" {
+			row = &report.Phases[i]
+		}
+	}
+	if row == nil || row.NodeStatus == nil || *row.NodeStatus != workflow.NodeApproved {
+		t.Fatalf("want node=approved from completed run, got %#v", row)
 	}
 }
 

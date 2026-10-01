@@ -12,7 +12,7 @@ import 'node_status_chip.dart';
 import 'workflow_detail_page.dart';
 
 /// Shows milestone phases; resume existing run or create+start once.
-/// Defaults (model + policy switches) apply to all nodes on create (M10-P04).
+/// Master「自动续跑」controls all phases (create default or PATCH existing).
 class MilestonePhasesPage extends StatefulWidget {
   const MilestonePhasesPage({
     super.key,
@@ -48,8 +48,7 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
 
   ModelCatalog _catalog = ModelCatalog.fallback;
   String _defaultModel = 'auto';
-  bool _defaultAutoApprove = false;
-  bool _defaultAutoStartNext = false;
+  bool _defaultAutoContinue = false;
 
   String get _bundleId => 'milestone:${widget.milestone.id}';
 
@@ -91,6 +90,10 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
       if (!mounted) return;
       setState(() {
         _existing = match;
+        if (match != null && match.nodes.isNotEmpty) {
+          _defaultAutoContinue =
+              match.nodes.every((n) => n.policy.autoContinue);
+        }
         _loading = false;
       });
     } catch (e) {
@@ -137,10 +140,10 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
         progressDoc: ms.progressDoc ?? 'ai/progress.md',
         defaultModel: _defaultModel,
         defaultPolicy: NodePolicy(
-          autoApprove: _defaultAutoApprove,
-          autoStartNext: _defaultAutoStartNext,
+          autoApprove: _defaultAutoContinue,
+          autoStartNext: _defaultAutoContinue,
         ),
-        nodes: ms.phases.map((p) => p.toWorkflowNodeJson()).toList(),
+        nodes: serialWorkflowNodesFromPhases(ms.phases),
       );
       if (!mounted) return;
       setState(() {
@@ -202,16 +205,79 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
     }
   }
 
-  Widget _defaultsCard(ThemeData theme) {
+  Future<void> _setAutoContinueMaster(bool enabled) async {
+    final existing = _existing;
+    // No active workflow yet — only remember for create / restart.
+    if (existing == null ||
+        existing.status == 'failed' ||
+        existing.status == 'cancelled') {
+      setState(() => _defaultAutoContinue = enabled);
+      return;
+    }
+    if (existing.status == 'completed') {
+      setState(() => _defaultAutoContinue = enabled);
+      return;
+    }
+
+    final targets =
+        existing.nodes.where((n) => n.policyEditable).toList(growable: false);
+    if (targets.isEmpty) {
+      setState(() => _defaultAutoContinue = enabled);
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _error = null;
+      _defaultAutoContinue = enabled;
+    });
+    try {
+      WorkflowRun? latest = existing;
+      final policy = NodePolicy(
+        autoApprove: enabled,
+        autoStartNext: enabled,
+      );
+      for (final n in targets) {
+        if (n.policy.autoApprove == enabled &&
+            n.policy.autoStartNext == enabled) {
+          continue;
+        }
+        latest = await _api.patchNode(
+          existing.id,
+          n.id,
+          policy: policy,
+        );
+      }
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        if (latest != null) {
+          _existing = latest;
+          _defaultAutoContinue =
+              latest.nodes.every((n) => n.policy.autoContinue);
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = e.toString();
+      });
+      await _refreshExisting();
+    }
+  }
+
+  Widget _policyMasterCard(ThemeData theme) {
+    final existing = _existing;
+    final creating = existing == null ||
+        existing.status == 'failed' ||
+        existing.status == 'cancelled';
+    final completed = existing?.status == 'completed';
+    final canToggle = !_busy && !completed && widget.slave.online;
     final modelIds = _catalog.models.map((m) => m.id).toList();
     if (!modelIds.contains(_defaultModel)) {
       modelIds.insert(0, _defaultModel);
     }
-    // Defaults only matter when creating / restarting — not for a completed run.
-    final canEdit = !_busy &&
-        (_existing == null ||
-            _existing!.status == 'failed' ||
-            _existing!.status == 'cancelled');
 
     return Card(
       child: Padding(
@@ -219,9 +285,13 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('本 Milestone 默认策略', style: theme.textTheme.titleSmall),
+            Text('自动续跑（总开关）', style: theme.textTheme.titleSmall),
             Text(
-              '创建时写入各节点（可关）。默认均为关 / Auto。',
+              creating
+                  ? '开启后，新建 Workflow 时全部阶段自动过审并开下个。'
+                  : completed
+                      ? '本 Milestone 已完成，策略只读。'
+                      : '一键开关当前 Workflow 全部阶段（自动过审 + 自动开下个）。',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -232,50 +302,38 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
               spacing: 12,
               runSpacing: 4,
               children: [
-                DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    key: const ValueKey('milestone-default-model'),
-                    value: modelIds.contains(_defaultModel)
-                        ? _defaultModel
-                        : modelIds.first,
-                    isDense: true,
-                    items: [
-                      for (final id in modelIds)
-                        DropdownMenuItem(
-                          value: id,
-                          child: Text(_labelFor(id)),
-                        ),
-                    ],
-                    onChanged: canEdit
-                        ? (v) {
-                            if (v == null) return;
-                            setState(() => _defaultModel = v);
-                          }
-                        : null,
-                  ),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('自动通过', style: theme.textTheme.bodySmall),
-                    Switch(
-                      key: const ValueKey('milestone-default-autoApprove'),
-                      value: _defaultAutoApprove,
-                      onChanged: canEdit
-                          ? (v) => setState(() => _defaultAutoApprove = v)
+                if (creating)
+                  DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      key: const ValueKey('milestone-default-model'),
+                      value: modelIds.contains(_defaultModel)
+                          ? _defaultModel
+                          : modelIds.first,
+                      isDense: true,
+                      items: [
+                        for (final id in modelIds)
+                          DropdownMenuItem(
+                            value: id,
+                            child: Text(_labelFor(id)),
+                          ),
+                      ],
+                      onChanged: canToggle
+                          ? (v) {
+                              if (v == null) return;
+                              setState(() => _defaultModel = v);
+                            }
                           : null,
                     ),
-                  ],
-                ),
+                  ),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('自动下个', style: theme.textTheme.bodySmall),
+                    Text('全部开启', style: theme.textTheme.bodySmall),
                     Switch(
-                      key: const ValueKey('milestone-default-autoStartNext'),
-                      value: _defaultAutoStartNext,
-                      onChanged: canEdit
-                          ? (v) => setState(() => _defaultAutoStartNext = v)
+                      key: const ValueKey('milestone-default-autoContinue'),
+                      value: _defaultAutoContinue,
+                      onChanged: canToggle
+                          ? (v) => unawaited(_setAutoContinueMaster(v))
                           : null,
                     ),
                   ],
@@ -333,16 +391,15 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
                     ),
                   ),
                 ],
-                if (existing == null ||
-                    existing.status == 'failed' ||
-                    existing.status == 'cancelled') ...[
-                  const SizedBox(height: 12),
-                  _defaultsCard(theme),
-                ],
+                const SizedBox(height: 12),
+                _policyMasterCard(theme),
                 const SizedBox(height: 16),
                 Text('Phases', style: theme.textTheme.titleSmall),
                 const SizedBox(height: 8),
-                ...ms.phases.map((p) {
+                ...List.generate(ms.phases.length, (i) {
+                  final p = ms.phases[i];
+                  final serialDeps =
+                      i == 0 ? const <String>[] : <String>[ms.phases[i - 1].id];
                   WorkflowNode? node;
                   final nodes = existing?.nodes;
                   if (nodes != null) {
@@ -357,11 +414,11 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
                     contentPadding: EdgeInsets.zero,
                     title: Text('${p.id} · ${p.title}'),
                     subtitle: Text(
-                      p.dependsOn.isEmpty
+                      serialDeps.isEmpty
                           ? p.phaseRef
-                          : '${p.phaseRef}\ndependsOn: ${p.dependsOn.join(', ')}',
+                          : '${p.phaseRef}\ndependsOn: ${serialDeps.join(', ')}',
                     ),
-                    isThreeLine: p.dependsOn.isNotEmpty,
+                    isThreeLine: serialDeps.isNotEmpty,
                     trailing: node != null
                         ? NodeStatusChip(status: node.status)
                         : null,

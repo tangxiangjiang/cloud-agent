@@ -29,6 +29,12 @@ autoModelId: default
 # Only applied when resolved model is auto-smart: cost | balanced | intelligence
 optimizeFor: cost
 
+# Hang timeouts for Local Agent main tasks (chat / workflow runs).
+# taskTimeoutMs: wall-clock TTL (default 3600000 = 60min). 0 disables.
+# idleTimeoutMs: no stream/onDelta events (default 600000 = 10min). 0 disables.
+# taskTimeoutMs: 3600000
+# idleTimeoutMs: 600000
+
 # Env var name for Gateway Bearer (from POST /v1/auth/pair). Required to run.
 tokenEnv: GATEWAY_TOKEN
 

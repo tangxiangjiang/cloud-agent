@@ -35,6 +35,9 @@ Node: ${opts.node.id}
 Phase: ${phase}
 Title: ${title}
 
+Suggested fallback (use if unsure):
+${opts.fallback}
+
 git status --porcelain:
 \`\`\`
 ${opts.status || "(empty)"}
@@ -45,12 +48,13 @@ git diff --stat:
 ${opts.diffStat || "(empty)"}
 \`\`\`
 
-Rules:
-- Reply with ONLY the commit message text (subject + optional body).
-- Prefer conventional commits, e.g. "feat(M01-P01): …" or "approve(${phase}): …"
-- Subject ≤ 72 characters when possible.
-- No markdown fences, no commentary, no tool calls narration.
-- Do not modify any files; message only.
+HARD RULES:
+- Output ONLY the final commit message (subject + optional body). Nothing else.
+- First line MUST be conventional: "approve(${phase}): …" or "feat(${phase}): …" etc.
+- Do NOT narrate, think aloud, apologize, or explain.
+- Do NOT write Chinese (or any) preamble like "查看变更" / "先看一下" / "I'll inspect".
+- Do NOT call tools, run shell, or inspect the repo — use the status/diff above only.
+- No markdown fences, no quotes around the whole message.
 `;
 
   const createOptions: AgentOptions = {

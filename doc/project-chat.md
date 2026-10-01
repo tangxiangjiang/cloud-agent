@@ -14,11 +14,11 @@
 
 | 层 | 行为 |
 |----|------|
-| Slave | `agent.send({ onDelta })`：`text-delta` → 高频 `assistant.delta`；`run.stream()` 仍映射 tool/status（assistant 全文不再重复发） |
-| App | `sendMessage` 后先 `GET .../tasks/{id}/events` 快照，再订 WS（对齐 node logs） |
+| Slave | `agent.send({ onDelta })`：`text-delta` → 高频 `assistant.delta`；`thinking-delta` / `tool-call-*` → `status` / `tool.*`；`run.stream()` 仍映射 tool/thinking/status（assistant 全文不再重复发） |
+| App | `sendMessage` 后先 `GET .../tasks/{id}/events` 快照，再订 WS；气泡标题显示 **思考中 / 调用工具 / 生成回复**，并列出工具步骤 |
 | Gateway / UI | 每条 delta 即推即改气泡 |
 
-目标：气泡边生成边长，而不是整段生成完才显示。
+目标：气泡边生成边长，并像 Cursor 一样能看出 Agent 当前在干什么，便于判断卡住或及时停止。
 
 相关：自由任务雏形见 [api-outline.md](./api-outline.md) `POST /v1/tasks`；审核闸门见 [workflow.md](./workflow.md)。本功能是**会话式**自由任务，不替代 Milestone DAG。
 

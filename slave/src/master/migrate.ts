@@ -118,6 +118,8 @@ export function migrateSlaveConfigToMaster(opts: MigrateOptions): {
       autoModelId: slaveCfg.autoModelId,
       optimizeFor: slaveCfg.optimizeFor,
       slaveGatewayUrl,
+      taskTimeoutMs: slaveCfg.taskTimeoutMs,
+      idleTimeoutMs: slaveCfg.idleTimeoutMs,
     },
     slaves,
   };

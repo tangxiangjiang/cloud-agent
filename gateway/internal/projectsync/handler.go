@@ -32,6 +32,7 @@ type SyncDispatcher interface {
 type WorkflowSource interface {
 	ListMilestoneRuns(slaveID, repoID string) []*workflow.Run
 	FindLatestMilestoneRun(slaveID, repoID string) (run *workflow.Run, active bool)
+	CatchUpFromProgress(slaveID, repoID string, donePhases []string) (approved int, workflowIDs []string)
 }
 
 // Service wires HTTP handlers for project sync.
@@ -73,6 +74,7 @@ func (s *Service) Mount(mux *http.ServeMux, wrap func(http.Handler) http.Handler
 	}
 	mux.Handle("POST /v1/slaves/{slaveId}/projects/{repoId}/sync", wrap(http.HandlerFunc(s.handleTrigger)))
 	mux.Handle("POST /v1/slaves/{slaveId}/projects/{repoId}/sync/align-progress", wrap(http.HandlerFunc(s.handleAlignProgress)))
+	mux.Handle("POST /v1/slaves/{slaveId}/projects/{repoId}/sync/align-workflow", wrap(http.HandlerFunc(s.handleAlignWorkflow)))
 	mux.Handle("GET /v1/slaves/{slaveId}/projects/{repoId}/sync", wrap(http.HandlerFunc(s.handleGet)))
 	mux.Handle("GET /v1/slaves/{slaveId}/projects/{repoId}/sync/report", wrap(http.HandlerFunc(s.handleGet)))
 	mux.Handle("POST /v1/project-sync", wrap(http.HandlerFunc(s.handleReport)))
@@ -267,6 +269,72 @@ func (s *Service) handleAlignProgress(w http.ResponseWriter, r *http.Request) {
 		"requestId": reqID,
 		"result":    "accepted",
 		"phases":    strconv.Itoa(len(phases)),
+	})
+}
+
+// handleAlignWorkflow marks active Gateway nodes approved when local progress
+// already lists those phases as done (progress_ahead → sync Gateway forward).
+func (s *Service) handleAlignWorkflow(w http.ResponseWriter, r *http.Request) {
+	slaveID := strings.TrimSpace(r.PathValue("slaveId"))
+	repoID := strings.TrimSpace(r.PathValue("repoId"))
+	ip := audit.ClientIP(r)
+	if slaveID == "" || repoID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "slaveId and repoId required"})
+		s.record("project.workflow.align", r.Method, r.URL.Path, ip, http.StatusBadRequest, nil)
+		return
+	}
+	if s.wfs == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "workflow source unavailable"})
+		s.record("project.workflow.align", r.Method, r.URL.Path, ip, http.StatusServiceUnavailable, map[string]string{
+			"slaveId": slaveID,
+			"repoId":  repoID,
+			"reason":  "no_wfs",
+		})
+		return
+	}
+
+	row, err := s.store.GetProjectSync(slaveID, repoID)
+	if err != nil || row == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no sync snapshot; sync first"})
+		s.record("project.workflow.align", r.Method, r.URL.Path, ip, http.StatusNotFound, map[string]string{
+			"slaveId": slaveID,
+			"repoId":  repoID,
+			"reason":  "no_sync",
+		})
+		return
+	}
+	done := ProgressDonePhaseKeys(row.SummaryJSON)
+	if len(done) == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":    "noop",
+			"slaveId":   slaveID,
+			"repoId":    repoID,
+			"approved":  0,
+			"phases":    []string{},
+			"message":   "no progress-done phases to apply",
+		})
+		s.record("project.workflow.align", r.Method, r.URL.Path, ip, http.StatusOK, map[string]string{
+			"slaveId": slaveID,
+			"repoId":  repoID,
+			"result":  "noop",
+		})
+		return
+	}
+
+	n, wfIDs := s.wfs.CatchUpFromProgress(slaveID, repoID, done)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"slaveId":     slaveID,
+		"repoId":      repoID,
+		"approved":    n,
+		"phases":      done,
+		"workflowIds": wfIDs,
+	})
+	s.record("project.workflow.align", r.Method, r.URL.Path, ip, http.StatusOK, map[string]string{
+		"slaveId":  slaveID,
+		"repoId":   repoID,
+		"result":   "ok",
+		"approved": strconv.Itoa(n),
 	})
 }
 

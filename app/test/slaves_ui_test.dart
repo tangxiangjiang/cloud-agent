@@ -209,7 +209,7 @@ void main() {
     expect(hit?.id, 'wf_new_slave');
   });
 
-  test('phase toWorkflowNodeJson includes prompt', () {
+	test('phase toWorkflowNodeJson includes prompt', () {
     final p = MilestonePhaseInfo.fromJson({
       'id': 'M07-P01',
       'title': '审计',
@@ -221,5 +221,32 @@ void main() {
     expect(n['id'], 'M07-P01');
     expect(n['prompt'], {'mode': 'phase_file'});
     expect(n['model'], 'composer-2.5');
+  });
+
+  test('serialWorkflowNodesFromPhases chains by list order', () {
+    final phases = [
+      MilestonePhaseInfo.fromJson({
+        'id': 'P0',
+        'title': 'a',
+        'phaseRef': 'a.md',
+        'dependsOn': <String>[],
+      }),
+      MilestonePhaseInfo.fromJson({
+        'id': 'P1',
+        'title': 'b',
+        'phaseRef': 'b.md',
+        'dependsOn': <String>[],
+      }),
+      MilestonePhaseInfo.fromJson({
+        'id': 'P2',
+        'title': 'c',
+        'phaseRef': 'c.md',
+        'dependsOn': <String>['P0'],
+      }),
+    ];
+    final nodes = serialWorkflowNodesFromPhases(phases);
+    expect(nodes[0]['dependsOn'], <String>[]);
+    expect(nodes[1]['dependsOn'], <String>['P0']);
+    expect(nodes[2]['dependsOn'], <String>['P1']);
   });
 }

@@ -149,17 +149,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('本 Milestone 默认策略'), findsOneWidget);
-    final autoApprove = tester.widget<Switch>(
-      find.byKey(const ValueKey('milestone-default-autoApprove')),
+    expect(find.text('自动续跑（总开关）'), findsOneWidget);
+    final autoContinue = tester.widget<Switch>(
+      find.byKey(const ValueKey('milestone-default-autoContinue')),
     );
-    final autoNext = tester.widget<Switch>(
-      find.byKey(const ValueKey('milestone-default-autoStartNext')),
-    );
-    expect(autoApprove.value, isFalse);
-    expect(autoNext.value, isFalse);
+    expect(autoContinue.value, isFalse);
 
-    await tester.tap(find.byKey(const ValueKey('milestone-default-autoStartNext')));
+    await tester.tap(find.byKey(const ValueKey('milestone-default-autoContinue')));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('milestone-default-model')));
@@ -172,8 +168,160 @@ void main() {
 
     expect(createBody, isNotNull);
     expect(createBody!['defaultModel'], 'composer-2.5');
-    expect(createBody!['defaultPolicy']['autoApprove'], isFalse);
+    expect(createBody!['defaultPolicy']['autoApprove'], isTrue);
     expect(createBody!['defaultPolicy']['autoStartNext'], isTrue);
     expect(startCalled, isFalse);
+  });
+
+  testWidgets('master switch patches all nodes on existing workflow',
+      (tester) async {
+    final patched = <String>[];
+    final slave = SlaveInfo.fromJson({
+      'id': 'slave_devpc',
+      'name': 'Dev',
+      'online': true,
+      'projects': [
+        {
+          'id': 'r1',
+          'name': 'proj',
+          'cwd': 'E:/x',
+          'milestones': [
+            {
+              'id': 'M10',
+              'title': 'Node policy',
+              'progressDoc': 'ai/progress.md',
+              'phases': [
+                {
+                  'id': 'P1',
+                  'title': 'One',
+                  'phaseRef': 'doc/a.md',
+                  'dependsOn': <String>[],
+                },
+                {
+                  'id': 'P2',
+                  'title': 'Two',
+                  'phaseRef': 'doc/b.md',
+                  'dependsOn': <String>['P1'],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    final project = slave.effectiveProjects.first;
+    final milestone = project.milestones.first;
+
+    Map<String, dynamic> runJson({
+      required bool a,
+      required bool b,
+    }) =>
+        {
+          'id': 'wf_m',
+          'bundleId': 'milestone:M10',
+          'status': 'running',
+          'repoId': 'r1',
+          'slaveId': 'slave_devpc',
+          'nodes': [
+            {
+              'id': 'P1',
+              'status': 'approved',
+              'model': 'auto',
+              'policy': {'autoApprove': a, 'autoStartNext': a},
+              'dependsOn': <String>[],
+            },
+            {
+              'id': 'P2',
+              'status': 'ready',
+              'model': 'auto',
+              'policy': {'autoApprove': b, 'autoStartNext': b},
+              'dependsOn': <String>['P1'],
+            },
+          ],
+          'createdAt': '2026-09-29T00:00:00Z',
+        };
+
+    final api = WorkflowApi(
+      session: _session,
+      get: (uri, {headers}) async {
+        if (uri.path == '/v1/workflows') {
+          return http.Response(
+            jsonEncode({
+              'workflows': [runJson(a: false, b: false)],
+            }),
+            200,
+          );
+        }
+        return http.Response('{}', 404);
+      },
+      patch: (uri, {headers, body}) async {
+        final id = uri.pathSegments.last;
+        patched.add(id);
+        final map = jsonDecode(body as String) as Map;
+        expect(map['policy']['autoApprove'], isTrue);
+        expect(map['policy']['autoStartNext'], isTrue);
+        final a = patched.contains('P1') || id == 'P1';
+        final b = patched.contains('P2') || id == 'P2';
+        return http.Response(
+          jsonEncode(runJson(a: a, b: b)),
+          200,
+        );
+      },
+    );
+
+    final chatApi = ChatApi(
+      session: _session,
+      get: (uri, {headers}) async {
+        if (uri.path == '/v1/models') {
+          return http.Response(
+            jsonEncode({
+              'default': 'auto',
+              'models': [
+                {'id': 'auto', 'label': 'Auto'},
+              ],
+            }),
+            200,
+          );
+        }
+        return http.Response('{}', 404);
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MilestonePhasesPage(
+          session: _session,
+          slave: slave,
+          project: project,
+          milestone: milestone,
+          api: api,
+          chatApi: chatApi,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('自动续跑（总开关）'), findsOneWidget);
+    expect(
+      tester
+          .widget<Switch>(
+            find.byKey(const ValueKey('milestone-default-autoContinue')),
+          )
+          .value,
+      isFalse,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('milestone-default-autoContinue')));
+    await tester.pumpAndSettle();
+
+    expect(patched.toSet(), {'P1', 'P2'});
+    expect(
+      tester
+          .widget<Switch>(
+            find.byKey(const ValueKey('milestone-default-autoContinue')),
+          )
+          .value,
+      isTrue,
+    );
   });
 }

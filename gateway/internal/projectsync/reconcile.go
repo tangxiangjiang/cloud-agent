@@ -101,19 +101,41 @@ func progressPending(status string) bool {
 
 func nodeBehindProgress(status string) bool {
 	switch strings.TrimSpace(status) {
-	case workflow.NodeReady, workflow.NodePending:
+	case workflow.NodeReady, workflow.NodePending, workflow.NodeRunning,
+		workflow.NodeAwaitingReview, workflow.NodeFailed, workflow.NodeRejected,
+		workflow.NodeCancelled:
 		return true
 	default:
 		return false
 	}
 }
 
-// buildNodeIndex maps phaseId → node from active milestone runs (newest wins),
-// falling back to inactive runs when no active hit exists for that phase.
+// nodeStatusRank: higher = further along (prefer for reconcile index).
+func nodeStatusRank(status string) int {
+	switch strings.TrimSpace(status) {
+	case workflow.NodeApproved, workflow.NodeSkipped:
+		return 60
+	case workflow.NodeAwaitingReview:
+		return 50
+	case workflow.NodeRunning:
+		return 40
+	case workflow.NodeReady:
+		return 30
+	case workflow.NodePending:
+		return 20
+	case workflow.NodeFailed, workflow.NodeRejected, workflow.NodeCancelled:
+		return 10
+	default:
+		return 0
+	}
+}
+
+// buildNodeIndex maps phaseId → best node across milestone runs.
+// Prefer higher node status (approved beats ready) so a completed prior run
+// is not masked by a newer incomplete active run (false progress_ahead).
 func buildNodeIndex(runs []*workflow.Run) map[string]nodeHit {
-	active := make(map[string]nodeHit)
-	any := make(map[string]nodeHit)
-	// runs are newest-first from ListMilestoneRuns
+	out := make(map[string]nodeHit)
+	// runs are newest-first from ListMilestoneRuns; on equal rank keep first (newest).
 	for _, run := range runs {
 		if run == nil {
 			continue
@@ -134,22 +156,10 @@ func buildNodeIndex(runs []*workflow.Run) map[string]nodeHit {
 				bundleID:   run.BundleID,
 				wfStatus:   run.Status,
 			}
-			if _, ok := any[key]; !ok {
-				any[key] = hit
+			prev, ok := out[key]
+			if !ok || nodeStatusRank(hit.status) > nodeStatusRank(prev.status) {
+				out[key] = hit
 			}
-			if workflow.IsActiveRun(run.Status) {
-				if _, ok := active[key]; !ok {
-					active[key] = hit
-				}
-			}
-		}
-	}
-	out := make(map[string]nodeHit, len(any))
-	for k, v := range any {
-		if a, ok := active[k]; ok {
-			out[k] = a
-		} else {
-			out[k] = v
 		}
 	}
 	return out
@@ -233,7 +243,7 @@ func Reconcile(summaryJSON json.RawMessage, runs []*workflow.Run, primary *workf
 				Message:    "本机 progress 已标记 " + id + " 完成，但 Gateway 节点仍为 " + *nodeStatus,
 				PhaseID:    id,
 				WorkflowID: wfID,
-				Suggestion: "continue_workflow",
+				Suggestion: "align_workflow",
 			})
 		}
 		if nodeStatus != nil && *nodeStatus == workflow.NodeApproved && progressPending(pr.status) {
@@ -321,4 +331,24 @@ func ProgressDocFromPayload(summaryJSON json.RawMessage) string {
 	}
 	_ = json.Unmarshal(summaryJSON, &v)
 	return strings.TrimSpace(v.ProgressDoc)
+}
+
+// ProgressDonePhaseKeys lists phase ids marked approved/done in a sync payload.
+func ProgressDonePhaseKeys(summaryJSON json.RawMessage) []string {
+	var view syncPayloadView
+	_ = json.Unmarshal(summaryJSON, &view)
+	seen := map[string]struct{}{}
+	for _, p := range view.Phases {
+		id := strings.TrimSpace(p.ID)
+		if id == "" || !progressDone(p.ProgressStatus) {
+			continue
+		}
+		seen[id] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for id := range seen {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
 }

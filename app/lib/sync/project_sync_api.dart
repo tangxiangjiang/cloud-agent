@@ -131,6 +131,39 @@ class ProjectSyncApi {
     );
   }
 
+  /// `POST .../sync/align-workflow` — approve Gateway nodes that progress already marks done.
+  Future<Map<String, dynamic>> alignWorkflow({
+    required String slaveId,
+    required String repoId,
+  }) async {
+    final res = await _post(
+      _syncUri(slaveId, repoId, suffix: '/align-workflow'),
+      headers: {
+        ..._headers,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: '{}',
+    );
+    _throwIfBad(res, 'Align workflow');
+    return _decodeMap(res.body);
+  }
+
+  /// Approve Gateway nodes from progress, then re-sync.
+  Future<ProjectSyncSnapshot> alignWorkflowAndSync({
+    required String slaveId,
+    required String repoId,
+    Duration timeout = const Duration(seconds: 25),
+    Duration interval = const Duration(milliseconds: 800),
+  }) async {
+    await alignWorkflow(slaveId: slaveId, repoId: repoId);
+    return syncAndWait(
+      slaveId: slaveId,
+      repoId: repoId,
+      timeout: timeout,
+      interval: interval,
+    );
+  }
+
   /// `GET .../sync` — latest snapshot + warnings/report.
   Future<ProjectSyncSnapshot> getSync({
     required String slaveId,

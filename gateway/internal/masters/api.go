@@ -22,14 +22,20 @@ type SlaveOnlineChecker interface {
 	IsOnline(slaveID string) bool
 }
 
+// WorkflowRecoverer recovers stuck "running" nodes after Slave stop/restart.
+type WorkflowRecoverer interface {
+	InterruptRunningForSlave(slaveID string) int
+}
+
 // API exposes /v1/masters* HTTP (sync wait for Master ok/error).
 type API struct {
-	Reg      *Registry
-	Hub      *OutboundHub
-	Slaves   SlaveOnlineChecker
-	Tasks    *task.Store
-	Audit    *audit.Logger
-	Timeout  time.Duration
+	Reg       *Registry
+	Hub       *OutboundHub
+	Slaves    SlaveOnlineChecker
+	Tasks     *task.Store
+	Workflows WorkflowRecoverer
+	Audit     *audit.Logger
+	Timeout   time.Duration
 }
 
 func NewAPI(reg *Registry, hub *OutboundHub, slaveReg *slaves.Registry, tasks *task.Store, auditLog *audit.Logger) *API {
@@ -165,6 +171,9 @@ func (a *API) controlWait(masterID, slaveID, action string, cancelFirst bool) (h
 	}
 	if cancelFirst && a.Tasks != nil && (action == "stop" || action == "restart") {
 		_ = a.Tasks.CancelActiveForSlave(slaveID)
+	}
+	if cancelFirst && a.Workflows != nil && (action == "stop" || action == "restart") {
+		_ = a.Workflows.InterruptRunningForSlave(slaveID)
 	}
 	reqID := newRequestID()
 	ch := a.Hub.Pending().Register(reqID)

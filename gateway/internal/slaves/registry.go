@@ -67,6 +67,7 @@ type Registry struct {
 	grace time.Duration
 	// pending offline timers by slave id
 	offlineTimers map[string]*time.Timer
+	onOffline     func(slaveID string)
 }
 
 func NewRegistry(initial []Slave) *Registry {
@@ -114,6 +115,14 @@ func reposFromProjects(projects []Project) []Repo {
 func (r *Registry) SetGrace(d time.Duration) {
 	r.mu.Lock()
 	r.grace = d
+	r.mu.Unlock()
+}
+
+// SetOnOffline registers a callback after the offline grace timer fires.
+// Used to cancel orphaned tasks and recover stuck "running" workflow nodes.
+func (r *Registry) SetOnOffline(fn func(slaveID string)) {
+	r.mu.Lock()
+	r.onOffline = fn
 	r.mu.Unlock()
 }
 
@@ -222,10 +231,15 @@ func (r *Registry) ScheduleOffline(id string) {
 	grace := r.grace
 	r.offlineTimers[id] = time.AfterFunc(grace, func() {
 		r.mu.Lock()
-		defer r.mu.Unlock()
+		var cb func(string)
 		delete(r.offlineTimers, id)
 		if s, ok := r.slaves[id]; ok {
 			s.Online = false
+		}
+		cb = r.onOffline
+		r.mu.Unlock()
+		if cb != nil {
+			cb(id)
 		}
 	})
 }

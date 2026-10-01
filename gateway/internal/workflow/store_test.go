@@ -889,3 +889,71 @@ func TestResetFailedNodeRevivesWorkflow(t *testing.T) {
 	}
 }
 
+func TestInterruptRunningForSlave(t *testing.T) {
+	store := workflow.NewStore()
+	h := store.Handler()
+	body := `{
+		"bundleId":"milestone:M1",
+		"repoId":"r1",
+		"slaveId":"slave_x",
+		"nodes":[{"id":"A","dependsOn":[]}]
+	}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
+		strings.NewReader(`{"status":"running","taskId":"tsk_dead"}`)))
+
+	n := store.InterruptRunningForSlave("slave_x")
+	if n != 1 {
+		t.Fatalf("interrupted want 1, got %d", n)
+	}
+	getRec := httptest.NewRecorder()
+	h.ServeHTTP(getRec, httptest.NewRequest(http.MethodGet, "/v1/workflows/"+run.ID, nil))
+	var after workflow.Run
+	_ = json.NewDecoder(getRec.Body).Decode(&after)
+	if after.Nodes[0].Status != workflow.NodeReady {
+		t.Fatalf("want ready after interrupt, got %s", after.Nodes[0].Status)
+	}
+	if after.Nodes[0].TaskID != nil {
+		t.Fatalf("taskId should clear, got %v", after.Nodes[0].TaskID)
+	}
+}
+
+func TestResetRunningNode(t *testing.T) {
+	store := workflow.NewStore()
+	h := store.Handler()
+	body := `{
+		"bundleId":"milestone:M1",
+		"repoId":"r1",
+		"slaveId":"slave_x",
+		"nodes":[{"id":"A","dependsOn":[]}]
+	}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
+		strings.NewReader(`{"status":"running","taskId":"tsk_stuck"}`)))
+
+	resetRec := httptest.NewRecorder()
+	h.ServeHTTP(resetRec, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/reset",
+		strings.NewReader(`{"start":false}`)))
+	if resetRec.Code != http.StatusOK {
+		t.Fatalf("reset running: %d %s", resetRec.Code, resetRec.Body.String())
+	}
+	var resp struct {
+		Workflow workflow.Run `json:"workflow"`
+	}
+	_ = json.NewDecoder(resetRec.Body).Decode(&resp)
+	if resp.Workflow.Nodes[0].Status != workflow.NodeReady {
+		t.Fatalf("want ready, got %s", resp.Workflow.Nodes[0].Status)
+	}
+	if resp.Workflow.Nodes[0].TaskID != nil {
+		t.Fatalf("taskId should clear")
+	}
+}
+

@@ -69,16 +69,16 @@ func (s *Store) ImportSnapshot(payload SnapshotPayload) {
 }
 
 func normalizeInterruptedRun(r *Run, diffs map[string]NodeDiff) {
+	ptrDiffs := make(map[string]*NodeDiff, len(diffs))
+	for k, d := range diffs {
+		dd := d
+		ptrDiffs[k] = &dd
+	}
 	for i := range r.Nodes {
 		if r.Nodes[i].Status != NodeRunning {
 			continue
 		}
-		key := diffKey(r.ID, r.Nodes[i].ID)
-		if _, ok := diffs[key]; ok {
-			r.Nodes[i].Status = NodeAwaitingReview
-		} else {
-			r.Nodes[i].Status = NodeReady
-		}
+		interruptRunningNode(r, i, ptrDiffs)
 	}
 }
 

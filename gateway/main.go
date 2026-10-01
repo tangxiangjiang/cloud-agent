@@ -120,10 +120,19 @@ func main() {
 	slaveHub := slaves.NewOutboundHub(authStore, slaveReg, taskStore, hub)
 	taskStore.SetDispatcher(slaveHub)
 	wfStore.SetStarter(slaveHub)
+	slaveReg.SetOnOffline(func(slaveID string) {
+		nTasks := taskStore.CancelActiveForSlave(slaveID)
+		nNodes := wfStore.InterruptRunningForSlave(slaveID)
+		if nTasks > 0 || nNodes > 0 {
+			log.Printf("slave %s offline: cancelled %d task(s), recovered %d running node(s)",
+				slaveID, nTasks, nNodes)
+		}
+	})
 
 	masterReg := masters.NewRegistry()
 	masterHub := masters.NewOutboundHub(authStore, masterReg)
 	masterAPI := masters.NewAPI(masterReg, masterHub, slaveReg, taskStore, auditLog)
+	masterAPI.Workflows = wfStore
 
 	syncStore := persist.AsProjectSyncStore(stateStore)
 	syncSvc := projectsync.NewService(slaveReg, slaveHub, syncStore, auditLog)

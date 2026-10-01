@@ -210,7 +210,8 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
         title: const Text('重新跑这个节点？'),
         content: Text(
           '仅重置「${node.title?.isNotEmpty == true ? node.title : node.id}」'
-          '（failed/rejected），已通过的上游节点保留，不会新建整个 workflow。',
+          '（failed / rejected / cancelled / 卡住的 running），'
+          '已通过的上游节点保留，不会新建整个 workflow。',
         ),
         actions: [
           TextButton(
@@ -413,7 +414,8 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
           const SizedBox(height: 4),
           Text(
             'Model + switches PATCH to Gateway (defaults off). '
-            'Ready: 开始；失败/拒绝: 重新跑（只重置该节点）；Approve 后无自动下个: Continue。',
+            'Ready: 开始；失败/拒绝/取消/卡住的 running: 重新跑（只重置该节点）；'
+            'Approve 后无自动下个: Continue。',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),

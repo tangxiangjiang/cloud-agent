@@ -225,6 +225,15 @@ export class SerialDagScheduler {
         return;
       }
 
+      if (outcome === "cancelled") {
+        await this.opts.http.patchNode(workflowId, node.id, {
+          status: "cancelled",
+          taskId: task.id,
+        });
+        log.warn("node cancelled", { workflowId, nodeId: node.id, outcome });
+        return;
+      }
+
       await this.opts.http.patchNode(workflowId, node.id, {
         status: "failed",
         taskId: task.id,

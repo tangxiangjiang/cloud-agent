@@ -661,7 +661,58 @@ func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleResetNode clears a failed/rejected/cancelled node back to ready/pending
+// InterruptRunningForSlave recovers nodes stuck in "running" after a Slave
+// disconnect/restart. Same rules as gateway-restore normalizeInterruptedRun:
+// running + stored diff → awaiting_review; else → ready. Clears taskId.
+// Returns how many nodes were changed.
+func (s *Store) InterruptRunningForSlave(slaveID string) int {
+	if strings.TrimSpace(slaveID) == "" {
+		return 0
+	}
+	s.mu.Lock()
+	n := 0
+	u := s.now().Format(time.RFC3339Nano)
+	for _, run := range s.runs {
+		if run.SlaveID == nil || *run.SlaveID != slaveID {
+			continue
+		}
+		if run.Status == StatusCompleted || run.Status == StatusCancelled {
+			continue
+		}
+		changed := false
+		for i := range run.Nodes {
+			if run.Nodes[i].Status != NodeRunning {
+				continue
+			}
+			interruptRunningNode(run, i, s.diffs)
+			changed = true
+			n++
+		}
+		if changed {
+			run.UpdatedAt = &u
+			syncWorkflowStatusAfterNodes(run)
+		}
+	}
+	s.mu.Unlock()
+	if n > 0 {
+		s.notifyChange()
+	}
+	return n
+}
+
+// interruptRunningNode applies restore/offline recovery to one running node.
+// Caller must hold s.mu when using store diffs.
+func interruptRunningNode(run *Run, idx int, diffs map[string]*NodeDiff) {
+	run.Nodes[idx].TaskID = nil
+	key := diffKey(run.ID, run.Nodes[idx].ID)
+	if _, ok := diffs[key]; ok {
+		run.Nodes[idx].Status = NodeAwaitingReview
+	} else {
+		run.Nodes[idx].Status = NodeReady
+	}
+}
+
+// handleResetNode clears a failed/rejected/cancelled/running node back to ready/pending
 // without recreating the whole workflow. Optional body: {"start":true} to assign if ready.
 func (s *Store) handleResetNode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -702,12 +753,12 @@ func (s *Store) handleResetNode(w http.ResponseWriter, r *http.Request) {
 	}
 	st := run.Nodes[idx].Status
 	switch st {
-	case NodeFailed, NodeRejected, NodeCancelled:
-		// ok
+	case NodeFailed, NodeRejected, NodeCancelled, NodeRunning:
+		// running: orphaned after Slave restart / lost task (manual recover)
 	default:
 		s.mu.Unlock()
 		writeJSON(w, http.StatusConflict, map[string]string{
-			"error": "node must be failed, rejected, or cancelled",
+			"error": "node must be failed, rejected, cancelled, or running",
 		})
 		return
 	}

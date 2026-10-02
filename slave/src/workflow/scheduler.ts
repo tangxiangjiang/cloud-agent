@@ -8,9 +8,11 @@ import type { AssignedTask, EmitEvent, TaskHandlers } from "../gateway/types.js"
 import { log } from "../log.js";
 import { generateCommitMessageWithAi } from "./commitMessageAi.js";
 import { captureBaseline, collectNodeDiff } from "./diff.js";
+import { assessNodeDiff, phaseKindFromNode } from "./diffQuality.js";
 import { commitOnApprove } from "./gitCommit.js";
 import { GatewayHttpApi } from "./http.js";
 import { buildNodePrompt, buildRevisePrompt } from "./prompt.js";
+import { writePhaseDocStatusOnLifecycle } from "./phaseDocStatus.js";
 import { writeProgressOnApprove } from "./progress.js";
 import {
   defaultSlaveStatePath,
@@ -19,6 +21,7 @@ import {
 } from "./runtimeState.js";
 import {
   schedulableNodes,
+  type WorkflowNode,
   type WorkflowReviewMessage,
   type WorkflowReviseMessage,
   type WorkflowRun,
@@ -215,7 +218,7 @@ export class SerialDagScheduler {
       if (outcome === "finished") {
         await this.uploadDiffAndAwaitReview(
           workflowId,
-          node.id,
+          node,
           repo.cwd,
           baselineKey,
           baseline,
@@ -286,6 +289,27 @@ export class SerialDagScheduler {
     }
 
     try {
+      const stored = await this.opts.http.getNodeDiff(msg.workflowId, msg.nodeId);
+      const quality = assessNodeDiff(stored.files ?? [], phaseKindFromNode(node));
+      if (!quality.substantive) {
+        log.error("refuse progress write on non-substantive approve", {
+          workflowId: msg.workflowId,
+          nodeId: msg.nodeId,
+          reason: quality.reason,
+        });
+        return;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error("refuse progress write: cannot load node diff", {
+        workflowId: msg.workflowId,
+        nodeId: msg.nodeId,
+        error: message,
+      });
+      return;
+    }
+
+    try {
       const result = writeProgressOnApprove({
         repoCwd: repo.cwd,
         progressDoc: run.progressDoc,
@@ -309,6 +333,37 @@ export class SerialDagScheduler {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       log.error("progress.md write failed", {
+        workflowId: msg.workflowId,
+        nodeId: msg.nodeId,
+        error: message,
+      });
+    }
+
+    try {
+      const doc = writePhaseDocStatusOnLifecycle({
+        repoCwd: repo.cwd,
+        node,
+        lifecycle: "approved",
+      });
+      if (doc.written) {
+        log.info("phase doc Status → Done on approve", {
+          workflowId: msg.workflowId,
+          nodeId: msg.nodeId,
+          path: doc.path,
+          previous: doc.previous,
+          nextStatus: doc.nextStatus,
+        });
+      } else if (doc.reason && doc.reason !== "already marked") {
+        log.info("phase doc Status not updated on approve", {
+          workflowId: msg.workflowId,
+          nodeId: msg.nodeId,
+          reason: doc.reason,
+          path: doc.path,
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn("phase doc Status write failed on approve", {
         workflowId: msg.workflowId,
         nodeId: msg.nodeId,
         error: message,
@@ -449,7 +504,7 @@ export class SerialDagScheduler {
     if (outcome === "finished") {
       await this.uploadDiffAndAwaitReview(
         workflowId,
-        nodeId,
+        node,
         repo.cwd,
         baselineKey,
         baseline,
@@ -467,12 +522,14 @@ export class SerialDagScheduler {
 
   private async uploadDiffAndAwaitReview(
     workflowId: string,
-    nodeId: string,
+    node: WorkflowNode,
     repoCwd: string,
     baselineKey: string,
     baseline: string | null,
     taskId: string,
   ): Promise<void> {
+    const nodeId = node.id;
+    let diffFiles: { path: string }[] = [];
     try {
       const diff = await collectNodeDiff(
         repoCwd,
@@ -480,6 +537,7 @@ export class SerialDagScheduler {
         nodeId,
         this.baselines.get(baselineKey) ?? baseline,
       );
+      diffFiles = diff.files;
       await this.opts.http.putNodeDiff(diff);
       log.info("node diff uploaded", {
         workflowId,
@@ -488,18 +546,63 @@ export class SerialDagScheduler {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      log.warn("diff collect/upload failed; continuing to awaiting_review", {
+      log.warn("diff collect/upload failed; continuing to quality gate", {
         workflowId,
         nodeId,
         error: message,
       });
     }
+
+    const kind = phaseKindFromNode(node);
+    const quality = assessNodeDiff(diffFiles, kind);
+    if (!quality.substantive) {
+      await this.opts.http.patchNode(workflowId, nodeId, {
+        status: "failed",
+        taskId,
+      });
+      log.error("refuse rubber-stamp awaiting_review", {
+        workflowId,
+        nodeId,
+        reason: quality.reason,
+        empty: quality.empty,
+        progressOnly: quality.progressOnly,
+        designLock: kind.designLock,
+        evidence: kind.evidence,
+        fileCount: diffFiles.length,
+      });
+      return;
+    }
+
     // Hard rule: never approve here (revise / first run alike).
     await this.opts.http.patchNode(workflowId, nodeId, {
       status: "awaiting_review",
       taskId,
     });
     log.info("node awaiting_review", { workflowId, nodeId, taskId });
+
+    try {
+      const doc = writePhaseDocStatusOnLifecycle({
+        repoCwd,
+        node,
+        lifecycle: "awaiting_review",
+      });
+      if (doc.written) {
+        log.info("phase doc Status → ready for review", {
+          workflowId,
+          nodeId,
+          path: doc.path,
+          previous: doc.previous,
+          nextStatus: doc.nextStatus,
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn("phase doc Status write failed on awaiting_review", {
+        workflowId,
+        nodeId,
+        error: message,
+      });
+    }
   }
 
   private async executeTask(

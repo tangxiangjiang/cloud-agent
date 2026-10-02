@@ -755,10 +755,19 @@ func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 	autoApproved := false
 	autoStartNext := false
 	if enteredAwaiting && nodeWantsAutoApprove(run.Nodes[idx]) {
-		// Same pipeline as human approve (progress + commit via AssignReview).
-		run.Nodes[idx].Status = NodeApproved
-		autoApproved = true
-		autoStartNext = nodeWantsAutoStartNext(run.Nodes[idx])
+		d := s.diffs[diffKey(id, nodeID)]
+		var files []NodeDiffFile
+		if d != nil {
+			files = d.Files
+		}
+		if ok, reason := DiffIsSubstantive(files); !ok {
+			log.Printf("autoApprove skipped for %s/%s: %s", id, nodeID, reason)
+		} else {
+			// Same pipeline as human approve (progress + commit via AssignReview).
+			run.Nodes[idx].Status = NodeApproved
+			autoApproved = true
+			autoStartNext = nodeWantsAutoStartNext(run.Nodes[idx])
+		}
 	}
 
 	syncWorkflowStatusAfterNodes(run)
@@ -1071,6 +1080,22 @@ func (s *Store) handleReview(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "node must be awaiting_review"})
 		return
+	}
+
+	if decision == "approve" {
+		d := s.diffs[diffKey(id, nodeID)]
+		var files []NodeDiffFile
+		if d != nil {
+			files = d.Files
+		}
+		if ok, reason := DiffIsSubstantive(files); !ok {
+			s.mu.Unlock()
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"error":  "refuse progress-only / empty approve",
+				"reason": reason,
+			})
+			return
+		}
 	}
 
 	u := s.now().Format(time.RFC3339Nano)

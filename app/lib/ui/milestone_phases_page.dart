@@ -161,15 +161,19 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
     }
   }
 
-  Future<void> _confirmRestart() async {
+  Future<void> _confirmRestart({required bool completed}) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('重新开始？'),
-        content: const Text(
-          '会新建一条 Workflow，之前的进度不会自动延续到新实例。'
-          '已 Approve 的节点仍保留在旧 Workflow 中。'
-          '新建后首个任务为就绪，需手动点开始。',
+        title: Text(completed ? '重做本 Milestone？' : '重新开始？'),
+        content: Text(
+          completed
+              ? '会新建一条 Workflow 重新执行本 Milestone。'
+                  '旧的已完成记录仍保留，可继续查看；进度文档不会自动清勾。'
+                  '新建后首个任务为就绪，需手动点开始。'
+              : '会新建一条 Workflow，之前的进度不会自动延续到新实例。'
+                  '已 Approve 的节点仍保留在旧 Workflow 中。'
+                  '新建后首个任务为就绪，需手动点开始。',
         ),
         actions: [
           TextButton(
@@ -178,7 +182,7 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('新建'),
+            child: Text(completed ? '重做' : '新建'),
           ),
         ],
       ),
@@ -196,7 +200,7 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
   String _existingSubtitle(WorkflowRun existing) {
     switch (existing.status) {
       case 'completed':
-        return 'status=completed · 本 Milestone 已全部通过';
+        return 'status=completed · 可查看详情或重做';
       case 'failed':
       case 'cancelled':
         return 'status=${existing.status} · 可查看详情或再开一轮';
@@ -271,9 +275,11 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
     final existing = _existing;
     final creating = existing == null ||
         existing.status == 'failed' ||
-        existing.status == 'cancelled';
+        existing.status == 'cancelled' ||
+        existing.status == 'completed';
     final completed = existing?.status == 'completed';
-    final canToggle = !_busy && !completed && widget.slave.online;
+    // Active run: PATCH all nodes. Create/redo: local default only.
+    final canToggle = !_busy && widget.slave.online;
     final modelIds = _catalog.models.map((m) => m.id).toList();
     if (!modelIds.contains(_defaultModel)) {
       modelIds.insert(0, _defaultModel);
@@ -288,9 +294,9 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
             Text('自动续跑（总开关）', style: theme.textTheme.titleSmall),
             Text(
               creating
-                  ? '开启后，新建 Workflow 时全部阶段自动过审并开下个。'
+                  ? '开启后，新建/重做 Workflow 时全部阶段自动过审并开下个。'
                   : completed
-                      ? '本 Milestone 已完成，策略只读。'
+                      ? '已完成：开关只影响「重做」新建时的默认策略。'
                       : '一键开关当前 Workflow 全部阶段（自动过审 + 自动开下个）。',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
@@ -445,7 +451,9 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton(
-                    onPressed: _busy ? null : _confirmRestart,
+                    onPressed: _busy
+                        ? null
+                        : () => _confirmRestart(completed: false),
                     child: const Text('重新开始（新建）'),
                   ),
                 ] else if (existing != null && existing.isTerminal) ...[
@@ -454,16 +462,21 @@ class _MilestonePhasesPageState extends State<MilestonePhasesPage> {
                     icon: const Icon(Icons.visibility),
                     label: const Text('查看上次结果'),
                   ),
-                  // Completed = done; only failed/cancelled offer another round.
-                  if (existing.status != 'completed') ...[
-                    const SizedBox(height: 8),
-                    OutlinedButton(
-                      onPressed: _busy
-                          ? null
-                          : () => _createWorkflow(forceNew: true),
-                      child: Text(_busy ? 'Creating…' : '再开一轮'),
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: _busy
+                        ? null
+                        : () => _confirmRestart(
+                              completed: existing.status == 'completed',
+                            ),
+                    child: Text(
+                      _busy
+                          ? 'Creating…'
+                          : existing.status == 'completed'
+                              ? '重做（新建 Workflow）'
+                              : '再开一轮',
                     ),
-                  ],
+                  ),
                 ] else
                   FilledButton.icon(
                     onPressed: _busy

@@ -78,6 +78,7 @@ Phase 仍是给人看的 Markdown；**还不是** Slave 直接加载的结构。
 
 > Agent 跑完 **不等于** 节点成功。须经 App **审核通过（approved）** 后，Slave 才更新进度文档，下游节点才变 `ready`。  
 > 下游是否**自动开跑**、是否**自动通过**审核，由节点策略控制（默认均关）：见 [node-policy.md](./node-policy.md)。  
+> Slave 拼 prompt 时会在 phase 正文前注入**执行契约**（单阶段、做完 DoD、禁止偏航/半吊子、按 phase 跑检查）；见 `slave/src/workflow/prompt.ts`。  
 > 节点 `failed` / `rejected` / `cancelled` 时可用 `POST .../nodes/{id}/reset`（App「重新跑」）只重置该节点并恢复 workflow，**不必**新建整个 Run。
 
 ### DAG 节点字段（草案）

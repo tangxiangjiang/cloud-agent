@@ -121,12 +121,14 @@ describe("SerialDagScheduler.enqueueRevise", () => {
         return diff;
       },
       async getNodeDiff() {
-        return {
-          workflowId: "wf_1",
-          nodeId: "N1",
-          baseline: `git:${sha}`,
-          files: [],
-        } satisfies NodeDiffPayload;
+        return (
+          putDiff ?? {
+            workflowId: "wf_1",
+            nodeId: "N1",
+            baseline: `git:${sha}`,
+            files: [],
+          }
+        ) satisfies NodeDiffPayload;
       },
     } as unknown as GatewayHttpApi;
 

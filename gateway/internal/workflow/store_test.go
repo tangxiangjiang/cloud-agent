@@ -14,6 +14,21 @@ import (
 	"github.com/tangxiangjiang/cloud-agent/gateway/internal/workflow"
 )
 
+func putSubstantiveDiff(t *testing.T, h http.Handler, wfID, nodeID string) {
+	t.Helper()
+	body := `{
+		"workflowId":"` + wfID + `",
+		"nodeId":"` + nodeID + `",
+		"baseline":"git:deadbeef",
+		"files":[{"path":"src/a.go","status":"modified","additions":1,"deletions":0,"unifiedDiff":"@@\n+x\n"}]
+	}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/v1/workflows/"+wfID+"/nodes/"+nodeID+"/diff", strings.NewReader(body)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("put diff: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestValidateDAGCycleAndRefs(t *testing.T) {
 	err := workflow.ValidateDAG([]workflow.Node{
 		{ID: "A", DependsOn: []string{"B"}},
@@ -278,6 +293,7 @@ func TestReviewApproveUnlocksDownstream(t *testing.T) {
 	var run workflow.Run
 	_ = json.NewDecoder(createRec.Body).Decode(&run)
 
+	putSubstantiveDiff(t, h, run.ID, "A")
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A", strings.NewReader(`{"status":"awaiting_review"}`)))
 
 	// reject must not approve
@@ -476,6 +492,7 @@ func TestApproveDoesNotAssignWithoutAutoStartNext(t *testing.T) {
 		t.Fatalf("default policy must be autoStartNext=false: %+v", run.Nodes[0].Policy)
 	}
 
+	putSubstantiveDiff(t, h, run.ID, "A")
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A", strings.NewReader(`{"status":"awaiting_review"}`)))
 
 	okRec := httptest.NewRecorder()
@@ -531,6 +548,7 @@ func TestApproveAssignsWhenAutoStartNext(t *testing.T) {
 		t.Fatalf("want autoStartNext true: %+v", run.Nodes[0].Policy)
 	}
 
+	putSubstantiveDiff(t, h, run.ID, "A")
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A", strings.NewReader(`{"status":"awaiting_review"}`)))
 
 	okRec := httptest.NewRecorder()
@@ -636,6 +654,7 @@ func TestAutoApproveWithoutAutoStartNext(t *testing.T) {
 	var run workflow.Run
 	_ = json.NewDecoder(createRec.Body).Decode(&run)
 
+	putSubstantiveDiff(t, h, run.ID, "A")
 	patch := httptest.NewRecorder()
 	h.ServeHTTP(patch, httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
 		strings.NewReader(`{"status":"awaiting_review","taskId":"tsk_1"}`)))
@@ -680,6 +699,7 @@ func TestAutoApproveWithAutoStartNext(t *testing.T) {
 	var run workflow.Run
 	_ = json.NewDecoder(createRec.Body).Decode(&run)
 
+	putSubstantiveDiff(t, h, run.ID, "A")
 	patch := httptest.NewRecorder()
 	h.ServeHTTP(patch, httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
 		strings.NewReader(`{"status":"awaiting_review"}`)))
@@ -763,6 +783,7 @@ func TestHumanApproveAuditNotAuto(t *testing.T) {
 	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
 	var run workflow.Run
 	_ = json.NewDecoder(createRec.Body).Decode(&run)
+	putSubstantiveDiff(t, h, run.ID, "A")
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
 		strings.NewReader(`{"status":"awaiting_review"}`)))
 	ok := httptest.NewRecorder()
@@ -877,6 +898,7 @@ func TestResetFailedNodeRevivesWorkflow(t *testing.T) {
 	}
 
 	// approved node cannot reset
+	putSubstantiveDiff(t, h, run.ID, "A")
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
 		strings.NewReader(`{"status":"awaiting_review"}`)))
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/review",
@@ -1031,6 +1053,93 @@ func TestCreateMilestoneForcesSerialDependsOn(t *testing.T) {
 		if run.Nodes[i].Status != workflow.NodePending {
 			t.Fatalf("node %s want pending, got %s", run.Nodes[i].ID, run.Nodes[i].Status)
 		}
+	}
+}
+
+func TestRefuseEmptyApprove(t *testing.T) {
+	store := workflow.NewStore()
+	h := store.Handler()
+	body := `{"bundleId":"b","repoId":"r","slaveId":"s1","nodes":[{"id":"A","dependsOn":[]}]}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
+		strings.NewReader(`{"status":"awaiting_review"}`)))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/review",
+		strings.NewReader(`{"decision":"approve"}`)))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("empty approve want 409, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRefuseProgressOnlyApprove(t *testing.T) {
+	store := workflow.NewStore()
+	h := store.Handler()
+	body := `{"bundleId":"b","repoId":"r","slaveId":"s1","nodes":[{"id":"A","dependsOn":[]}]}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	diffBody := `{
+		"workflowId":"` + run.ID + `",
+		"nodeId":"A",
+		"baseline":"git:x",
+		"files":[{"path":"ai/progress.md","status":"modified","additions":1,"deletions":0,"unifiedDiff":"@@\n+- [x] A\n"}]
+	}`
+	put := httptest.NewRecorder()
+	h.ServeHTTP(put, httptest.NewRequest(http.MethodPut, "/v1/workflows/"+run.ID+"/nodes/A/diff", strings.NewReader(diffBody)))
+	if put.Code != http.StatusOK {
+		t.Fatalf("put progress-only diff: %d %s", put.Code, put.Body.String())
+	}
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
+		strings.NewReader(`{"status":"awaiting_review"}`)))
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/review",
+		strings.NewReader(`{"decision":"approve"}`)))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("progress-only approve want 409, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAutoApproveSkippedWhenEmptyDiff(t *testing.T) {
+	store := workflow.NewStore()
+	starter := &recordingStarter{}
+	store.SetStarter(starter)
+	aud := &recordingAuditor{}
+	store.SetReviewAuditor(aud)
+	h := store.Handler()
+	body := `{
+		"bundleId":"b","repoId":"r","slaveId":"s1",
+		"nodes":[{"id":"A","dependsOn":[],"policy":{"autoApprove":true,"autoStartNext":false}}]
+	}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	patch := httptest.NewRecorder()
+	h.ServeHTTP(patch, httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
+		strings.NewReader(`{"status":"awaiting_review","taskId":"tsk_1"}`)))
+	if patch.Code != http.StatusOK {
+		t.Fatalf("patch: %d %s", patch.Code, patch.Body.String())
+	}
+	var after workflow.Run
+	_ = json.NewDecoder(patch.Body).Decode(&after)
+	if after.Nodes[0].Status != workflow.NodeAwaitingReview {
+		t.Fatalf("empty diff must stay awaiting_review (no autoApprove), got %s", after.Nodes[0].Status)
+	}
+	if len(aud.events) != 0 {
+		t.Fatalf("autoApprove must not audit when skipped, got %+v", aud.events)
+	}
+	if starter.lastDecision != "" {
+		t.Fatalf("must not AssignReview on skipped autoApprove, got %q", starter.lastDecision)
 	}
 }
 

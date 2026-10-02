@@ -48,8 +48,9 @@ export function isCodePath(p: string): boolean {
 
 /**
  * Rubber-stamp guard: empty / progress.md-only diffs are never substantive.
- * Evidence/harness phases also require at least one code/build file change.
- * Design-lock may be docs-only (non-progress markdown OK).
+ * Evidence/harness phases may be docs-only (Record / status / catalogs) when
+ * the work is verify+record harness numbers — code changes are preferred but
+ * not required. Design-lock may be docs-only.
  */
 export function assessNodeDiff(
   files: readonly Pick<NodeDiffFile, "path">[],
@@ -75,14 +76,15 @@ export function assessNodeDiff(
     };
   }
   const hasCode = nonProgress.some((f) => isCodePath(f.path));
-  if (kind.evidence && !hasCode) {
+  if (kind.evidence) {
     return {
       empty: false,
       progressOnly: false,
-      hasCode: false,
-      substantive: false,
-      reason:
-        "evidence/harness phase needs code or harness artifact changes; docs-only is not enough",
+      hasCode,
+      substantive: true,
+      reason: hasCode
+        ? "evidence phase has code/harness artifact changes"
+        : "evidence phase has Record/docs changes (harness numbers belong in phase docs)",
     };
   }
   if (kind.designLock) {

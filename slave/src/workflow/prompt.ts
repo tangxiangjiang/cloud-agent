@@ -35,7 +35,7 @@ export function buildPhaseExecutionPreamble(node: WorkflowNode): string {
     "   - \"minimal happy path\" when the phase lists full surface / port / parity",
     "   - deleting or skipping cases to make tests green without real behavior",
     "4. **No empty / progress-only runs** — finishing with zero repo changes, or only ticking `progress.md`, is a failure. Produce real code/docs required by the phase.",
-    "5. **Evidence / harness phases** — if the phase is evidence-close / harness, you MUST run the harness and leave green evidence (code or harness artifacts). Checkbox theatre without harness output is forbidden.",
+    "5. **Evidence / harness phases** — if the phase is evidence-close / harness, you MUST run the harness and write green numbers into the phase Record (and related status/docs). Checkbox theatre without harness output is forbidden; code changes are optional when Wave A / prior work is already on disk.",
     "6. **Port / copy existing code when cited** — if the phase points at nlib, Nexus, sibling packages, prior modules, or \"port from X\":",
     "   - **read that source first** and transfer the **full** behavior, not a rewrite-from-scratch toy",
     "   - keep semantics, edge cases, and public surface; adapt names/paths only as the design requires",

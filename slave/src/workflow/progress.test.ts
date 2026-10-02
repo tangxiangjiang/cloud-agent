@@ -46,6 +46,23 @@ describe("phaseKeyFromNode", () => {
       }),
       "M05-P05",
     );
+    assert.equal(
+      phaseKeyFromNode({
+        id: "m_v0.1_p0",
+        dependsOn: [],
+        status: "ready",
+      }),
+      "m_v0.1_p0",
+    );
+    assert.equal(
+      phaseKeyFromNode({
+        id: "N2",
+        dependsOn: [],
+        status: "ready",
+        phaseRef: "docs/roadmaps/m_v0.1/m_v0.1_p2_iterator-language.md",
+      }),
+      "m_v0.1_p2",
+    );
   });
 });
 
@@ -60,6 +77,18 @@ describe("markPhaseApproved", () => {
     assert.equal(changed, true);
     assert.match(next, /- \[x\] M05-P05 @approved 2026-09-28T12:00:00\.000Z/);
     assert.match(next, /- \[ \] M06-P01/);
+  });
+
+  it("checks m_v0.N_pK checkboxes", () => {
+    const src = `# Progress\n\n- [ ] m_v0.1_p0\n- [ ] m_v0.1_p1\n`;
+    const { next, changed } = markPhaseApproved(
+      src,
+      "m_v0.1_p0",
+      "2026-10-02T12:00:00.000Z",
+    );
+    assert.equal(changed, true);
+    assert.match(next, /- \[x\] m_v0\.1_p0 @approved 2026-10-02T12:00:00\.000Z/);
+    assert.match(next, /- \[ \] m_v0\.1_p1/);
   });
 
   it("updates table status cell without rewriting other columns freely", () => {

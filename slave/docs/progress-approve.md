@@ -21,7 +21,7 @@ awaiting_review
 
 | 层 | 规则 |
 |----|------|
-| Slave 待审前 | `assessNodeDiff`：空 diff / 仅 `progress.md` → 节点 `failed`，**不**进 `awaiting_review`；evidence/harness phase 还要求至少有代码/harness 产物变更 |
+| Slave 待审前 | `assessNodeDiff`：空 diff / 仅 `progress.md` → 节点 `failed`，**不**进 `awaiting_review`；evidence 允许 phase Record/docs（harness 数字写进文档即可），仍禁空转/仅 progress |
 | Gateway approve | 空 diff / 仅 `progress.md` → HTTP 409，拒绝 approve |
 | Gateway autoApprove | 同上条件不满足则 **跳过** autoApprove，节点停在 `awaiting_review` |
 | Slave 收 approve | 再验一次 stored diff；非实质则 **不写** progress.md、不 commit |

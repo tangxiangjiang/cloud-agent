@@ -487,8 +487,8 @@ func (s *Store) CatchUpFromProgress(slaveID, repoID string, donePhases []string)
 }
 
 var (
-	phaseIDExact = regexp.MustCompile(`^M\d{2}-P\d{2}$`)
-	phaseIDAny   = regexp.MustCompile(`M\d{2}-P\d{2}`)
+	phaseIDExact = regexp.MustCompile(`^(?:M\d{2}-P\d{2}|m_v\d+\.\d+_p\d+)$`)
+	phaseIDAny   = regexp.MustCompile(`(?:M\d{2}-P\d{2}|m_v\d+\.\d+_p\d+)`)
 )
 
 func phaseKeyFromNode(n Node) string {

@@ -30,6 +30,25 @@ describe("parseProgressPhases", () => {
     assert.equal(byId["M02-P01"], "pending");
     assert.equal(byId["M02-P02"], "approved");
   });
+
+  it("reads NyraLang m_v0.N_pK ids", () => {
+    const md = `# Progress
+
+- [x] m_v0.2_p0 @approved (from phase Status: done)
+- [ ] m_v0.2_p1
+
+| Node | Status | Human phase |
+|------|--------|-------------|
+| m_v0.1_p0 | pending | wave |
+| m_v0.1_p1 | approved | lock |
+`;
+    const rows = parseProgressPhases(md);
+    const byId = Object.fromEntries(rows.map((r) => [r.id, r.progressStatus]));
+    assert.equal(byId["m_v0.2_p0"], "approved");
+    assert.equal(byId["m_v0.2_p1"], "pending");
+    assert.equal(byId["m_v0.1_p0"], "pending");
+    assert.equal(byId["m_v0.1_p1"], "approved");
+  });
 });
 
 describe("collectProjectSync", () => {

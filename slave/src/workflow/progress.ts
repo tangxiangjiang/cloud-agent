@@ -3,10 +3,8 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { extractPhaseId, isPhaseId } from "./phaseId.js";
 import type { WorkflowNode } from "./types.js";
-
-const PHASE_ID_RE = /^M\d{2}-P\d{2}$/;
-const PHASE_FROM_PATH_RE = /(M\d{2}-P\d{2})/;
 
 /**
  * Resolve progressDoc under repo cwd. Rejects path escape and non-progress files.
@@ -35,18 +33,16 @@ export function resolveProgressPath(
   return { ok: true, absPath: abs, relPath: rel.split(path.sep).join("/") };
 }
 
-/** Extract Mxx-Pxx from node id, unitId, or phaseRef filename. */
+/** Extract phase id (Mxx-Pxx or m_v0.N_pK) from node id, unitId, or phaseRef. */
 export function phaseKeyFromNode(node: WorkflowNode): string | null {
   const candidates = [node.id, node.unitId ?? "", node.title ?? ""];
   for (const c of candidates) {
-    const t = String(c).trim();
-    if (PHASE_ID_RE.test(t)) return t;
+    const hit = extractPhaseId(String(c));
+    if (hit) return hit;
   }
   const ref = (node.phaseRef ?? "").trim();
   if (ref) {
-    const base = path.basename(ref);
-    const m = base.match(PHASE_FROM_PATH_RE);
-    if (m?.[1]) return m[1];
+    return extractPhaseId(path.basename(ref));
   }
   return null;
 }
@@ -62,7 +58,7 @@ export function markPhaseApproved(
   phaseKey: string,
   approvedAt: string,
 ): { next: string; changed: boolean } {
-  if (!PHASE_ID_RE.test(phaseKey)) {
+  if (!isPhaseId(phaseKey)) {
     return { next: content, changed: false };
   }
   const stamp = approvedAt.trim() || new Date().toISOString();
@@ -129,7 +125,7 @@ export function writeProgressPhases(opts: {
   let next = content;
   for (const raw of opts.phases) {
     const phaseKey = String(raw ?? "").trim();
-    if (!PHASE_ID_RE.test(phaseKey)) {
+    if (!isPhaseId(phaseKey)) {
       skipped.push(phaseKey || "(empty)");
       continue;
     }

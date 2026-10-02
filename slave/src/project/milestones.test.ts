@@ -95,3 +95,33 @@ describe("loadProjectMilestones", () => {
     assert.match(r.error ?? "", /\.\.|escape|relative/i);
   });
 });
+
+describe("NyraLang m_v0 phase ids", () => {
+  it("allows design-only milestones with empty phases", () => {
+    const ms = parseMilestones({
+      schemaVersion: 1,
+      milestones: [
+        {
+          id: "m_v0.4",
+          title: "design",
+          phases: [],
+        },
+        {
+          id: "m_v0.1",
+          title: "iter",
+          phases: [
+            {
+              id: "m_v0.1_p0",
+              title: "p0",
+              phaseRef: "docs/roadmaps/m_v0.1/m_v0.1_p0.md",
+              dependsOn: [],
+            },
+          ],
+        },
+      ],
+    });
+    assert.equal(ms.length, 2);
+    assert.equal(ms[0]?.phases.length, 0);
+    assert.equal(ms[1]?.phases[0]?.id, "m_v0.1_p0");
+  });
+});

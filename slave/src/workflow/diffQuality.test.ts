@@ -23,24 +23,36 @@ describe("diffQuality", () => {
     );
   });
 
-  it("accepts code; evidence requires code", () => {
+  it("accepts code; evidence allows Record/docs without code", () => {
     assert.equal(isCodePath("stdlib/hash.ny"), true);
     assert.equal(isProgressPath("doc/progress.md"), true);
     const code = assessNodeDiff([{ path: "src/a.go" }, { path: "ai/progress.md" }]);
     assert.equal(code.substantive, true);
     assert.equal(code.hasCode, true);
 
-    const ev = assessNodeDiff([{ path: "docs/evidence.md" }], {
-      designLock: false,
-      evidence: true,
-    });
-    assert.equal(ev.substantive, false);
+    const ev = assessNodeDiff(
+      [
+        { path: "docs/roadmaps/m_v0.1/m_v0.1_p0_wave-a-evidence.md" },
+        { path: "docs/status/current.md" },
+      ],
+      { designLock: false, evidence: true },
+    );
+    assert.equal(ev.substantive, true);
+    assert.equal(ev.hasCode, false);
 
     const evCode = assessNodeDiff(
       [{ path: "docs/evidence.md" }, { path: "tests/harness.ny" }],
       { designLock: false, evidence: true },
     );
     assert.equal(evCode.substantive, true);
+    assert.equal(evCode.hasCode, true);
+
+    // Still refuse progress-only on evidence phases.
+    const evProg = assessNodeDiff([{ path: "ai/roadmaps/progress.md" }], {
+      designLock: false,
+      evidence: true,
+    });
+    assert.equal(evProg.substantive, false);
   });
 
   it("design-lock allows docs-only", () => {
@@ -65,5 +77,14 @@ describe("diffQuality", () => {
       status: "ready",
     });
     assert.equal(k.evidence, true);
+
+    const k2 = phaseKindFromNode({
+      id: "m_v0.1_p0",
+      title: "m_v0.1_p0 — Wave A face evidence",
+      phaseRef: "docs/roadmaps/m_v0.1/m_v0.1_p0_wave-a-evidence.md",
+      dependsOn: [],
+      status: "ready",
+    });
+    assert.equal(k2.evidence, true);
   });
 });

@@ -110,8 +110,9 @@ export function parseMilestones(raw: unknown): Milestone[] {
     const id = String(mm.id ?? "").trim();
     const title = String(mm.title ?? "").trim() || id;
     if (!id) throw new MilestoneIndexError(`milestones[${i}].id required`);
-    if (!Array.isArray(mm.phases) || mm.phases.length === 0) {
-      throw new MilestoneIndexError(`milestones[${i}].phases required`);
+    // Allow empty phases for design-only milestones (e.g. NyraLang m_v0.4).
+    if (!Array.isArray(mm.phases)) {
+      throw new MilestoneIndexError(`milestones[${i}].phases must be an array`);
     }
     const phases: MilestonePhase[] = [];
     for (let j = 0; j < mm.phases.length; j++) {

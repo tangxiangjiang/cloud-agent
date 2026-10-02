@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	phaseIDExact = regexp.MustCompile(`^M\d{2}-P\d{2}$`)
-	phaseIDAny   = regexp.MustCompile(`M\d{2}-P\d{2}`)
+	phaseIDExact = regexp.MustCompile(`^(?:M\d{2}-P\d{2}|m_v\d+\.\d+_p\d+)$`)
+	phaseIDAny   = regexp.MustCompile(`(?:M\d{2}-P\d{2}|m_v\d+\.\d+_p\d+)`)
 )
 
 // Warning is a drift hint for App UI (never auto-patches nodes).

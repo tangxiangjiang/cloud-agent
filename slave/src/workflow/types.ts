@@ -10,7 +10,8 @@ export type WorkflowNodeStatus =
   | "rejected"
   | "failed"
   | "cancelled"
-  | "skipped";
+  | "skipped"
+  | "paused";
 
 export interface WorkflowPrompt {
   mode?: "phase_file" | "inline" | string;

@@ -176,6 +176,17 @@ void main() {
     expect(n.isAwaitingReview, isTrue);
   });
 
+  test('pause and resume flags on node', () {
+    final running = WorkflowNode.fromJson({'id': 'N1', 'status': 'running'});
+    expect(running.canPause, isTrue);
+    expect(running.canResume, isFalse);
+    expect(running.canReset, isFalse);
+    final paused = WorkflowNode.fromJson({'id': 'N1', 'status': 'paused'});
+    expect(paused.canPause, isFalse);
+    expect(paused.canResume, isTrue);
+    expect(paused.canReset, isTrue);
+  });
+
   test('NodePolicy defaults off and patchNode posts policy', () async {
     final n = WorkflowNode.fromJson({'id': 'A', 'status': 'ready'});
     expect(n.policy.autoApprove, isFalse);

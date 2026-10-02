@@ -35,6 +35,7 @@ const (
 	NodeFailed         = "failed"
 	NodeCancelled      = "cancelled"
 	NodeSkipped        = "skipped"
+	NodePaused         = "paused"
 )
 
 type PromptSpec struct {
@@ -124,6 +125,11 @@ type Starter interface {
 	AssignReview(slaveID, workflowID, nodeID, decision, comment string, autoApprove bool) bool
 }
 
+// TaskCanceller stops an in-flight task (best-effort Slave run.cancel).
+type TaskCanceller interface {
+	Cancel(id string) (status string, code int)
+}
+
 // ReviewAuditor records approve/reject with auto vs human distinction (optional).
 type ReviewAuditor interface {
 	AuditReview(workflowID, nodeID, decision string, autoApprove, autoStartNext bool)
@@ -147,13 +153,14 @@ type reviewRequest struct {
 }
 
 type Store struct {
-	mu       sync.RWMutex
-	runs     map[string]*Run
-	diffs    map[string]*NodeDiff // workflowId\0nodeId
-	now      func() time.Time
-	starter  Starter
-	auditor  ReviewAuditor
-	onChange OnChange
+	mu        sync.RWMutex
+	runs      map[string]*Run
+	diffs     map[string]*NodeDiff // workflowId\0nodeId
+	now       func() time.Time
+	starter   Starter
+	canceller TaskCanceller
+	auditor   ReviewAuditor
+	onChange  OnChange
 }
 
 func NewStore() *Store {
@@ -165,6 +172,8 @@ func NewStore() *Store {
 }
 
 func (s *Store) SetStarter(st Starter) { s.starter = st }
+
+func (s *Store) SetTaskCanceller(c TaskCanceller) { s.canceller = c }
 
 func (s *Store) SetReviewAuditor(a ReviewAuditor) { s.auditor = a }
 
@@ -179,6 +188,8 @@ func (s *Store) Handler() http.Handler {
 	mux.HandleFunc("PATCH /v1/workflows/{id}/nodes/{nodeId}", s.handlePatchNode)
 	mux.HandleFunc("POST /v1/workflows/{id}/nodes/{nodeId}/start", s.handleStartNode)
 	mux.HandleFunc("POST /v1/workflows/{id}/nodes/{nodeId}/reset", s.handleResetNode)
+	mux.HandleFunc("POST /v1/workflows/{id}/nodes/{nodeId}/pause", s.handlePauseNode)
+	mux.HandleFunc("POST /v1/workflows/{id}/nodes/{nodeId}/resume", s.handleResumeNode)
 	mux.HandleFunc("GET /v1/workflows/{id}/nodes/{nodeId}/diff", s.handleGetDiff)
 	mux.HandleFunc("PUT /v1/workflows/{id}/nodes/{nodeId}/diff", s.handlePutDiff)
 	mux.HandleFunc("POST /v1/workflows/{id}/nodes/{nodeId}/revise", s.handleRevise)
@@ -461,7 +472,7 @@ func (s *Store) CatchUpFromProgress(slaveID, repoID string, donePhases []string)
 			st := run.Nodes[i].Status
 			switch st {
 			case NodePending, NodeReady, NodeRunning, NodeAwaitingReview,
-				NodeFailed, NodeRejected, NodeCancelled:
+				NodeFailed, NodeRejected, NodeCancelled, NodePaused:
 				run.Nodes[i].Status = NodeApproved
 				run.Nodes[i].TaskID = nil
 				changed = true
@@ -709,9 +720,15 @@ func (s *Store) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid node status"})
 			return
 		}
-		// Review gate: Agent/Slave must report awaiting_review; approve is via review or autoApprove.
-		run.Nodes[idx].Status = st
-		enteredAwaiting = st == NodeAwaitingReview
+		// Pause wins over the in-flight task finishing as cancelled.
+		cur := run.Nodes[idx].Status
+		if cur == NodePaused && (st == NodeCancelled || st == NodeRunning) {
+			log.Printf("ignore %s overlay on paused node %s/%s", st, id, nodeID)
+		} else {
+			// Review gate: Agent/Slave must report awaiting_review; approve is via review or autoApprove.
+			run.Nodes[idx].Status = st
+			enteredAwaiting = st == NodeAwaitingReview
+		}
 	}
 	if req.TaskID != nil {
 		v := strings.TrimSpace(*req.TaskID)
@@ -882,12 +899,13 @@ func (s *Store) handleResetNode(w http.ResponseWriter, r *http.Request) {
 	}
 	st := run.Nodes[idx].Status
 	switch st {
-	case NodeFailed, NodeRejected, NodeCancelled, NodeRunning:
+	case NodeFailed, NodeRejected, NodeCancelled, NodeRunning, NodePaused:
 		// running: orphaned after Slave restart / lost task (manual recover)
+		// paused: start over (vs resume)
 	default:
 		s.mu.Unlock()
 		writeJSON(w, http.StatusConflict, map[string]string{
-			"error": "node must be failed, rejected, cancelled, or running",
+			"error": "node must be failed, rejected, cancelled, running, or paused",
 		})
 		return
 	}
@@ -919,10 +937,116 @@ func (s *Store) handleResetNode(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Store) lookupNodeLocked(id, nodeID string) (run *Run, idx int, ok bool) {
+	run, ok = s.runs[id]
+	if !ok {
+		return nil, -1, false
+	}
+	for i := range run.Nodes {
+		if run.Nodes[i].ID == nodeID {
+			return run, i, true
+		}
+	}
+	return run, -1, false
+}
+
+// handlePauseNode stops the in-flight Agent without failing the node.
+func (s *Store) handlePauseNode(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	nodeID := r.PathValue("nodeId")
+	s.mu.Lock()
+	run, idx, found := s.lookupNodeLocked(id, nodeID)
+	if !found && run == nil {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "workflow not found"})
+		return
+	}
+	if idx < 0 {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
+		return
+	}
+	if run.Nodes[idx].Status != NodeRunning {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "node must be running"})
+		return
+	}
+	taskID := ""
+	if run.Nodes[idx].TaskID != nil {
+		taskID = strings.TrimSpace(*run.Nodes[idx].TaskID)
+	}
+	run.Nodes[idx].Status = NodePaused
+	u := s.now().Format(time.RFC3339Nano)
+	run.UpdatedAt = &u
+	syncWorkflowStatusAfterNodes(run)
+	out := cloneRun(run)
+	s.mu.Unlock()
+	s.notifyChange()
+
+	if taskID != "" && s.canceller != nil {
+		_, _ = s.canceller.Cancel(taskID)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"workflow":  out,
+		"delivered": taskID != "" && s.canceller != nil,
+		"nodeId":    nodeID,
+		"paused":    true,
+	})
+}
+
+// handleResumeNode continues a paused node (Slave uses stored agentId when present).
+func (s *Store) handleResumeNode(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	nodeID := r.PathValue("nodeId")
+	s.mu.Lock()
+	run, idx, found := s.lookupNodeLocked(id, nodeID)
+	if !found && run == nil {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "workflow not found"})
+		return
+	}
+	if idx < 0 {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "node not found"})
+		return
+	}
+	if run.Nodes[idx].Status != NodePaused {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "node must be paused"})
+		return
+	}
+	if run.Status == StatusCompleted || run.Status == StatusCancelled {
+		s.mu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "workflow already terminal"})
+		return
+	}
+	run.Nodes[idx].TaskID = nil
+	run.Nodes[idx].Status = NodeReady
+	u := s.now().Format(time.RFC3339Nano)
+	run.UpdatedAt = &u
+	syncWorkflowStatusAfterNodes(run)
+	if run.Status == StatusPending {
+		run.Status = StatusRunning
+	}
+	out := cloneRun(run)
+	s.mu.Unlock()
+	s.notifyChange()
+
+	delivered := false
+	if s.starter != nil {
+		delivered = s.starter.AssignWorkflow(out)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"workflow":  out,
+		"delivered": delivered,
+		"nodeId":    nodeID,
+	})
+}
+
 func validNodeStatus(st string) bool {
 	switch st {
 	case NodePending, NodeReady, NodeRunning, NodeAwaitingReview, NodeApproved,
-		NodeRejected, NodeFailed, NodeCancelled, NodeSkipped:
+		NodeRejected, NodeFailed, NodeCancelled, NodeSkipped, NodePaused:
 		return true
 	default:
 		return false

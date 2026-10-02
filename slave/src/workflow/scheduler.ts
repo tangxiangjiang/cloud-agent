@@ -11,7 +11,7 @@ import { captureBaseline, collectNodeDiff } from "./diff.js";
 import { assessNodeDiff, phaseKindFromNode } from "./diffQuality.js";
 import { commitOnApprove } from "./gitCommit.js";
 import { GatewayHttpApi } from "./http.js";
-import { buildNodePrompt, buildRevisePrompt } from "./prompt.js";
+import { buildNodePrompt, buildResumeAfterPausePrompt, buildRevisePrompt } from "./prompt.js";
 import { writePhaseDocStatusOnLifecycle } from "./phaseDocStatus.js";
 import { writeProgressOnApprove } from "./progress.js";
 import {
@@ -95,7 +95,12 @@ export class SerialDagScheduler {
   /** Enqueue a workflow.assign from Gateway. */
   enqueue(run: WorkflowRun): Promise<void> {
     if (this.active.has(run.id)) {
-      log.info("workflow already scheduling", { workflowId: run.id });
+      // A stuck in-flight node (e.g. Gateway restart interrupted running→ready while
+      // Local Agent still waits) must not drop later Start/Continue assigns forever.
+      log.info("workflow already scheduling; queue follow-up pass", {
+        workflowId: run.id,
+      });
+      this.chain = this.chain.then(() => this.runSerial(run.id));
       return this.chain;
     }
     this.active.add(run.id);
@@ -184,25 +189,43 @@ export class SerialDagScheduler {
       }
 
       const baselineKey = `${workflowId}\0${node.id}`;
-      const baseline = await captureBaseline(repo.cwd);
-      this.baselines.set(baselineKey, baseline);
-      this.persistRuntime();
-      log.info("node baseline captured", {
-        workflowId,
-        nodeId: node.id,
-        baseline: baseline ?? null,
-      });
+      let baseline: string | null;
+      if (this.baselines.has(baselineKey)) {
+        baseline = this.baselines.get(baselineKey) ?? null;
+        log.info("node baseline reused (pause resume)", {
+          workflowId,
+          nodeId: node.id,
+          baseline,
+        });
+      } else {
+        baseline = await captureBaseline(repo.cwd);
+        this.baselines.set(baselineKey, baseline);
+        this.persistRuntime();
+        log.info("node baseline captured", {
+          workflowId,
+          nodeId: node.id,
+          baseline: baseline ?? null,
+        });
+      }
 
       await this.opts.http.patchNode(workflowId, node.id, { status: "running" });
+
+      const resumeAgentId = this.agentIds.get(baselineKey);
+      const promptForTask = resumeAgentId
+        ? buildResumeAfterPausePrompt(node, repo.cwd)
+        : prompt;
 
       const task = await this.opts.http.createTask({
         slaveId: this.opts.cfg.slaveId,
         repoId: run.repoId,
-        prompt,
+        prompt: promptForTask,
         model: node.model ?? this.opts.cfg.defaultModel,
         workflowId,
         nodeId: node.id,
       });
+      if (resumeAgentId) {
+        task.resumeAgentId = resumeAgentId;
+      }
 
       await this.opts.http.patchNode(workflowId, node.id, {
         status: "running",
@@ -229,6 +252,31 @@ export class SerialDagScheduler {
       }
 
       if (outcome === "cancelled") {
+        const latest = await this.opts.http.getWorkflow(workflowId);
+        const cur = latest.nodes.find((n) => n.id === node.id);
+        // Pause / Gateway interrupt (running→ready) / already advanced: do not clobber.
+        if (cur?.status === "paused") {
+          log.info("node paused; keep paused after task cancel", {
+            workflowId,
+            nodeId: node.id,
+            taskId: task.id,
+          });
+          return;
+        }
+        if (
+          cur?.status === "ready" ||
+          cur?.status === "awaiting_review" ||
+          cur?.status === "approved" ||
+          cur?.status === "running"
+        ) {
+          log.info("task cancelled but node already advanced; continue DAG", {
+            workflowId,
+            nodeId: node.id,
+            status: cur.status,
+            taskId: task.id,
+          });
+          continue;
+        }
         await this.opts.http.patchNode(workflowId, node.id, {
           status: "cancelled",
           taskId: task.id,

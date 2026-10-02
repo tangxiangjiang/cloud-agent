@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 import {
   buildNodePrompt,
   buildPhaseExecutionPreamble,
+  buildResumeAfterPausePrompt,
   buildRevisePrompt,
 } from "./prompt.js";
 import type { WorkflowNode } from "./types.js";
@@ -88,5 +89,17 @@ describe("buildRevisePrompt", () => {
     assert.match(p, /execution contract/);
     assert.match(p, /fix the failing test/);
     assert.match(p, /within this node's phase scope/);
+  });
+});
+
+describe("buildResumeAfterPausePrompt", () => {
+  it("keeps phase contract and resume instructions", () => {
+    const p = buildResumeAfterPausePrompt(
+      node({ id: "m_v0.1_p0", title: "p0" }),
+      mkdtempSync(path.join(tmpdir(), "phase-resume-")),
+    );
+    assert.match(p, /execution contract/);
+    assert.match(p, /Resume after pause/);
+    assert.match(p, /same phase/);
   });
 });

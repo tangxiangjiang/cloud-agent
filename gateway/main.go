@@ -49,10 +49,10 @@ func main() {
 		log.Fatalf("audit log: %v", err)
 	}
 	auditLog := audit.NewLogger(1000, sink)
-	pairLimit := ratelimit.New(0, 10)    // 10 / min / IP
-	reviseLimit := ratelimit.New(0, 30)  // 30 / min / IP
-	chatLimit := ratelimit.New(0, 30)    // 30 / min / IP (chat messages)
-	masterLimit := ratelimit.New(0, 30)  // 30 / min / IP (master control)
+	pairLimit := ratelimit.New(0, 10)   // 10 / min / IP
+	reviseLimit := ratelimit.New(0, 30) // 30 / min / IP
+	chatLimit := ratelimit.New(0, 30)   // 30 / min / IP (chat messages)
+	masterLimit := ratelimit.New(0, 30) // 30 / min / IP (master control)
 
 	authStore := auth.NewStore(pairCode)
 	taskStore := task.NewStore()
@@ -120,6 +120,7 @@ func main() {
 	slaveHub := slaves.NewOutboundHub(authStore, slaveReg, taskStore, hub)
 	taskStore.SetDispatcher(slaveHub)
 	wfStore.SetStarter(slaveHub)
+	wfStore.SetTaskCanceller(taskStore)
 	slaveReg.SetOnOffline(func(slaveID string) {
 		nTasks := taskStore.CancelActiveForSlave(slaveID)
 		nNodes := wfStore.InterruptRunningForSlave(slaveID)

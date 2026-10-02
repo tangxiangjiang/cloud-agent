@@ -113,6 +113,17 @@ export function buildNodePrompt(node: WorkflowNode, repoCwd: string): string {
   return parts.join("\n\n");
 }
 
+export function buildResumeAfterPausePrompt(node: WorkflowNode, repoCwd: string): string {
+  const base = buildNodePrompt(node, repoCwd);
+  return [
+    base,
+    "## Resume after pause",
+    "This node was **paused mid-run**. Continue the **same phase** from the current working tree.",
+    "Do **not** restart completed work from scratch unless files are missing or incorrect.",
+    "Keep the same Exit / DoD; finish remaining items and stop for human review.",
+  ].join("\n\n");
+}
+
 /** Prompt for App revise follow-up (natural-language instruction only). */
 export function buildRevisePrompt(
   node: WorkflowNode,

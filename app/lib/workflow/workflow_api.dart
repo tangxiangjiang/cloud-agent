@@ -159,6 +159,38 @@ class WorkflowApi {
     return _parseDelivered(res.body, 'Start node');
   }
 
+  /// Pause a running node (cancel in-flight Agent; keep node paused).
+  Future<StartWorkflowResult> pauseNode(String workflowId, String nodeId) async {
+    final res = await _post(
+      _uri(
+        '/v1/workflows/${Uri.encodeComponent(workflowId)}/nodes/${Uri.encodeComponent(nodeId)}/pause',
+      ),
+      headers: {
+        ..._headers,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: '{}',
+    );
+    _throwIfBad(res, 'Pause node');
+    return _parseDelivered(res.body, 'Pause node');
+  }
+
+  /// Resume a paused node (Slave continues with stored agent when possible).
+  Future<StartWorkflowResult> resumeNode(String workflowId, String nodeId) async {
+    final res = await _post(
+      _uri(
+        '/v1/workflows/${Uri.encodeComponent(workflowId)}/nodes/${Uri.encodeComponent(nodeId)}/resume',
+      ),
+      headers: {
+        ..._headers,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: '{}',
+    );
+    _throwIfBad(res, 'Resume node');
+    return _parseDelivered(res.body, 'Resume node');
+  }
+
   /// Reset a failed/rejected/cancelled node (does not recreate the workflow).
   /// When [start] is true and the node becomes ready, assign to Slave.
   Future<StartWorkflowResult> resetNode(

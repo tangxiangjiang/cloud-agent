@@ -275,7 +275,10 @@ Header 可选：`Idempotency-Key: <uuid>`
 
 `POST /workflows/{workflowId}/nodes/{nodeId}/start` → 仅当该节点为 `ready` 时 assign。
 
-`POST /workflows/{workflowId}/nodes/{nodeId}/reset` → 仅当节点为 `failed` / `rejected` / `cancelled`：清 `taskId`、回到 `ready`（依赖未齐则为 `pending`），并把 workflow 从 `failed` 恢复为 `running`（已通过的上游不动）。  
+`POST /workflows/{workflowId}/nodes/{nodeId}/pause` → 仅当节点为 `running`：取消进行中的 Task，节点变为 `paused`（工作流仍 `running`，不解锁下游）。  
+`POST /workflows/{workflowId}/nodes/{nodeId}/resume` → 仅当节点为 `paused`：回到 `ready` 并 `AssignWorkflow`；Slave 有上次 `agentId` 时 `Agent.resume` 续跑。
+
+`POST /workflows/{workflowId}/nodes/{nodeId}/reset` → 仅当节点为 `failed` / `rejected` / `cancelled` / `running` / `paused`：清 `taskId`、回到 `ready`（依赖未齐则为 `pending`），并把 workflow 从 `failed` 恢复为 `running`（已通过的上游不动）。  
 Body 可选 `{ "start": true }`：节点变为 `ready` 时立即 `AssignWorkflow`。
 
 **节点状态 / 策略同步**（Bearer；Slave 在跑节点时调用）
@@ -290,7 +293,7 @@ Agent 成功只许进入 `awaiting_review`，**不得**直接 `approved`。仅�
 **Approve 后续跑：** 默认停在下游 `ready`；仅当被批节点 `policy.autoStartNext==true` 才自动 `AssignWorkflow`（见 [node-policy.md](./node-policy.md)）。  
 样例 DAG：`examples/sample-dag.json`、`slave/fixtures/dag-two-node.json`、`ai/bundles/m05-p02-two-node.json`。联调：[deploy.md](./deploy.md)。
 
-节点状态枚举：`pending / ready / running / awaiting_review / approved / rejected / failed / cancelled / skipped`。  
+节点状态枚举：`pending / ready / running / paused / awaiting_review / approved / rejected / failed / cancelled / skipped`。  
 审核 / diff：只读 diff 见 M05-P03；revise 见 M05-P04；approve 写进度见 M05-P05（`POST .../review`，Slave 仅 approve 时更新 `progressDoc`）。
 
 ### 工作流节点审核（App 闸门）

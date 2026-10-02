@@ -202,6 +202,62 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
     }
   }
 
+  Future<void> _pauseNode(WorkflowNode node) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final result = await _api.pauseNode(widget.workflowId, node.id);
+      if (!mounted) return;
+      setState(() {
+        _run = result.workflow;
+        _busy = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已暂停 ${node.id}')),
+      );
+    } on WorkflowApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _resumeNode(WorkflowNode node) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final result = await _api.resumeNode(widget.workflowId, node.id);
+      if (!mounted) return;
+      setState(() {
+        _run = result.workflow;
+        _busy = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.delivered
+                ? '已恢复 ${node.id}'
+                : '已恢复 ${node.id}（Slave 离线时稍后 Continue）',
+          ),
+        ),
+      );
+    } on WorkflowApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+    }
+  }
+
   Future<void> _resetNode(WorkflowNode node) async {
     if (_busy) return;
     final ok = await showDialog<bool>(
@@ -210,7 +266,7 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
         title: const Text('重新跑这个节点？'),
         content: Text(
           '仅重置「${node.title?.isNotEmpty == true ? node.title : node.id}」'
-          '（failed / rejected / cancelled / 卡住的 running），'
+          '（failed / rejected / cancelled / paused），'
           '已通过的上游节点保留，不会新建整个 workflow。',
         ),
         actions: [
@@ -414,7 +470,7 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
           const SizedBox(height: 4),
           Text(
             'Model + switches PATCH to Gateway (defaults off). '
-            'Ready: 开始；失败/拒绝/取消/卡住的 running: 重新跑（只重置该节点）；'
+            'Ready: 开始；进行中: 暂停；已暂停: 恢复；失败/拒绝/取消: 重新跑；'
             'Approve 后无自动续跑: Continue。',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -440,6 +496,12 @@ class _WorkflowDetailPageState extends State<WorkflowDetailPage> {
                   : null,
               onStartNode: n.isReady && !_busy
                   ? () => unawaited(_startNode(n.id))
+                  : null,
+              onPauseNode: n.canPause && !_busy
+                  ? () => unawaited(_pauseNode(n))
+                  : null,
+              onResumeNode: n.canResume && !_busy
+                  ? () => unawaited(_resumeNode(n))
                   : null,
               onResetNode: n.canReset && !_busy
                   ? () => unawaited(_resetNode(n))
@@ -509,6 +571,8 @@ class _NodeTile extends StatelessWidget {
     this.onModelChanged,
     this.onAutoContinueChanged,
     this.onStartNode,
+    this.onPauseNode,
+    this.onResumeNode,
     this.onResetNode,
     this.onOpenLogs,
     this.onOpenDiff,
@@ -522,6 +586,8 @@ class _NodeTile extends StatelessWidget {
   final ValueChanged<String>? onModelChanged;
   final ValueChanged<bool>? onAutoContinueChanged;
   final VoidCallback? onStartNode;
+  final VoidCallback? onPauseNode;
+  final VoidCallback? onResumeNode;
   final VoidCallback? onResetNode;
   final VoidCallback? onOpenLogs;
   final VoidCallback? onOpenDiff;
@@ -651,6 +717,20 @@ class _NodeTile extends StatelessWidget {
                     onPressed: onStartNode,
                     icon: const Icon(Icons.play_arrow, size: 18),
                     label: const Text('开始'),
+                  ),
+                if (onPauseNode != null)
+                  FilledButton.tonalIcon(
+                    key: ValueKey('pauseNode-${node.id}'),
+                    onPressed: onPauseNode,
+                    icon: const Icon(Icons.pause, size: 18),
+                    label: const Text('暂停'),
+                  ),
+                if (onResumeNode != null)
+                  FilledButton.tonalIcon(
+                    key: ValueKey('resumeNode-${node.id}'),
+                    onPressed: onResumeNode,
+                    icon: const Icon(Icons.play_arrow, size: 18),
+                    label: const Text('恢复'),
                   ),
                 if (onResetNode != null)
                   FilledButton.tonalIcon(

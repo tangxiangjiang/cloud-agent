@@ -247,8 +247,8 @@ func TestReviseOnlyWhenAwaitingReview(t *testing.T) {
 		t.Fatalf("revise: %d %s", okRec.Code, okRec.Body.String())
 	}
 	var resp struct {
-		Workflow workflow.Run           `json:"workflow"`
-		Revise   workflow.ReviseEntry   `json:"revise"`
+		Workflow workflow.Run         `json:"workflow"`
+		Revise   workflow.ReviseEntry `json:"revise"`
 	}
 	_ = json.NewDecoder(okRec.Body).Decode(&resp)
 	if resp.Workflow.Nodes[0].Status != workflow.NodeRunning {
@@ -1143,3 +1143,84 @@ func TestAutoApproveSkippedWhenEmptyDiff(t *testing.T) {
 	}
 }
 
+type recordingCanceller struct {
+	n    int
+	last string
+}
+
+func (c *recordingCanceller) Cancel(id string) (string, int) {
+	c.n++
+	c.last = id
+	return "cancelling", 200
+}
+
+func TestPauseRunningNodeThenResume(t *testing.T) {
+	store := workflow.NewStore()
+	st := &recordingStarter{}
+	store.SetStarter(st)
+	can := &recordingCanceller{}
+	store.SetTaskCanceller(can)
+	h := store.Handler()
+	body := `{"bundleId":"b","repoId":"r","slaveId":"s1","nodes":[{"id":"A","dependsOn":[]},{"id":"B","dependsOn":["A"]}]}`
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, httptest.NewRequest(http.MethodPost, "/v1/workflows", strings.NewReader(body)))
+	var run workflow.Run
+	_ = json.NewDecoder(createRec.Body).Decode(&run)
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
+		strings.NewReader(`{"status":"running","taskId":"tsk_pause"}`)))
+
+	bad := httptest.NewRecorder()
+	h.ServeHTTP(bad, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/B/pause", nil))
+	if bad.Code != http.StatusConflict {
+		t.Fatalf("pause pending want 409, got %d %s", bad.Code, bad.Body.String())
+	}
+
+	pause := httptest.NewRecorder()
+	h.ServeHTTP(pause, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/pause", nil))
+	if pause.Code != http.StatusOK {
+		t.Fatalf("pause: %d %s", pause.Code, pause.Body.String())
+	}
+	var paused struct {
+		Workflow workflow.Run `json:"workflow"`
+	}
+	_ = json.NewDecoder(pause.Body).Decode(&paused)
+	if paused.Workflow.Nodes[0].Status != workflow.NodePaused {
+		t.Fatalf("A want paused, got %s", paused.Workflow.Nodes[0].Status)
+	}
+	if paused.Workflow.Status != workflow.StatusRunning {
+		t.Fatalf("workflow want running, got %s", paused.Workflow.Status)
+	}
+	if can.n != 1 || can.last != "tsk_pause" {
+		t.Fatalf("cancel want tsk_pause, got n=%d last=%s", can.n, can.last)
+	}
+
+	// Slave finishing as cancelled must not overwrite pause.
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPatch, "/v1/workflows/"+run.ID+"/nodes/A",
+		strings.NewReader(`{"status":"cancelled"}`)))
+	get := httptest.NewRecorder()
+	h.ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/v1/workflows/"+run.ID, nil))
+	var still workflow.Run
+	_ = json.NewDecoder(get.Body).Decode(&still)
+	if still.Nodes[0].Status != workflow.NodePaused {
+		t.Fatalf("paused must stick after cancelled overlay, got %s", still.Nodes[0].Status)
+	}
+
+	assignBefore := st.assignN
+	resume := httptest.NewRecorder()
+	h.ServeHTTP(resume, httptest.NewRequest(http.MethodPost, "/v1/workflows/"+run.ID+"/nodes/A/resume", nil))
+	if resume.Code != http.StatusOK {
+		t.Fatalf("resume: %d %s", resume.Code, resume.Body.String())
+	}
+	var after struct {
+		Workflow  workflow.Run `json:"workflow"`
+		Delivered bool         `json:"delivered"`
+	}
+	_ = json.NewDecoder(resume.Body).Decode(&after)
+	if after.Workflow.Nodes[0].Status != workflow.NodeReady {
+		t.Fatalf("A want ready after resume, got %s", after.Workflow.Nodes[0].Status)
+	}
+	if !after.Delivered || st.assignN != assignBefore+1 {
+		t.Fatalf("resume must AssignWorkflow, delivered=%v assignN=%d", after.Delivered, st.assignN)
+	}
+}

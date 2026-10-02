@@ -72,11 +72,15 @@ class WorkflowNode {
 
   bool get isReady => status == 'ready';
 
+  bool get canPause => status == 'running';
+
+  bool get canResume => status == 'paused';
+
   bool get canReset =>
       status == 'failed' ||
       status == 'rejected' ||
       status == 'cancelled' ||
-      status == 'running'; // orphaned after Slave restart
+      status == 'paused';
 
   /// Policy/model edits apply immediately except while actively running.
   bool get policyEditable => status != 'running';

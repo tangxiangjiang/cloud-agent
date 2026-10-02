@@ -37,6 +37,8 @@ class NodeStatusChip extends StatelessWidget {
         return ('待审核', scheme.tertiaryContainer, scheme.onTertiaryContainer);
       case 'running':
         return ('进行中', scheme.primaryContainer, scheme.onPrimaryContainer);
+      case 'paused':
+        return ('已暂停', scheme.secondaryContainer, scheme.onSecondaryContainer);
       case 'ready':
         return ('就绪', scheme.secondaryContainer, scheme.onSecondaryContainer);
       case 'approved':

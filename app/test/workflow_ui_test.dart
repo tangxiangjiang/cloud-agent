@@ -364,6 +364,141 @@ void main() {
     expect(nodeStarted, isTrue);
   });
 
+  testWidgets('running node shows pause; paused node shows resume', (tester) async {
+    var paused = false;
+    var resumed = false;
+    var nodeStatus = 'running';
+    final api = WorkflowApi(
+      session: _session,
+      get: (uri, {headers}) async {
+        if (uri.path == '/v1/models') {
+          return http.Response(
+            jsonEncode({
+              'default': 'auto',
+              'models': [
+                {'id': 'auto', 'label': 'Auto'},
+              ],
+            }),
+            200,
+          );
+        }
+        return http.Response(
+          jsonEncode({
+            'id': 'wf_run',
+            'bundleId': 'b',
+            'status': 'running',
+            'nodes': [
+              {
+                'id': 'A',
+                'title': 'Work',
+                'status': nodeStatus,
+                'dependsOn': <String>[],
+                'model': 'auto',
+                'policy': {'autoApprove': false, 'autoStartNext': false},
+              },
+            ],
+            'createdAt': '2026-09-28T00:00:00Z',
+          }),
+          200,
+        );
+      },
+      post: (uri, {headers, body}) async {
+        if (uri.path.endsWith('/nodes/A/pause')) {
+          paused = true;
+          nodeStatus = 'paused';
+          return http.Response(
+            jsonEncode({
+              'delivered': true,
+              'workflow': {
+                'id': 'wf_run',
+                'bundleId': 'b',
+                'status': 'running',
+                'nodes': [
+                  {
+                    'id': 'A',
+                    'title': 'Work',
+                    'status': 'paused',
+                    'dependsOn': <String>[],
+                    'model': 'auto',
+                    'policy': {'autoApprove': false, 'autoStartNext': false},
+                  },
+                ],
+                'createdAt': '2026-09-28T00:00:00Z',
+              },
+            }),
+            200,
+          );
+        }
+        if (uri.path.endsWith('/nodes/A/resume')) {
+          resumed = true;
+          nodeStatus = 'ready';
+          return http.Response(
+            jsonEncode({
+              'delivered': true,
+              'workflow': {
+                'id': 'wf_run',
+                'bundleId': 'b',
+                'status': 'running',
+                'nodes': [
+                  {
+                    'id': 'A',
+                    'title': 'Work',
+                    'status': 'ready',
+                    'dependsOn': <String>[],
+                    'model': 'auto',
+                    'policy': {'autoApprove': false, 'autoStartNext': false},
+                  },
+                ],
+                'createdAt': '2026-09-28T00:00:00Z',
+              },
+            }),
+            200,
+          );
+        }
+        return http.Response('{}', 404);
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WorkflowDetailPage(
+          session: _session,
+          workflowId: 'wf_run',
+          api: api,
+          initial: WorkflowRun.fromJson({
+            'id': 'wf_run',
+            'bundleId': 'b',
+            'status': 'running',
+            'nodes': [
+              {
+                'id': 'A',
+                'title': 'Work',
+                'status': 'running',
+                'dependsOn': <String>[],
+                'model': 'auto',
+                'policy': {'autoApprove': false, 'autoStartNext': false},
+              },
+            ],
+            'createdAt': '2026-09-28T00:00:00Z',
+          }),
+          pollInterval: const Duration(days: 1),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('pauseNode-A')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('pauseNode-A')));
+    await tester.pumpAndSettle();
+    expect(paused, isTrue);
+    expect(find.text('已暂停'), findsWidgets);
+    expect(find.byKey(const ValueKey('resumeNode-A')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('resumeNode-A')));
+    await tester.pumpAndSettle();
+    expect(resumed, isTrue);
+  });
+
   testWidgets('detail shows error snackbar path via failed load', (tester) async {
     final api = WorkflowApi(
       session: _session,

@@ -39,6 +39,10 @@ export type MasterDefaults = {
    * Idle timeout with no stream events (ms). Default 10min; `0` disables.
    */
   idleTimeoutMs: number;
+  /** Local Agent AI access attempts (including first try). Default 5. */
+  aiRetryAttempts: number;
+  /** Base backoff ms before second AI attempt. Default 3000. */
+  aiRetryBaseDelayMs: number;
 };
 
 export type MasterConfig = {

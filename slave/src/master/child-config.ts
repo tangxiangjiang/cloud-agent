@@ -71,6 +71,8 @@ export function buildChildSlaveConfig(
     optimizeFor: master.defaults.optimizeFor,
     taskTimeoutMs: master.defaults.taskTimeoutMs,
     idleTimeoutMs: master.defaults.idleTimeoutMs,
+    aiRetryAttempts: master.defaults.aiRetryAttempts,
+    aiRetryBaseDelayMs: master.defaults.aiRetryBaseDelayMs,
     projects: [project],
   };
 }

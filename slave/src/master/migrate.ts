@@ -120,6 +120,8 @@ export function migrateSlaveConfigToMaster(opts: MigrateOptions): {
       slaveGatewayUrl,
       taskTimeoutMs: slaveCfg.taskTimeoutMs,
       idleTimeoutMs: slaveCfg.idleTimeoutMs,
+      aiRetryAttempts: slaveCfg.aiRetryAttempts,
+      aiRetryBaseDelayMs: slaveCfg.aiRetryBaseDelayMs,
     },
     slaves,
   };

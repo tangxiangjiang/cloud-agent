@@ -57,6 +57,8 @@ describe("SerialDagScheduler.enqueueRevise", () => {
       syncAiSummary: true,
       taskTimeoutMs: 3_600_000,
       idleTimeoutMs: 600_000,
+      aiRetryAttempts: 5,
+      aiRetryBaseDelayMs: 3_000,
       projects: [{ id: "r1", name: "t", cwd }],
       repos: [{ id: "r1", name: "t", cwd }],
     };

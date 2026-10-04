@@ -27,7 +27,7 @@ import {
   type WorkflowRun,
 } from "./types.js";
 
-export type NodeRunOutcome = "finished" | "error" | "cancelled";
+export type NodeRunOutcome = "finished" | "error" | "cancelled" | "paused";
 
 /**
  * Serial DAG scheduler: one ready node at a time.
@@ -282,6 +282,19 @@ export class SerialDagScheduler {
           taskId: task.id,
         });
         log.warn("node cancelled", { workflowId, nodeId: node.id, outcome });
+        return;
+      }
+
+      if (outcome === "paused") {
+        await this.opts.http.patchNode(workflowId, node.id, {
+          status: "paused",
+          taskId: task.id,
+        });
+        log.warn("node paused after AI network/idle issues; waiting for human", {
+          workflowId,
+          nodeId: node.id,
+          taskId: task.id,
+        });
         return;
       }
 
@@ -561,6 +574,28 @@ export class SerialDagScheduler {
       return;
     }
 
+    if (outcome === "paused") {
+      await this.opts.http.patchNode(workflowId, nodeId, {
+        status: "paused",
+        taskId: task.id,
+      });
+      log.warn("revise paused after AI network/idle issues; waiting for human", {
+        workflowId,
+        nodeId,
+        taskId: task.id,
+      });
+      return;
+    }
+
+    if (outcome === "cancelled") {
+      const latest = await this.opts.http.getWorkflow(workflowId);
+      const cur = latest.nodes.find((n) => n.id === nodeId);
+      if (cur?.status === "paused") {
+        log.info("revise cancelled but node already paused", { workflowId, nodeId });
+        return;
+      }
+    }
+
     await this.opts.http.patchNode(workflowId, nodeId, {
       status: "failed",
       taskId: task.id,
@@ -663,6 +698,7 @@ export class SerialDagScheduler {
         const st = String(payload.status ?? "");
         if (st === "finished") outcome = "finished";
         else if (st === "cancelled") outcome = "cancelled";
+        else if (st === "paused") outcome = "paused";
         else outcome = "error";
         const aid = payload.agentId;
         if (typeof aid === "string" && aid.trim()) agentId = aid.trim();

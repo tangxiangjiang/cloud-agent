@@ -140,6 +140,8 @@ describe("validateConfig", () => {
     assert.equal(cfg.optimizeFor, "cost");
     assert.equal(cfg.taskTimeoutMs, 3_600_000);
     assert.equal(cfg.idleTimeoutMs, 600_000);
+    assert.equal(cfg.aiRetryAttempts, 5);
+    assert.equal(cfg.aiRetryBaseDelayMs, 3_000);
   });
 
   it("accepts hang timeouts including 0 to disable", () => {
@@ -148,10 +150,14 @@ describe("validateConfig", () => {
       slaveId: "slave_devpc",
       taskTimeoutMs: 0,
       idleTimeoutMs: 120_000,
+      aiRetryAttempts: 3,
+      aiRetryBaseDelayMs: 1_000,
       repos: [{ id: "r1", name: "a", cwd: absA }],
     });
     assert.equal(cfg.taskTimeoutMs, 0);
     assert.equal(cfg.idleTimeoutMs, 120_000);
+    assert.equal(cfg.aiRetryAttempts, 3);
+    assert.equal(cfg.aiRetryBaseDelayMs, 1_000);
   });
 
   it("rejects negative hang timeouts", () => {

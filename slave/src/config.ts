@@ -5,6 +5,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import {
+  DEFAULT_AI_RETRY_ATTEMPTS,
+  DEFAULT_AI_RETRY_BASE_DELAY_MS,
+} from "./agent/aiRetry.js";
+import {
   parseOptimizeFor,
   type OptimizeFor,
 } from "./agent/modelSelection.js";
@@ -61,6 +65,13 @@ export interface SlaveConfig {
    * Default 10 minutes. `0` disables.
    */
   idleTimeoutMs: number;
+  /**
+   * Local Agent AI access attempts (create/send/run), including the first try.
+   * Default 5. On exhausted network/retryable failures, workflow nodes pause.
+   */
+  aiRetryAttempts: number;
+  /** Base backoff (ms) before the second AI attempt; doubles each time (capped). */
+  aiRetryBaseDelayMs: number;
 }
 
 /** Default wall-clock TTL for Local Agent main tasks (60 minutes). */
@@ -96,6 +107,8 @@ type RawConfig = {
   syncAiSummary?: unknown;
   taskTimeoutMs?: unknown;
   idleTimeoutMs?: unknown;
+  aiRetryAttempts?: unknown;
+  aiRetryBaseDelayMs?: unknown;
   /** Forbidden: secrets must come from env named by apiKeyEnv. */
   apiKey?: unknown;
   cursorApiKey?: unknown;
@@ -119,6 +132,19 @@ function parseTimeoutMs(
   if (value === undefined || value === null) return fallback;
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
     throw new ConfigError(`${field} must be an integer >= 0 (0 disables)`);
+  }
+  return value;
+}
+
+/** Positive integer (>= 1). */
+function parsePositiveInt(
+  value: unknown,
+  field: string,
+  fallback: number,
+): number {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new ConfigError(`${field} must be an integer >= 1`);
   }
   return value;
 }
@@ -279,6 +305,16 @@ export function validateConfig(
     "idleTimeoutMs",
     DEFAULT_IDLE_TIMEOUT_MS,
   );
+  const aiRetryAttempts = parsePositiveInt(
+    obj.aiRetryAttempts,
+    "aiRetryAttempts",
+    DEFAULT_AI_RETRY_ATTEMPTS,
+  );
+  const aiRetryBaseDelayMs = parseTimeoutMs(
+    obj.aiRetryBaseDelayMs,
+    "aiRetryBaseDelayMs",
+    DEFAULT_AI_RETRY_BASE_DELAY_MS,
+  );
 
   let projects: ProjectConfig[];
   if (obj.projects !== undefined && obj.projects !== null) {
@@ -309,6 +345,8 @@ export function validateConfig(
     syncAiSummary,
     taskTimeoutMs,
     idleTimeoutMs,
+    aiRetryAttempts,
+    aiRetryBaseDelayMs,
   };
   if (name !== undefined) {
     cfg.name = name;
@@ -358,6 +396,8 @@ export function configSummary(cfg: SlaveConfig): Record<string, unknown> {
     syncAiSummary: cfg.syncAiSummary,
     taskTimeoutMs: cfg.taskTimeoutMs,
     idleTimeoutMs: cfg.idleTimeoutMs,
+    aiRetryAttempts: cfg.aiRetryAttempts,
+    aiRetryBaseDelayMs: cfg.aiRetryBaseDelayMs,
     apiKeyPresent: Boolean(process.env[cfg.apiKeyEnv]),
     tokenPresent: Boolean(process.env[cfg.tokenEnv]),
     projects: cfg.projects.map((r) => ({

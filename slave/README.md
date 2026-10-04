@@ -92,6 +92,8 @@ Diff：[docs/diff-baseline.md](./docs/diff-baseline.md) · Approve 写进度：[
 | `optimizeFor` | 仅当解析到 `auto-smart` 时生效：`cost` \| `balanced` \| `intelligence`（默认 `cost`） |
 | `taskTimeoutMs` | Local Agent 主任务墙钟 TTL（默认 `3600000` = 60 分钟；`0` 关闭） |
 | `idleTimeoutMs` | 无 stream/onDelta 事件的空闲超时（默认 `600000` = 10 分钟；`0` 关闭） |
+| `aiRetryAttempts` | AI 访问重试次数（含首次，默认 `5`）；网络类错误耗尽后 workflow 节点改为 **paused** 等人处理 |
+| `aiRetryBaseDelayMs` | 重试退避基数（默认 `3000` ms，指数增长封顶 60s） |
 
 工程 milestone 索引约定见仓库根 [`ai/milestones.md`](../ai/milestones.md)。
 

@@ -34,6 +34,11 @@ optimizeFor: cost
 # idleTimeoutMs: no stream/onDelta events (default 600000 = 10min). 0 disables.
 # taskTimeoutMs: 3600000
 # idleTimeoutMs: 600000
+#
+# AI access retries on flaky network (create/send/run). After exhaustion,
+# workflow nodes pause for human resume instead of failing.
+# aiRetryAttempts: 5
+# aiRetryBaseDelayMs: 3000
 
 # Env var name for Gateway Bearer (from POST /v1/auth/pair). Required to run.
 tokenEnv: GATEWAY_TOKEN

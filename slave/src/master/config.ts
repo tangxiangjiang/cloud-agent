@@ -12,6 +12,10 @@ import {
   DEFAULT_IDLE_TIMEOUT_MS,
   DEFAULT_TASK_TIMEOUT_MS,
 } from "../config.js";
+import {
+  DEFAULT_AI_RETRY_ATTEMPTS,
+  DEFAULT_AI_RETRY_BASE_DELAY_MS,
+} from "../agent/aiRetry.js";
 import type {
   MasterConfig,
   MasterDefaults,
@@ -48,6 +52,8 @@ type RawDefaults = {
   slaveGatewayUrl?: unknown;
   taskTimeoutMs?: unknown;
   idleTimeoutMs?: unknown;
+  aiRetryAttempts?: unknown;
+  aiRetryBaseDelayMs?: unknown;
 };
 
 type RawMaster = {
@@ -217,6 +223,16 @@ function parseDefaults(
       "defaults.idleTimeoutMs",
       DEFAULT_IDLE_TIMEOUT_MS,
     ),
+    aiRetryAttempts: requirePositiveInt(
+      r.aiRetryAttempts,
+      "defaults.aiRetryAttempts",
+      DEFAULT_AI_RETRY_ATTEMPTS,
+    ),
+    aiRetryBaseDelayMs: requireNonNegInt(
+      r.aiRetryBaseDelayMs,
+      "defaults.aiRetryBaseDelayMs",
+      DEFAULT_AI_RETRY_BASE_DELAY_MS,
+    ),
   };
 }
 
@@ -382,6 +398,8 @@ export function masterConfigToPlain(cfg: MasterConfig): Record<string, unknown> 
       slaveGatewayUrl: cfg.defaults.slaveGatewayUrl,
       taskTimeoutMs: cfg.defaults.taskTimeoutMs,
       idleTimeoutMs: cfg.defaults.idleTimeoutMs,
+      aiRetryAttempts: cfg.defaults.aiRetryAttempts,
+      aiRetryBaseDelayMs: cfg.defaults.aiRetryBaseDelayMs,
     },
     slaves: cfg.slaves.map((s) => ({
       id: s.id,

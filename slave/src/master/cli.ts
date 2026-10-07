@@ -13,6 +13,7 @@ import { loadConfigFile } from "../config.js";
 import { MasterControlError } from "./errors.js";
 import { MasterGatewayClient } from "./gateway-client.js";
 import { migrateSlaveConfigToMaster, migrateSummary } from "./migrate.js";
+import { holdMacAwake } from "../net/macAwake.js";
 import { ProcessManager } from "./process-manager.js";
 import type { MasterConfig, MasterSlaveEntry } from "./types.js";
 
@@ -137,6 +138,9 @@ async function main(): Promise<void> {
       },
     });
     client.start();
+    holdMacAwake({
+      log: (msg, meta) => console.log(JSON.stringify({ msg, ...meta })),
+    });
     console.log(
       JSON.stringify({
         msg: "master serve",

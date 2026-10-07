@@ -90,6 +90,8 @@ refresh_token
 export GATEWAY_TOKEN="$(tr -d '\n' < "$TOKEN_FILE")"
 
 # 脱离当前终端；Cursor 关掉也不影响
+# macOS：node 进程会自行 caffeinate -i -s，避免空闲休眠冻住 Master。
+# 合盖/电池仍可能整机睡眠（系统限制）；醒来会自动重连。
 nohup node dist/master/cli.js serve --config master.config.yaml \
   >>"$LOG_FILE" 2>&1 &
 echo $! > "$PID_FILE"

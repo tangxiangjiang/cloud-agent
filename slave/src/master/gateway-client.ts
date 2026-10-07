@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import WebSocket from "ws";
+import { startSleepWakeWatch } from "../net/sleepWake.js";
 import {
   deleteSlaveEntry,
   saveMasterConfig,
@@ -42,6 +43,8 @@ export class MasterGatewayClient {
   private ws: WebSocket | null = null;
   private stopped = false;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
+  private connectGen = 0;
+  private stopWakeWatch: (() => void) | null = null;
   private readonly opts: GatewayClientOptions;
 
   constructor(opts: GatewayClientOptions) {
@@ -50,17 +53,21 @@ export class MasterGatewayClient {
 
   start(): void {
     this.stopped = false;
+    this.stopWakeWatch?.();
+    this.stopWakeWatch = startSleepWakeWatch((sleptMs) => {
+      this.log("host resumed after sleep", { sleptMs });
+      void this.onHostWake();
+    });
     this.connect();
   }
 
   stop(): void {
     this.stopped = true;
-    if (this.heartbeat) {
-      clearInterval(this.heartbeat);
-      this.heartbeat = null;
-    }
-    this.ws?.close();
-    this.ws = null;
+    this.stopWakeWatch?.();
+    this.stopWakeWatch = null;
+    this.connectGen += 1;
+    this.clearHeartbeat();
+    this.dropSocket();
   }
 
   /** Push full slaves.report (after local start/stop/config change). */
@@ -80,18 +87,65 @@ export class MasterGatewayClient {
     }
   }
 
+  private clearHeartbeat(): void {
+    if (this.heartbeat) {
+      clearInterval(this.heartbeat);
+      this.heartbeat = null;
+    }
+  }
+
+  private dropSocket(): void {
+    const ws = this.ws;
+    this.ws = null;
+    this.clearHeartbeat();
+    if (!ws) return;
+    try {
+      ws.removeAllListeners();
+    } catch {
+      /* ignore */
+    }
+    try {
+      ws.terminate();
+    } catch {
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  private async onHostWake(): Promise<void> {
+    if (this.stopped) return;
+    try {
+      const revived = await this.opts.pm.reviveDeadRunning();
+      if (revived.length > 0) {
+        this.log("revived slaves after sleep", { revived });
+      }
+    } catch (err) {
+      this.log("revive after sleep failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    this.connect();
+  }
+
   private connect(): void {
     if (this.stopped) return;
+    const gen = ++this.connectGen;
+    this.dropSocket();
     const url = this.opts.gatewayUrl;
     this.log("master connecting", { url });
     const ws = new WebSocket(url);
     this.ws = ws;
 
     ws.on("open", () => {
+      if (gen !== this.connectGen || this.stopped) return;
       this.send({ type: "auth", token: this.opts.token });
     });
 
     ws.on("message", (data) => {
+      if (gen !== this.connectGen || this.stopped) return;
       let msg: Record<string, unknown>;
       try {
         msg = JSON.parse(String(data)) as Record<string, unknown>;
@@ -102,16 +156,18 @@ export class MasterGatewayClient {
     });
 
     ws.on("close", () => {
-      if (this.heartbeat) {
-        clearInterval(this.heartbeat);
-        this.heartbeat = null;
-      }
+      if (gen !== this.connectGen) return;
+      this.clearHeartbeat();
+      this.ws = null;
       if (!this.stopped) {
-        setTimeout(() => this.connect(), 2000);
+        setTimeout(() => {
+          if (gen === this.connectGen && !this.stopped) this.connect();
+        }, 2_000);
       }
     });
 
     ws.on("error", (err) => {
+      if (gen !== this.connectGen) return;
       this.log("master ws error", {
         error: err instanceof Error ? err.message : String(err),
       });
@@ -132,10 +188,16 @@ export class MasterGatewayClient {
     }
     if (type === "master.registered") {
       this.log("master registered", { masterId: msg.masterId });
-      if (this.heartbeat) clearInterval(this.heartbeat);
+      this.clearHeartbeat();
       this.heartbeat = setInterval(() => {
         this.send({ type: "master.heartbeat" });
-      }, 25_000);
+        try {
+          this.ws?.ping();
+        } catch {
+          /* ignore */
+        }
+      }, 15_000);
+      this.reportAll();
       return;
     }
     if (type === "master.config.list") {

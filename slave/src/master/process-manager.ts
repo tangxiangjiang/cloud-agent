@@ -38,6 +38,8 @@ type RuntimeSlot = {
   spawnToken: string | null;
   lastError: string | null;
   startedAt: string | null;
+  /** User asked this slave to run; survives crash until explicit stop. */
+  desiredRunning: boolean;
 };
 
 function pidAlive(pid: number): boolean {
@@ -92,6 +94,7 @@ export class ProcessManager {
       spawnToken: null,
       lastError: null,
       startedAt: null,
+      desiredRunning: false,
     };
   }
 
@@ -173,6 +176,7 @@ export class ProcessManager {
       slot.spawnToken = token;
       slot.startedAt = new Date().toISOString();
       slot.lastError = null;
+      slot.desiredRunning = true;
     }
   }
 
@@ -189,6 +193,29 @@ export class ProcessManager {
       await this.stopUnlocked(slaveId);
       return this.startUnlocked(slaveId);
     });
+  }
+
+  /**
+   * After host sleep, PIDs may be gone even though slots still say running.
+   * Restart enabled slaves that look running but whose process is dead.
+   */
+  async reviveDeadRunning(): Promise<string[]> {
+    const revived: string[] = [];
+    for (const entry of this.cfg.slaves) {
+      if (!entry.enabled) continue;
+      const slot = this.slots.get(entry.id);
+      if (!slot?.desiredRunning) continue;
+      const pid = slot.pid;
+      if (pid != null && pidAlive(pid)) continue;
+      slot.state = "stopped";
+      slot.child = null;
+      slot.pid = null;
+      slot.spawnToken = null;
+      this.clearPidArtifacts(entry.id);
+      await this.start(entry.id);
+      revived.push(entry.id);
+    }
+    return revived;
   }
 
   private requireSlot(slaveId: string): RuntimeSlot {
@@ -329,6 +356,7 @@ export class ProcessManager {
       slot.spawnToken = spawnToken;
       slot.startedAt = new Date().toISOString();
       slot.state = "running";
+      slot.desiredRunning = true;
 
       // Allow one-shot CLI (`master start`) to exit while child keeps running.
       // Serve stays alive via Gateway WS / heartbeats.
@@ -367,6 +395,7 @@ export class ProcessManager {
 
   private async stopUnlocked(slaveId: string): Promise<SlaveRuntimeSnapshot> {
     const slot = this.requireSlot(slaveId);
+    slot.desiredRunning = false;
     if (slot.state === "stopped") {
       return this.snapshot(slaveId);
     }

@@ -4,6 +4,7 @@
 import WebSocket from "ws";
 import type { RepoConfig } from "../config.js";
 import { log } from "../log.js";
+import { startSleepWakeWatch } from "../net/sleepWake.js";
 import type { ProjectCatalog } from "../project/catalog.js";
 import type {
   WorkflowReviewMessage,
@@ -75,6 +76,7 @@ export class GatewayClient {
   private registered = false;
   private connectGeneration = 0;
   private models: CursorModelEntry[];
+  private stopWakeWatch: (() => void) | null = null;
 
   constructor(opts: GatewayClientOptions) {
     this.models = opts.models ? [...opts.models] : [];
@@ -90,11 +92,18 @@ export class GatewayClient {
   /** Begin connect loop (returns immediately). */
   start(): void {
     this.stopped = false;
+    this.stopWakeWatch?.();
+    this.stopWakeWatch = startSleepWakeWatch((sleptMs) => {
+      log.info("host resumed after sleep; reconnecting gateway", { sleptMs });
+      this.forceReconnect();
+    });
     void this.connect();
   }
 
   async stop(): Promise<void> {
     this.stopped = true;
+    this.stopWakeWatch?.();
+    this.stopWakeWatch = null;
     this.clearHeartbeat();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -556,6 +565,11 @@ export class GatewayClient {
     this.clearHeartbeat();
     this.heartbeatTimer = setInterval(() => {
       this.send({ type: "heartbeat" });
+      try {
+        this.ws?.ping();
+      } catch {
+        /* ignore */
+      }
     }, this.opts.heartbeatMs);
   }
 
@@ -564,6 +578,28 @@ export class GatewayClient {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
+  }
+
+  private forceReconnect(): void {
+    if (this.stopped) return;
+    this.backoff = this.opts.reconnectMs;
+    this.connectGeneration += 1;
+    this.registered = false;
+    this.clearHeartbeat();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    const ws = this.ws;
+    this.ws = null;
+    if (ws) {
+      try {
+        ws.terminate();
+      } catch {
+        /* ignore */
+      }
+    }
+    this.connect();
   }
 
   private scheduleReconnect(): void {

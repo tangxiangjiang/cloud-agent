@@ -116,4 +116,20 @@ describe("ProcessManager", () => {
     assert.ok(fs.existsSync(childSpawnTokenPath(configPath, "slave_a")));
     await pm.stop("slave_a");
   });
+
+  it("revives running slot whose pid is dead", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "master-pm-"));
+    const { cfg, configPath } = makeCfg(dir);
+    const pm = new ProcessManager(cfg, { masterConfigPath: configPath });
+    const first = await pm.start("slave_a");
+    const oldPid = first.pid!;
+    process.kill(oldPid, "SIGKILL");
+    await new Promise((r) => setTimeout(r, 50));
+    const revived = await pm.reviveDeadRunning();
+    assert.deepEqual(revived, ["slave_a"]);
+    const snap = pm.snapshot("slave_a");
+    assert.equal(snap.state, "running");
+    assert.ok(snap.pid && snap.pid !== oldPid);
+    await pm.stop("slave_a");
+  });
 });

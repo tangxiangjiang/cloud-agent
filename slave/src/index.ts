@@ -16,6 +16,7 @@ import {
 import { GatewayClient } from "./gateway/client.js";
 import type { TaskHandlers } from "./gateway/types.js";
 import { log, setLogLevel } from "./log.js";
+import { holdMacAwake } from "./net/macAwake.js";
 import { buildProjectCatalog } from "./project/catalog.js";
 import { ensureAllProjectGitRepos } from "./project/ensureGit.js";
 import { collectProjectSync } from "./project/syncCollect.js";
@@ -297,6 +298,7 @@ async function main(): Promise<void> {
   process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
   client.start();
+  holdMacAwake({ log: (msg, meta) => log.info(msg, meta) });
   log.info("slave running (Local Agent + DAG scheduler); Ctrl+C to stop");
 }
 

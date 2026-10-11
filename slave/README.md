@@ -72,7 +72,7 @@ Diff：[docs/diff-baseline.md](./docs/diff-baseline.md) · Approve 写进度：[
 
 - **API Key / Bearer 只放环境变量**（`apiKeyEnv` / `tokenEnv` 只写变量名）。配置文件禁止出现 `apiKey` 字面量；日志会对 `apiKey`/`token` 等字段与长 opaque 串脱敏。
 - **cwd 白名单**：执行目录只来自本机 `projects[].cwd`，通过任务的 `repoId` 查找。**忽略/拒绝**任务里携带的任意 `cwd` 字符串，防止 App 指到白名单外路径。
-- **仅 Local runtime**：`Agent.create` 只传 `local: { cwd, settingSources: [] }`，禁止 `cloud`，默认不加载 `settingSources: "all"`。
+- **仅 Local runtime**：主任务 `Agent.create` / `resume` 传 `local: { cwd, settingSources: ["project"] }`（加载工程 `.cursor/rules` 等）；禁止 `cloud`；不用 `settingSources: "all"`。短辅助调用（标题/commit/sync 摘要）仍用空 `settingSources`。
 - **不对公网开 Slave HTTP**；Slave 只出站连 Gateway。
 - 取消尽力而为：SDK 支持则 `run.cancel()`；不支持则停止向 Gateway 转发新的 tool/assistant 事件，仍 `wait()` 收尾。
 - Key 泄露后：在 Cursor Dashboard 吊销并轮换；勿把 `.env` / `config.yaml` 提交进 git（已 gitignore）。

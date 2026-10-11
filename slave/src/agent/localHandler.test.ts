@@ -4,15 +4,20 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AgentOptions } from "@cursor/sdk";
-import { assertNoCloud, resolveTaskModel } from "./localHandler.js";
+import {
+  assertNoCloud,
+  MAIN_TASK_SETTING_SOURCES,
+  resolveTaskModel,
+} from "./localHandler.js";
 
 describe("assertNoCloud", () => {
-  it("accepts local-only options", () => {
+  it("accepts local-only options with project rules", () => {
     const opts: AgentOptions = {
       model: { id: "composer-2.5" },
-      local: { cwd: "/tmp/repo", settingSources: [] },
+      local: { cwd: "/tmp/repo", settingSources: [...MAIN_TASK_SETTING_SOURCES] },
     };
     assert.doesNotThrow(() => assertNoCloud(opts));
+    assert.deepEqual([...MAIN_TASK_SETTING_SOURCES], ["project"]);
   });
 
   it("rejects cloud field", () => {

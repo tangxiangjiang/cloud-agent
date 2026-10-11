@@ -43,7 +43,8 @@ Flutter ──HTTPS/WSS──► Go Gateway ◄──出站 WS/HTTP── Node S
 - 显式传 `local: { cwd }`，**不要**传 `cloud`  
 - Model 对 local **必填**；可用 `composer-2.5` 或网关下发的 model id  
 - `CURSOR_API_KEY` 仅本机环境变量 / 本地密钥文件  
-- 默认不要加载 `settingSources: "all"`  
+- 主任务加载 `settingSources: ["project"]`（工程 rules）；不要用 `"all"`  
+
 
 ## 配置示例（概念）
 

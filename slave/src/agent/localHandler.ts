@@ -25,6 +25,12 @@ import {
   type OptimizeFor,
 } from "./modelSelection.js";
 
+/**
+ * Main chat/workflow Local Agent loads project rules (`.cursor/rules`, AGENTS.md).
+ * Never `"all"` — that would pull user/team/plugins from the host environment.
+ */
+export const MAIN_TASK_SETTING_SOURCES = ["project"] as const;
+
 export interface LocalAgentHandlerOptions {
   cfg: SlaveConfig;
   /** Cursor API key value (from env named by apiKeyEnv). Never log this. */
@@ -132,13 +138,13 @@ export class LocalAgentTaskHandler implements TaskHandlers {
     const model = this.resolveModel(task.model);
     const modelId = model.id;
 
-    // Local-only: whitelist cwd only; never cloud; never settingSources "all".
+    // Local-only: whitelist cwd; load project rules; never settingSources "all".
     const createOptions: AgentOptions = {
       apiKey: this.opts.apiKey,
       model,
       local: {
         cwd: repo.cwd,
-        settingSources: [],
+        settingSources: [...MAIN_TASK_SETTING_SOURCES],
       },
     };
     assertNoCloud(createOptions);
@@ -485,7 +491,7 @@ export class LocalAgentTaskHandler implements TaskHandlers {
           model,
           local: {
             cwd,
-            settingSources: [],
+            settingSources: [...MAIN_TASK_SETTING_SOURCES],
           },
         });
         hang.touch();
